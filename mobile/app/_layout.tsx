@@ -45,6 +45,7 @@ export default function RootLayout() {
     <ThemeProvider>
       <Stack initialRouteName="(auth)/login" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)/login" />
+        <Stack.Screen name="(auth)/register" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat/[id]" />
         <Stack.Screen name="call/[room]" />

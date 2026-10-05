@@ -5,7 +5,7 @@ import cors from "cors";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { AccessToken } from "livekit-server-sdk";
-import { prisma, login, googleLogin, googleCallback, requireAuth } from "./auth";
+import { prisma, login, register, googleLogin, googleCallback, facebookLogin, facebookCallback, requireAuth } from "./auth";
 import sales from "./routes/sales";
 import team from "./routes/team";
 import contest from "./routes/contest";
@@ -20,8 +20,11 @@ const app = express(); app.use(cors(), express.json());
 app.get("/health", (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
 app.post("/auth/login", login);
+app.post("/auth/register", register);
 app.post("/auth/google", googleLogin);
 app.get("/auth/google/callback", googleCallback);
+app.post("/auth/facebook", facebookLogin);
+app.get("/auth/facebook/callback", facebookCallback);
 
 // หน้า Privacy Policy / Terms สำหรับใช้เป็น URL ยืนยันใน Google OAuth consent screen
 const legalPage = (title: string, body: string) => `<!doctype html>
