@@ -95,6 +95,40 @@ npx expo start
 - ฝั่งแอป: `mobile/lib/googleAuth.ts` (สร้าง URL + อ่าน callback), `app/_layout.tsx` (รับ deep link),
   `app/(auth)/login.tsx` (ปุ่ม)
 
+## เข้าสู่ระบบ / สมัครสมาชิก
+
+หน้าล็อกอินมี 4 ช่องทาง: **อีเมล+รหัสผ่าน**, **Google**, **Facebook**, และ **สมัครสมาชิกเอง**
+
+### สมัครสมาชิก (อีเมล)
+
+- `POST /auth/register { name, email, password }` → สร้างสมาชิก role = MEMBER แล้วเข้าสู่ระบบทันที
+- ตรวจ: ชื่อต้องมี, อีเมลถูกต้อง + ซ้ำไม่ได้ (409), รหัสผ่าน ≥ 8 ตัวอักษร
+- หน้าแอป: `mobile/app/(auth)/register.tsx` (กด "สมัครสมาชิก" จากหน้าล็อกอิน)
+
+### Google / Facebook (OAuth Code Flow)
+
+ทั้งสองใช้รูปแบบเดียวกัน — แอปเปิดหน้ายินยอมในเบราว์เซอร์ → provider redirect มาที่ backend
+→ backend แลก `code` (เก็บ secret ฝั่ง server) → สร้าง/หาสมาชิก → ออก JWT → redirect กลับแอป `?token=`
+
+- `GET /auth/google/callback`, `GET /auth/facebook/callback` — รับ redirect จาก provider
+- `POST /auth/google { code }`, `POST /auth/facebook { code }` — รุ่น JSON (เผื่อทดสอบ/เว็บ)
+- สมาชิกใหม่จาก Google/Facebook ถูกสร้างอัตโนมัติ role = MEMBER (ไม่มีรหัสผ่าน)
+- ฝั่งแอป: `mobile/lib/googleAuth.ts`, `mobile/lib/facebookAuth.ts`, `app/_layout.tsx` (รับ deep link)
+
+ตั้งค่า:
+
+- **Google**: Google Cloud → Google Auth Platform → OAuth consent screen (External) +
+  Web client → redirect `https://amway-api.onrender.com/auth/google/callback` → Publish app
+- **Facebook**: [Meta for Developers](https://developers.facebook.com/) → Create App → เพิ่มผลิตภัณฑ์
+  "Facebook Login" → Settings → Valid OAuth Redirect URIs =
+  `https://amway-api.onrender.com/auth/facebook/callback` → ตั้ง App เป็น **Live**
+  (ต้องมี Privacy Policy URL = `https://amway-api.onrender.com/privacy`)
+- env vars:
+  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`
+    → Render (ใน `render.yaml` เป็น `sync: false`)
+  - `EXPO_PUBLIC_GOOGLE_CLIENT_ID`, `EXPO_PUBLIC_FACEBOOK_APP_ID` → EAS (ทุก environment) + `mobile/.env`
+  - ถ้า `EXPO_PUBLIC_FACEBOOK_APP_ID` ยังว่าง ปุ่ม Facebook จะซ่อนไว้อัตโนมัติ
+
 ## ข้อจำกัดของ tier ฟรี (สำคัญ)
 
 - **Render ฟรี**: 750 ชม./เดือนต่อ workspace และ **หลับเองหลังไม่มีทราฟฟิก 15 นาที**
