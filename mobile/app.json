@@ -12,12 +12,24 @@
       "infoPlist": {
         "NSCameraUsageDescription": "ใช้กล้องสำหรับการประชุมทางวิดีโอ",
         "NSMicrophoneUsageDescription": "ใช้ไมโครโฟนสำหรับการประชุม"
-      }
+      },
+      "bitcode": false
     },
     "android": {
       "package": "com.amway.app",
       "versionCode": 1,
-      "permissions": ["CAMERA", "RECORD_AUDIO"],
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -47,6 +59,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "10d5270f-9d84-4ef1-8b74-295d8c4ed6d6"
+      }
+    },
+    "owner": "wanchai.dev"
   }
 }
