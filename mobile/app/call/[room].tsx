@@ -1,30 +1,35 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
-import {
-  AudioSession,
-  isTrackReference,
-  LiveKitRoom,
-  registerGlobals,
-  useTracks,
-  VideoTrack,
-} from "@livekit/react-native";
-import { Track } from "livekit-client";
+import type { ComponentType } from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { api } from "../../lib/api";
+
+type CallModule = {
+  CallRoom: ComponentType<{ serverUrl: string; token: string }>;
+  prepareCall: () => Promise<void>;
+  endCall: () => void;
+};
 
 export default function Call() {
   const { room } = useLocalSearchParams<{ room: string }>();
   const [credentials, setCredentials] = useState<{ token: string; url: string }>();
   const [error, setError] = useState("");
+  const [callModule, setCallModule] = useState<CallModule>();
 
   useEffect(() => {
     let active = true;
+    let loaded: CallModule | undefined;
+
     async function connect() {
       try {
-        registerGlobals();
+        // โหลดโมดูลวิดีโอตอนเข้าหน้านี้เท่านั้น — ถ้าเครื่องไม่มี WebRTC
+        // (เช่น Expo Go) แอปส่วนอื่นจะยังใช้งานได้ปกติ
+        loaded = await import("../../lib/call-room");
+        if (!active) return;
+        await loaded.prepareCall();
         const result = await api(`/call/token?room=${encodeURIComponent(room)}`);
         if (!active) return;
-        await AudioSession.startAudioSession();
+        setCallModule(loaded);
         setCredentials(result);
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : "เข้าร่วมห้องไม่สำเร็จ");
@@ -34,37 +39,20 @@ export default function Call() {
     void connect();
     return () => {
       active = false;
-      void AudioSession.stopAudioSession();
+      loaded?.endCall();
     };
   }, [room]);
 
-  if (error) return <View style={styles.center}><Text>{error}</Text></View>;
-  if (!credentials) return <View style={styles.center}><ActivityIndicator /></View>;
+  if (error) return <View style={styles.center}><Text style={styles.errorText}>{error}</Text></View>;
+  if (!credentials || !callModule) {
+    return <View style={styles.center}><ActivityIndicator /></View>;
+  }
 
-  return (
-    <LiveKitRoom serverUrl={credentials.url} token={credentials.token} connect audio video>
-      <CallTracks />
-    </LiveKitRoom>
-  );
-}
-
-function CallTracks() {
-  const tracks = useTracks([Track.Source.Camera]);
-
-  return (
-    <FlatList
-      contentContainerStyle={styles.list}
-      data={tracks}
-      keyExtractor={(track, trackIndex) => `${trackIndex}`}
-      renderItem={({ item }) => isTrackReference(item)
-        ? <VideoTrack trackRef={item} style={styles.video} />
-        : <View style={styles.video} />}
-    />
-  );
+  const Room = callModule.CallRoom;
+  return <Room serverUrl={credentials.url} token={credentials.token} />;
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  list: { flexGrow: 1, justifyContent: "center", gap: 8, padding: 8 },
-  video: { width: "100%", height: 280, backgroundColor: "#17231f", borderRadius: 8 },
+  errorText: { color: "#b42318", textAlign: "center" },
 });
