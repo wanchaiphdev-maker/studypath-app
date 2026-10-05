@@ -69,6 +69,32 @@ npx expo start
 - API: `backend` มีชุดทดสอบ 23 กรณี (permission ข้าม role, FK, validation) — รันได้ทั้ง local และ production
 - endpoint สำคัญ: `GET /health` → `{"ok":true,"uptime":...}`
 
+## เข้าสู่ระบบด้วย Google
+
+หน้าล็อกอินมีปุ่ม "เข้าสู่ระบบด้วย Google" — ใครก็ที่มี Gmail กดเข้าได้ทันที
+(สมาชิกใหม่ถูกสร้างอัตโนมัติ role = MEMBER จากชื่อ/อีเมลในบัญชี Google)
+
+วิธีทำงาน (Authorization Code Flow):
+
+1. แอปเปิดหน้า consent ของ Google (Chrome) พร้อม `state` = deep link กลับแอป
+2. ผู้ใช้กดยินยอม → Google redirect มาที่ `GET /auth/google/callback` ของ backend
+3. backend แลก `code` กับ Google (เก็บ `GOOGLE_CLIENT_SECRET` ไว้ฝั่ง server เท่านั้น)
+   → สร้าง/หาสมาชิก → ออก JWT ของแอป → redirect กลับแอปพร้อม `?token=`
+4. แอบเก็บ token แล้วเข้าสู่ระบบ (token อยู่ใน SecureStore คงอยู่ข้ามการปิดแอป)
+
+ตั้งค่าครั้งแรก (ทำไปแล้ว):
+
+- Google Cloud Console → project `gen-lang-client-0470573019` → Google Auth Platform
+  - OAuth consent screen: External, app name "Amway Team", เพิ่ม privacy/terms URL
+    (`https://amway-api.onrender.com/privacy`, `/terms`) แล้ว **Publish app → In production**
+  - Credentials → OAuth Client ID (Web application) → redirect URI
+    `https://amway-api.onrender.com/auth/google/callback`
+- env vars:
+  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` → Render (ใน `render.yaml` เป็น `sync: false`)
+  - `EXPO_PUBLIC_GOOGLE_CLIENT_ID` → EAS (ทั้ง production/development/preview) + `mobile/.env`
+- ฝั่งแอป: `mobile/lib/googleAuth.ts` (สร้าง URL + อ่าน callback), `app/_layout.tsx` (รับ deep link),
+  `app/(auth)/login.tsx` (ปุ่ม)
+
 ## ข้อจำกัดของ tier ฟรี (สำคัญ)
 
 - **Render ฟรี**: 750 ชม./เดือนต่อ workspace และ **หลับเองหลังไม่มีทราฟฟิก 15 นาที**
