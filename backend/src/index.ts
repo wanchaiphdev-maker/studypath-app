@@ -15,6 +15,10 @@ import chat from "./routes/chat";
 import { canAccessRoom } from "./services/access";
 
 const app = express(); app.use(cors(), express.json());
+
+// health check สำหรับ Render (ใช้ตอน deploy และตอนโหลดเย็น)
+app.get("/health", (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
+
 app.post("/auth/login", login);
 app.use("/sales", sales);
 app.use("/team", team);

@@ -1,0 +1,32 @@
+# Render Blueprint — สร้าง web service ให้อัตโนมัติเมื่อเชื่อม repo นี้ใน Render
+# ค่าความลับ (sync: false) ต้องกรอกเองในหน้า Environment ของ Render
+services:
+  - type: web
+    name: amway-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        sync: false
+      - key: SEED_PASSWORD
+        sync: false
+      - key: LK_URL
+        sync: false
+      - key: LK_KEY
+        sync: false
+      - key: LK_SECRET
+        sync: false
