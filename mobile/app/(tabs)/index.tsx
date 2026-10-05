@@ -1,22 +1,138 @@
 import { useEffect, useState } from "react";
-import { View, Text, FlatList } from "react-native";
-import { api } from "../../lib/api"; import { useTheme } from "../../lib/theme";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { api } from "../../lib/api";
+import { useTheme, colors, spacing, radius, font, shadow } from "../../lib/theme";
+import { Card, SectionHeader, StatCard, EmptyState } from "../../lib/ui";
+
+type Row = { period: string; pv: number; amount: number };
+
+const money = (value: number) => `฿${Number(value).toLocaleString("th-TH")}`;
 
 export default function Dashboard() {
   const { color } = useTheme();
-  const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => { api("/sales/summary?by=month").then(setRows); }, []);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api<Row[]>("/sales/summary?by=month")
+      .then(setRows)
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }, []);
+
   const totalPV = rows.reduce((a, r) => a + Number(r.pv), 0);
   const total = rows.reduce((a, r) => a + Number(r.amount), 0);
+  const avg = rows.length ? total / rows.length : 0;
+
   return (
-    <View style={{ padding: 16 }}>
-      <View style={{ backgroundColor: color, borderRadius: 16, padding: 20 }}>
-        <Text style={{ color: "#fff" }}>รายได้สะสม</Text>
-        <Text style={{ color: "#fff", fontSize: 28, fontWeight: "700" }}>฿{total.toLocaleString()}</Text>
-        <Text style={{ color: "#fff" }}>{totalPV.toLocaleString()} PV</Text>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      {/* การ์ดหลัก */}
+      <View style={[styles.hero, { backgroundColor: color }]}>
+        <View style={styles.heroTop}>
+          <Text style={styles.heroLabel}>รายได้สะสมทั้งหมด</Text>
+          <View style={styles.heroBadge}>
+            <Ionicons name="trending-up" size={14} color="#fff" />
+          </View>
+        </View>
+        <Text style={styles.heroValue}>{money(total)}</Text>
+        <View style={styles.heroDivider} />
+        <View style={styles.heroRow}>
+          <View>
+            <Text style={styles.heroSubLabel}>PV รวม</Text>
+            <Text style={styles.heroSubValue}>{Number(totalPV).toLocaleString("th-TH")}</Text>
+          </View>
+          <View style={styles.heroDividerV} />
+          <View>
+            <Text style={styles.heroSubLabel}>เดือนที่มียอด</Text>
+            <Text style={styles.heroSubValue}>{rows.length}</Text>
+          </View>
+        </View>
       </View>
-      <FlatList data={rows} keyExtractor={r => r.period}
-        renderItem={({ item }) => (
-          <Text>{new Date(item.period).toLocaleDateString("th-TH", { month: "long", year: "numeric" })}: ฿{Number(item.amount).toLocaleString()} / {Number(item.pv)} PV</Text>)} />
-    </View>);
+
+      {/* สถิติ */}
+      <View style={styles.stats}>
+        <StatCard label="ยอดเฉลี่ย/เดือน" value={money(avg)} color={color} />
+        <StatCard label="PV รวม" value={Number(totalPV).toLocaleString("th-TH")} color={colors.accent} />
+      </View>
+
+      {/* รายเดือน */}
+      <SectionHeader title="ยอดรายเดือน" />
+      {loading ? (
+        <Card>
+          <Text style={font.body}>กำลังโหลด...</Text>
+        </Card>
+      ) : rows.length === 0 ? (
+        <EmptyState icon="bar-chart-outline" message="ยังไม่มียอดขาย" sub="เริ่มบันทึกการขายจากเมนูสินค้า" />
+      ) : (
+        <View style={styles.list}>
+          {[...rows].reverse().map((row, i) => {
+            const d = new Date(row.period);
+            const label = d.toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+            const max = Math.max(...rows.map((r) => Number(r.amount)), 1);
+            const pct = Math.round((Number(row.amount) / max) * 100);
+            return (
+              <Card key={row.period} style={styles.rowCard}>
+                <View style={styles.rowTop}>
+                  <View style={styles.rowLeft}>
+                    <View style={[styles.rowDot, { backgroundColor: color }]} />
+                    <Text style={styles.rowMonth}>{label}</Text>
+                  </View>
+                  <Text style={styles.rowAmount}>{money(row.amount)}</Text>
+                </View>
+                <View style={styles.barTrack}>
+                  <View style={[styles.barFill, { width: `${pct}%`, backgroundColor: color }]} />
+                </View>
+                <Text style={styles.rowPV}>{Number(row.pv).toLocaleString("th-TH")} PV</Text>
+              </Card>
+            );
+          })}
+        </View>
+      )}
+    </ScrollView>
+  );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  hero: {
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+    ...shadow.raised,
+  },
+  heroTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  heroLabel: { color: "#ffffffd9", fontSize: 14, fontWeight: "500" },
+  heroBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#ffffff2e",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroValue: { color: "#fff", fontSize: 34, fontWeight: "700", marginTop: spacing.sm },
+  heroDivider: { height: 1, backgroundColor: "#ffffff30", marginVertical: spacing.lg },
+  heroRow: { flexDirection: "row", alignItems: "center" },
+  heroSubLabel: { color: "#ffffffb3", fontSize: 12 },
+  heroSubValue: { color: "#fff", fontSize: 18, fontWeight: "700", marginTop: 2 },
+  heroDividerV: { width: 1, height: 32, backgroundColor: "#ffffff30", marginHorizontal: spacing.lg },
+  stats: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.xl },
+  list: { gap: spacing.md },
+  rowCard: { padding: spacing.lg },
+  rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  rowLeft: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  rowDot: { width: 10, height: 10, borderRadius: 5 },
+  rowMonth: { ...font.title },
+  rowAmount: { ...font.h3 },
+  barTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.surfaceAlt,
+    marginTop: spacing.md,
+    overflow: "hidden",
+  },
+  barFill: { height: 6, borderRadius: 3 },
+  rowPV: { ...font.caption, marginTop: spacing.sm },
+});

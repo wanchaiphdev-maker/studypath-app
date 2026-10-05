@@ -12,9 +12,11 @@ import {
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { login } from "../../lib/api";
 import { appReturnUrl, buildGoogleAuthUrl, parseAuthCallback } from "../../lib/googleAuth";
 import { buildFacebookAuthUrl, FACEBOOK_APP_ID } from "../../lib/facebookAuth";
+import { colors, spacing, radius, font, shadow } from "../../lib/theme";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -58,7 +60,6 @@ export default function LoginScreen() {
           setError(cb.error);
         }
       }
-      // ถ้าแอปถูกเปิดใหม่ (cold start) token จะถูกจัดการเองที่ _layout.tsx
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "เข้าสู่ระบบด้วย Google ไม่สำเร็จ");
     } finally {
@@ -88,20 +89,31 @@ export default function LoginScreen() {
     }
   }
 
+  const anyBusy = busy || googleBusy || facebookBusy;
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.screen}
     >
       <View style={styles.form}>
-        <Text style={styles.eyebrow}>AMWAY TEAM</Text>
+        <View style={styles.brand}>
+          <View style={styles.brandIcon}>
+            <Ionicons name="people" size={28} color="#fff" />
+          </View>
+          <Text style={styles.brandName}>Amway Team</Text>
+          <Text style={styles.brandTag}>จัดการทีมขายของคุณ</Text>
+        </View>
+
         <Text style={styles.title}>เข้าสู่ระบบ</Text>
+
         <TextInput
           autoCapitalize="none"
           autoComplete="email"
           keyboardType="email-address"
           onChangeText={setEmail}
           placeholder="อีเมล"
+          placeholderTextColor={colors.textMuted}
           style={styles.input}
           value={email}
         />
@@ -111,19 +123,25 @@ export default function LoginScreen() {
           onChangeText={setPassword}
           onSubmitEditing={submit}
           placeholder="รหัสผ่าน"
+          placeholderTextColor={colors.textMuted}
           returnKeyType="go"
           secureTextEntry
           style={styles.input}
           value={password}
         />
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
+            <Text style={styles.error}>{error}</Text>
+          </View>
+        ) : null}
         <Pressable
           accessibilityRole="button"
-          disabled={busy || !email || !password}
+          disabled={anyBusy || !email || !password}
           onPress={submit}
           style={({ pressed }) => [
             styles.button,
-            (pressed || busy || !email || !password) && styles.buttonDimmed,
+            (pressed || anyBusy || !email || !password) && styles.buttonDimmed,
           ]}
         >
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>}
@@ -137,33 +155,39 @@ export default function LoginScreen() {
 
         <Pressable
           accessibilityRole="button"
-          disabled={busy || googleBusy || facebookBusy}
+          disabled={anyBusy}
           onPress={googleSignIn}
-          style={({ pressed }) => [
-            styles.googleButton,
-            (pressed || busy || googleBusy || facebookBusy) && styles.buttonDimmed,
-          ]}
+          style={({ pressed }) => [styles.socialButton, pressed && styles.buttonDimmed]}
         >
-          <View style={styles.googleBadge}>
-            <Text style={styles.googleBadgeText}>G</Text>
-          </View>
-          <Text style={styles.googleText}>เข้าสู่ระบบด้วย Google</Text>
+          {googleBusy ? (
+            <ActivityIndicator color={colors.text} />
+          ) : (
+            <>
+              <View style={[styles.socialBadge, { backgroundColor: "#4285F4" }]}>
+                <Text style={styles.socialBadgeText}>G</Text>
+              </View>
+              <Text style={styles.socialText}>เข้าสู่ระบบด้วย Google</Text>
+            </>
+          )}
         </Pressable>
 
         {FACEBOOK_APP_ID ? (
           <Pressable
             accessibilityRole="button"
-            disabled={busy || googleBusy || facebookBusy}
+            disabled={anyBusy}
             onPress={facebookSignIn}
-            style={({ pressed }) => [
-              styles.facebookButton,
-              (pressed || busy || googleBusy || facebookBusy) && styles.buttonDimmed,
-            ]}
+            style={({ pressed }) => [styles.socialButton, pressed && styles.buttonDimmed]}
           >
-            <View style={styles.facebookBadge}>
-              <Text style={styles.facebookBadgeText}>f</Text>
-            </View>
-            <Text style={styles.facebookText}>เข้าสู่ระบบด้วย Facebook</Text>
+            {facebookBusy ? (
+              <ActivityIndicator color={colors.text} />
+            ) : (
+              <>
+                <View style={[styles.socialBadge, { backgroundColor: "#1877F2" }]}>
+                  <Text style={styles.socialBadgeText}>f</Text>
+                </View>
+                <Text style={styles.socialText}>เข้าสู่ระบบด้วย Facebook</Text>
+              </>
+            )}
           </Pressable>
         ) : null}
 
@@ -180,75 +204,76 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, justifyContent: "center", backgroundColor: "#f4f7f5", padding: 24 },
-  form: { width: "100%", maxWidth: 420, alignSelf: "center", gap: 14 },
-  eyebrow: { color: "#147d64", fontSize: 12, fontWeight: "700" },
-  title: { color: "#17231f", fontSize: 28, fontWeight: "700", marginBottom: 10 },
+  screen: { flex: 1, justifyContent: "center", backgroundColor: colors.background, padding: spacing.xl },
+  form: { width: "100%", maxWidth: 420, alignSelf: "center" },
+  brand: { alignItems: "center", marginBottom: spacing.xxl },
+  brandIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.md,
+    ...shadow.raised,
+  },
+  brandName: { fontSize: 24, fontWeight: "700", color: colors.text },
+  brandTag: { fontSize: 14, color: colors.textSecondary, marginTop: 4 },
+  title: { ...font.h1, marginBottom: spacing.lg },
   input: {
     minHeight: 52,
     borderWidth: 1,
-    borderColor: "#cbd6d1",
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    paddingHorizontal: 14,
-    color: "#17231f",
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    color: colors.text,
+    marginBottom: spacing.md,
   },
-  error: { color: "#b42318" },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#fdf3f2",
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  error: { color: colors.danger, fontSize: 13, flex: 1 },
   button: {
     minHeight: 52,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 8,
-    backgroundColor: "#147d64",
-    marginTop: 4,
+    borderRadius: radius.md,
+    backgroundColor: colors.accent,
+    marginTop: spacing.xs,
   },
   buttonDimmed: { opacity: 0.55 },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  divider: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "#cbd6d1" },
-  dividerText: { color: "#64748b", fontSize: 13 },
-  googleButton: {
+  divider: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.lg },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { color: colors.textMuted, fontSize: 13 },
+  socialButton: {
     minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
-    borderRadius: 8,
-    backgroundColor: "#fff",
+    gap: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#cbd6d1",
+    borderColor: colors.border,
+    marginBottom: spacing.md,
   },
-  googleBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#4285F4",
+  socialBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  googleBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700", lineHeight: 15 },
-  googleText: { color: "#17231f", fontSize: 16, fontWeight: "600" },
-  facebookButton: {
-    minHeight: 52,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#cbd6d1",
-  },
-  facebookBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#1877F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  facebookBadgeText: { color: "#fff", fontSize: 14, fontWeight: "700", lineHeight: 15 },
-  facebookText: { color: "#17231f", fontSize: 16, fontWeight: "600" },
-  link: { alignItems: "center", marginTop: 8 },
-  linkText: { color: "#147d64", fontSize: 14, fontWeight: "600" },
+  socialBadgeText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  socialText: { color: colors.text, fontSize: 15, fontWeight: "600" },
+  link: { alignItems: "center", marginTop: spacing.sm },
+  linkText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
 });

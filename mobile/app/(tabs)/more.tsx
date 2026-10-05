@@ -1,19 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import { api, BASE_URL } from "../../lib/api";
+import { api } from "../../lib/api";
 import { closeSocket } from "../../lib/socket";
-import { useTheme } from "../../lib/theme";
+import { useTheme, colors, spacing, radius, font, shadow } from "../../lib/theme";
+import { Avatar, Card, Pill } from "../../lib/ui";
 
 type Me = {
   id: string;
@@ -50,7 +43,6 @@ export default function MoreScreen() {
   }, []);
 
   useEffect(() => {
-    // เลื่อนไป microtask: กันการ setState แบบซิงโครนัสใน effect (react-hooks/set-state-in-effect)
     Promise.resolve().then(load);
   }, [load]);
 
@@ -99,121 +91,87 @@ export default function MoreScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>เพิ่มเติม</Text>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
+      {/* โปรไฟล์ */}
       {me ? (
         <View style={[styles.profile, { backgroundColor: color }]}>
-          <View style={styles.profileAvatar}>
-            <Text style={styles.profileInitial}>{me.name.trim().charAt(0)}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
+          <Avatar name={me.name} color="#ffffff33" size={56} />
+          <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{me.name}</Text>
             <Text style={styles.profileEmail}>{me.email}</Text>
-            <View style={styles.rolePill}>
-              <Text style={styles.roleText}>{ROLE_LABEL[me.role]}</Text>
+            <View style={{ marginTop: 8 }}>
+              <Pill text={ROLE_LABEL[me.role]} color="#fff" />
             </View>
           </View>
         </View>
       ) : null}
 
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      {/* สีธีม */}
       <Text style={styles.section}>สีธีมของแอป</Text>
-      <View style={styles.colorRow}>
-        {COLORS.map(swatch => (
-          <Pressable
-            key={swatch}
-            accessibilityRole="button"
-            accessibilityLabel={`เลือกสี ${swatch}`}
-            disabled={saving}
-            onPress={() => void pickColor(swatch)}
-            style={[
-              styles.swatch,
-              { backgroundColor: swatch, borderColor: me?.themeColor === swatch ? "#17231f" : "#ffffff00" },
-            ]}
-          >
-            {me?.themeColor === swatch ? <Ionicons name="checkmark" size={18} color="#fff" /> : null}
-          </Pressable>
-        ))}
-      </View>
+      <Card>
+        <View style={styles.colorRow}>
+          {COLORS.map((swatch) => (
+            <Pressable
+              key={swatch}
+              accessibilityRole="button"
+              accessibilityLabel={`เลือกสี ${swatch}`}
+              disabled={saving}
+              onPress={() => void pickColor(swatch)}
+              style={[
+                styles.swatch,
+                { backgroundColor: swatch, borderColor: me?.themeColor === swatch ? colors.text : "#ffffff00" },
+              ]}
+            >
+              {me?.themeColor === swatch ? <Ionicons name="checkmark" size={18} color="#fff" /> : null}
+            </Pressable>
+          ))}
+        </View>
+      </Card>
 
-      <Text style={styles.section}>บัญชี</Text>
-      <View style={styles.infoCard}>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>อีเมล</Text>
-          <Text style={styles.infoValue}>{me?.email ?? "-"}</Text>
-        </View>
-        <View style={styles.infoDivider} />
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>เซิร์ฟเวอร์</Text>
-          <Text style={styles.infoValue}>{BASE_URL ?? "ยังไม่ได้ตั้งค่า"}</Text>
-        </View>
-        <View style={styles.infoDivider} />
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>เวอร์ชัน</Text>
-          <Text style={styles.infoValue}>1.0.0</Text>
-        </View>
-      </View>
-
+      {/* ออกจากระบบ */}
       <Pressable accessibilityRole="button" onPress={logout} style={styles.logoutBtn}>
-        <Ionicons name="log-out-outline" size={18} color="#b42318" />
+        <Ionicons name="log-out-outline" size={18} color={colors.danger} />
         <Text style={styles.logoutText}>ออกจากระบบ</Text>
       </Pressable>
+
+      <Text style={styles.footer}>Amway Team</Text>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#f4f7f5" },
-  content: { padding: 16, paddingBottom: 40 },
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 24, fontWeight: "700", color: "#17231f", marginBottom: 12 },
-  error: { color: "#b42318", marginBottom: 8 },
-  profile: { flexDirection: "row", alignItems: "center", borderRadius: 16, padding: 18, gap: 14 },
-  profileAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: "#ffffff33",
+  error: { color: colors.danger, marginBottom: spacing.sm },
+  profile: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    gap: spacing.lg,
+    marginBottom: spacing.xl,
+    ...shadow.raised,
   },
-  profileInitial: { color: "#fff", fontSize: 24, fontWeight: "700" },
-  profileName: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  profileEmail: { color: "#ffffffe6", fontSize: 13, marginTop: 2 },
-  rolePill: {
-    alignSelf: "flex-start",
-    backgroundColor: "#ffffff2e",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    marginTop: 8,
-  },
-  roleText: { color: "#fff", fontSize: 12, fontWeight: "600" },
-  section: { fontSize: 15, fontWeight: "700", color: "#3d4f49", marginTop: 22, marginBottom: 10 },
-  colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  profileInfo: { flex: 1 },
+  profileName: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  profileEmail: { color: "#ffffffd9", fontSize: 13, marginTop: 2 },
+  section: { ...font.h3, marginBottom: spacing.md },
+  colorRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
   swatch: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  infoCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e3eae7",
-    paddingHorizontal: 14,
-  },
-  infoRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 13, gap: 12 },
-  infoLabel: { fontSize: 13, color: "#6b7c76" },
-  infoValue: { fontSize: 13, color: "#17231f", flexShrink: 1, textAlign: "right" },
-  infoDivider: { height: 1, backgroundColor: "#eef3f1" },
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    marginTop: 24,
+    marginTop: spacing.xl,
     minHeight: 50,
-    borderRadius: 10,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: "#f0c9c6",
     backgroundColor: "#fdf3f2",
   },
-  logoutText: { color: "#b42318", fontWeight: "700" },
+  logoutText: { color: colors.danger, fontWeight: "700", fontSize: 15 },
+  footer: { ...font.caption, textAlign: "center", marginTop: spacing.xxl },
 });

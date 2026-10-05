@@ -8,7 +8,8 @@ import {
   View,
 } from "react-native";
 import { api } from "../../lib/api";
-import { useTheme } from "../../lib/theme";
+import { useTheme, colors, spacing, radius, font, shadow } from "../../lib/theme";
+import { Avatar, Card, EmptyState, Pill } from "../../lib/ui";
 
 type Member = {
   id: string;
@@ -96,21 +97,25 @@ export default function TeamScreen() {
               </Text>
             </View>
           ) : null}
-          <Text style={styles.section}>รายชื่อสมาชิก ({members.length})</Text>
+          <View style={styles.sectionRow}>
+            <Text style={styles.section}>รายชื่อสมาชิก</Text>
+            <Pill text={`${members.length} คน`} />
+          </View>
         </View>
       }
-      ListEmptyComponent={<Text style={styles.empty}>ยังไม่มีสมาชิกในสายงาน</Text>}
+      ListEmptyComponent={<EmptyState icon="people-outline" message="ยังไม่มีสมาชิกในสายงาน" />}
       renderItem={({ item }) => (
         <View style={styles.row}>
-          <View style={[styles.avatar, { backgroundColor: item.themeColor }]}>
-            <Text style={styles.avatarText}>{item.name.trim().charAt(0)}</Text>
-          </View>
+          <Avatar name={item.name} color={item.themeColor} size={44} />
           <View style={styles.rowMain}>
-            <Text style={styles.name} numberOfLines={1}>
-              {item.name}
-            </Text>
+            <View style={styles.rowNameLine}>
+              <Text style={styles.name} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Pill text={ROLE_LABEL[item.role]} />
+            </View>
             <Text style={styles.meta} numberOfLines={1}>
-              {ROLE_LABEL[item.role]} · {money(item.group.downlineCount)} คนใต้บังคับบัญชา
+              {money(item.group.downlineCount)} คนใต้บังคับบัญชา
             </Text>
           </View>
           <View style={styles.rowRight}>
@@ -124,34 +129,34 @@ export default function TeamScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#f4f7f5" },
-  content: { padding: 16, paddingBottom: 32 },
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 24, fontWeight: "700", color: "#17231f", marginBottom: 12 },
-  error: { color: "#b42318", marginBottom: 8 },
-  card: { borderRadius: 16, padding: 20, marginBottom: 16 },
+  title: { ...font.h1, marginBottom: spacing.md },
+  error: { color: colors.danger, marginBottom: spacing.sm },
+  card: { borderRadius: radius.xl, padding: spacing.xl, marginBottom: spacing.lg, ...shadow.raised },
   cardLabel: { color: "#ffffffcc", fontSize: 13 },
-  cardValue: { color: "#fff", fontSize: 30, fontWeight: "700", marginTop: 4 },
+  cardValue: { color: "#fff", fontSize: 30, fontWeight: "700", marginTop: spacing.xs },
   cardSub: { color: "#ffffffe6", fontSize: 13, marginTop: 2 },
-  cardDivider: { height: 1, backgroundColor: "#ffffff40", marginVertical: 10 },
-  section: { fontSize: 15, fontWeight: "700", color: "#3d4f49", marginBottom: 8 },
-  empty: { color: "#6b7c76", paddingVertical: 24, textAlign: "center" },
+  cardDivider: { height: 1, backgroundColor: "#ffffff40", marginVertical: spacing.md },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  section: { ...font.h3 },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: "#e3eae7",
-    padding: 12,
-    marginBottom: 8,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    ...shadow.card,
   },
-  avatar: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  rowMain: { flex: 1, marginLeft: 12 },
-  name: { fontSize: 15, fontWeight: "600", color: "#17231f" },
-  meta: { fontSize: 12, color: "#6b7c76", marginTop: 2 },
+  rowMain: { flex: 1, marginLeft: spacing.md },
+  rowNameLine: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  name: { ...font.title, flexShrink: 1 },
+  meta: { ...font.caption, marginTop: 2 },
   rowRight: { alignItems: "flex-end" },
-  amount: { fontSize: 15, fontWeight: "700", color: "#17231f" },
-  pv: { fontSize: 12, color: "#6b7c76", marginTop: 2 },
+  amount: { ...font.title },
+  pv: { ...font.caption, marginTop: 2 },
 });

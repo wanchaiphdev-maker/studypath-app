@@ -13,7 +13,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../lib/api";
-import { useTheme } from "../../lib/theme";
+import { useTheme, colors, spacing, radius, font, shadow } from "../../lib/theme";
+import { Card, Button, EmptyState } from "../../lib/ui";
 
 type Product = {
   id: string;
@@ -131,7 +132,10 @@ export default function ProductsScreen() {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Text style={styles.title}>สินค้า</Text>
+        <View>
+          <Text style={styles.title}>สินค้า</Text>
+          <Text style={styles.subtitle}>{products.length} รายการ</Text>
+        </View>
         {isAdmin ? (
           <Pressable accessibilityRole="button" onPress={() => setFormOpen(true)} style={[styles.addBtn, { backgroundColor: color }]}>
             <Ionicons name="add" size={22} color="#fff" />
@@ -155,7 +159,7 @@ export default function ProductsScreen() {
             tintColor={color}
           />
         }
-        ListEmptyComponent={<Text style={styles.empty}>ยังไม่มีสินค้าในระบบ</Text>}
+        ListEmptyComponent={<EmptyState icon="pricetag-outline" message="ยังไม่มีสินค้าในระบบ" sub="กดปุ่ม + เพื่อเพิ่มสินค้า" />}
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole="button"
@@ -174,10 +178,10 @@ export default function ProductsScreen() {
             </View>
             {isAdmin ? (
               <Pressable accessibilityRole="button" hitSlop={8} onPress={() => removeProduct(item)}>
-                <Ionicons name="trash-outline" size={20} color="#b42318" />
+                <Ionicons name="trash-outline" size={20} color={colors.danger} />
               </Pressable>
             ) : (
-              <Ionicons name="chevron-forward" size={18} color="#8fa39c" />
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             )}
           </Pressable>
         )}
@@ -266,64 +270,65 @@ export default function ProductsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#f4f7f5" },
+  screen: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
   },
-  title: { fontSize: 24, fontWeight: "700", color: "#17231f" },
-  addBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  error: { color: "#b42318", paddingHorizontal: 16, marginBottom: 4 },
-  list: { paddingHorizontal: 16, paddingBottom: 24 },
-  empty: { color: "#6b7c76", textAlign: "center", paddingVertical: 32 },
+  title: { ...font.h1 },
+  subtitle: { ...font.caption, marginTop: 2 },
+  addBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  error: { color: colors.danger, paddingHorizontal: spacing.lg, marginBottom: spacing.xs },
+  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
   card: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: "#e3eae7",
-    padding: 14,
-    marginBottom: 8,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadow.card,
   },
-  cardMain: { flex: 1, marginRight: 8 },
-  name: { fontSize: 15, fontWeight: "600", color: "#17231f" },
-  meta: { fontSize: 13, color: "#6b7c76", marginTop: 3 },
-  note: { fontSize: 12, color: "#8fa39c", marginTop: 3 },
-  backdrop: { flex: 1, backgroundColor: "#0009", alignItems: "center", justifyContent: "center", padding: 24 },
-  dialog: { width: "100%", maxWidth: 400, backgroundColor: "#fff", borderRadius: 16, padding: 20, gap: 10 },
-  dialogTitle: { fontSize: 18, fontWeight: "700", color: "#17231f" },
-  dialogMeta: { fontSize: 13, color: "#6b7c76" },
-  stepper: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16, marginVertical: 6 },
+  cardMain: { flex: 1, marginRight: spacing.sm },
+  name: { ...font.title },
+  meta: { ...font.label, marginTop: 2 },
+  note: { ...font.caption, marginTop: 2 },
+  backdrop: { flex: 1, backgroundColor: "#0009", alignItems: "center", justifyContent: "center", padding: spacing.lg },
+  dialog: { width: "100%", maxWidth: 400, backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, gap: spacing.md, ...shadow.raised },
+  dialogTitle: { ...font.h3 },
+  dialogMeta: { ...font.label },
+  stepper: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.lg, marginVertical: spacing.sm },
   stepBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#cbd6d1",
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#f4f7f5",
+    backgroundColor: colors.surfaceAlt,
   },
-  qty: { fontSize: 20, fontWeight: "700", color: "#17231f", minWidth: 40, textAlign: "center" },
-  total: { fontSize: 15, fontWeight: "600", color: "#17231f", textAlign: "center" },
-  dialogActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 8 },
-  ghostBtn: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 8 },
-  ghostText: { color: "#3d4f49", fontWeight: "600" },
-  primaryBtn: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: 8, alignItems: "center" },
+  qty: { fontSize: 20, fontWeight: "700", color: colors.text, minWidth: 40, textAlign: "center" },
+  total: { ...font.title, textAlign: "center" },
+  dialogActions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.md, marginTop: spacing.sm },
+  ghostBtn: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.md },
+  ghostText: { color: colors.textSecondary, fontWeight: "600" },
+  primaryBtn: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: "center" },
   primaryText: { color: "#fff", fontWeight: "700" },
   input: {
     minHeight: 48,
     borderWidth: 1,
-    borderColor: "#cbd6d1",
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    paddingHorizontal: 14,
-    color: "#17231f",
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    color: colors.text,
   },
 });

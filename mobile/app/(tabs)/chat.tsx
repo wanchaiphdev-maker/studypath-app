@@ -12,7 +12,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { api } from "../../lib/api";
-import { useTheme } from "../../lib/theme";
+import { useTheme, colors, spacing, radius, font, shadow } from "../../lib/theme";
+import { Avatar, EmptyState } from "../../lib/ui";
 
 type Person = { id: string; name: string; themeColor: string };
 
@@ -134,7 +135,7 @@ export default function ChatScreen() {
           />
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>ยังไม่มีห้องสนทนา{"\n"}กดปุ่ม + เพื่อเริ่มคุยกับสมาชิก</Text>
+          <EmptyState icon="chatbubbles-outline" message="ยังไม่มีห้องสนทนา" sub="กดปุ่ม + เพื่อเริ่มคุยกับสมาชิก" />
         }
         renderItem={({ item }) => {
           const title = roomTitle(item, myId);
@@ -212,61 +213,62 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#f4f7f5" },
+  screen: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
   },
-  title: { fontSize: 24, fontWeight: "700", color: "#17231f" },
+  title: { ...font.h1 },
   addBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#147d64",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accent,
     alignItems: "center",
     justifyContent: "center",
   },
-  error: { color: "#b42318", paddingHorizontal: 16, marginBottom: 4 },
-  list: { paddingHorizontal: 16, paddingBottom: 24 },
-  empty: { color: "#6b7c76", textAlign: "center", paddingVertical: 32, lineHeight: 22 },
+  error: { color: colors.danger, paddingHorizontal: spacing.lg, marginBottom: spacing.xs },
+  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
   roomRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: "#e3eae7",
-    padding: 12,
-    marginBottom: 8,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    ...shadow.card,
   },
   roomPressed: { opacity: 0.6 },
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   avatarText: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  roomMain: { flex: 1, marginLeft: 12 },
+  empty: { ...font.label, textAlign: "center", paddingVertical: spacing.xl },
+  roomMain: { flex: 1, marginLeft: spacing.md },
   roomTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  roomName: { fontSize: 15, fontWeight: "600", color: "#17231f", flex: 1, marginRight: 8 },
-  roomTime: { fontSize: 11, color: "#8fa39c" },
-  roomPreview: { fontSize: 13, color: "#6b7c76", marginTop: 3 },
+  roomName: { ...font.title, flex: 1, marginRight: spacing.sm },
+  roomTime: { ...font.caption },
+  roomPreview: { ...font.label, marginTop: 2 },
   modalBackdrop: { flex: 1, backgroundColor: "#0009", justifyContent: "flex-end" },
   modalCard: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 16,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
     maxHeight: "80%",
   },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
-  modalTitle: { fontSize: 18, fontWeight: "700", color: "#17231f" },
-  memberRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10 },
-  memberName: { flex: 1, marginLeft: 12, fontSize: 15, color: "#17231f" },
+  modalTitle: { ...font.h3 },
+  memberRow: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.md },
+  memberName: { flex: 1, marginLeft: spacing.md, ...font.body },
 });
