@@ -49,8 +49,14 @@ router.delete("/:id", requireAuth("ADMIN"), async (req, res) => {
     await prisma.product.delete({ where: { id: String(req.params.id) } });
     res.sendStatus(204);
   } catch (error: any) {
-    if (error?.code === "P2003") return res.status(409).json({ error: "สินค้านี้ถูกบันทึกการขายแล้ว จึงลบไม่ได้" });
-    res.status(404).json({ error: "ไม่พบสินค้า" });
+    const code: string | undefined = error?.code;
+    // FK violation / record in use
+    if (code === "P2003" || code === "P2004" || /foreign key|violates/i.test(error?.message ?? "")) {
+      return res.status(409).json({ error: "สินค้านี้ถูกบันทึกการขายแล้ว จึงลบไม่ได้" });
+    }
+    if (code === "P2025") return res.status(404).json({ error: "ไม่พบสินค้า" });
+    console.error("[products:delete]", code, error?.message);
+    res.status(500).json({ error: "ลบสินค้าไม่สำเร็จ", code });
   }
 });
 
