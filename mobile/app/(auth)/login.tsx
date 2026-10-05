@@ -10,14 +10,17 @@ import {
   View,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import * as WebBrowser from "expo-web-browser";
 import { router } from "expo-router";
 import { login } from "../../lib/api";
+import { appReturnUrl, buildGoogleAuthUrl, parseAuthCallback } from "../../lib/googleAuth";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   useEffect(() => {
     SecureStore.getItemAsync("token")
@@ -35,6 +38,29 @@ export default function LoginScreen() {
       setError(cause instanceof Error ? cause.message : "เข้าสู่ระบบไม่สำเร็จ");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function googleSignIn() {
+    setGoogleBusy(true);
+    setError("");
+    try {
+      const returnUrl = appReturnUrl();
+      const result = await WebBrowser.openAuthSessionAsync(buildGoogleAuthUrl(), returnUrl);
+      if (result.type === "success") {
+        const cb = parseAuthCallback(result.url);
+        if (cb?.token) {
+          await SecureStore.setItemAsync("token", cb.token);
+          router.replace("/(tabs)");
+        } else if (cb?.error) {
+          setError(cb.error);
+        }
+      }
+      // ถ้าแอปถูกเปิดใหม่ (cold start) token จะถูกจัดการเองที่ _layout.tsx
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "เข้าสู่ระบบด้วย Google ไม่สำเร็จ");
+    } finally {
+      setGoogleBusy(false);
     }
   }
 
@@ -78,6 +104,27 @@ export default function LoginScreen() {
         >
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>}
         </Pressable>
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>หรือ</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={busy || googleBusy}
+          onPress={googleSignIn}
+          style={({ pressed }) => [
+            styles.googleButton,
+            (pressed || busy || googleBusy) && styles.buttonDimmed,
+          ]}
+        >
+          <View style={styles.googleBadge}>
+            <Text style={styles.googleBadgeText}>G</Text>
+          </View>
+          <Text style={styles.googleText}>เข้าสู่ระบบด้วย Google</Text>
+        </Pressable>
       </View>
     </KeyboardAvoidingView>
   );
@@ -108,4 +155,28 @@ const styles = StyleSheet.create({
   },
   buttonDimmed: { opacity: 0.55 },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  divider: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "#cbd6d1" },
+  dividerText: { color: "#64748b", fontSize: 13 },
+  googleButton: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#cbd6d1",
+  },
+  googleBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#4285F4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  googleBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700", lineHeight: 15 },
+  googleText: { color: "#17231f", fontSize: 16, fontWeight: "600" },
 });

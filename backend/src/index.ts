@@ -5,7 +5,7 @@ import cors from "cors";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { AccessToken } from "livekit-server-sdk";
-import { prisma, login, requireAuth } from "./auth";
+import { prisma, login, googleLogin, googleCallback, requireAuth } from "./auth";
 import sales from "./routes/sales";
 import team from "./routes/team";
 import contest from "./routes/contest";
@@ -20,6 +20,52 @@ const app = express(); app.use(cors(), express.json());
 app.get("/health", (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
 app.post("/auth/login", login);
+app.post("/auth/google", googleLogin);
+app.get("/auth/google/callback", googleCallback);
+
+// หน้า Privacy Policy / Terms สำหรับใช้เป็น URL ยืนยันใน Google OAuth consent screen
+const legalPage = (title: string, body: string) => `<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title} - Amway Team</title>
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.7;color:#0f172a;background:#f8fafc;margin:0;padding:32px 20px}
+main{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px}
+h1{font-size:22px;margin:0 0 6px}h2{font-size:17px;margin:26px 0 6px}
+p,li{font-size:15px;color:#334155}small{color:#64748b}
+</style></head><body><main>
+<h1>${title}</h1><small>ปรับปรุงล่าสุด: 5 ตุลาคม 2569 (2026)</small>
+${body}
+<p><small>แอป Amway Team</small></p>
+</main></body></html>`;
+
+app.get("/privacy", (_req, res) => res.type("html").send(legalPage("นโยบายความเป็นส่วนตัว", `
+<p>แอป Amway Team เก็บและใช้ข้อมูลของคุณดังต่อไปนี้</p>
+<h2>ข้อมูลที่เก็บ</h2>
+<ul>
+<li><b>ข้อมูลที่คุณบันทึกเอง</b> เช่น ชื่อ อีเมล เลขที่สมาชิก ข้อมูลการขาย และข้อความในแชท</li>
+<li><b>อีเมลและชื่อจากบัญชี Google</b> ใช้สำหรับเข้าสู่ระบบเท่านั้น เมื่อคุณกด "เข้าสู่ระบบด้้วย Google"</li>
+<li><b>รูปโปรไฟล์ (ถ้ามี)</b> จากบัญชี Google ของคุณ</li>
+</ul>
+<h2>วัตถุประสงค์</h2>
+<p>ใช้เพื่อให้แอปทำงานได้แก่ แสดงสินค้า ยอดขาย ตารางทีม การประชุมทางวิดีโอ และแชทภายในทีมเท่านั้น</p>
+<h2>การแชร์ข้อมูล</h2>
+<p>เราไม่ขายข้อมูลของคุณ ข้อมูลถูกเก็บบนเซิร์ฟเวอร์ที่เราดูแล (Render) และฐานข้อมูล PostgreSQL (Neon) ซึ่งเข้ารหัสขณะส่งข้อมูล</p>
+<h2>การลบข้อมูล</h2>
+<p>หากต้องการให้ลบบัญชีและข้อมูลทั้งหมด ติดต่อแอดมินของทีมคุณ</p>
+`)));
+
+app.get("/terms", (_req, res) => res.type("html").send(legalPage("ข้อกำหนดการใช้งาน", `
+<h2>การใช้งาน</h2>
+<p>แอปนี้จัดทำสำหรับสมาชิกในทีมเพื่อใช้บริหารงานขายและประสานงานภายในทีม</p>
+<h2>บัญชีของคุณ</h2>
+<p>คุณรับผิดชอบต่อการเข้าสู่ระบบของตุณเอง และต้องไม่แชร์รหัสผ่านหรือบัญชีให้ผู้อื่น</p>
+<h2>ข้อมูลที่ถูกต้อง</h2>
+<p>ข้อมูลยอดขายและรายได้ที่บันทึกในแอปควรเป็นข้อมูลจริง เพื่อผลประโยชน์ของตัวคุณและทีม</p>
+<h2>การเปลี่ยนแปลง</h2>
+<p>เราอาจปรับปรุงข้อกำหนดเหล่านี้ได้ และจะแจ้งให้ทราบในแอป</p>
+`)));
+
 app.use("/sales", sales);
 app.use("/team", team);
 app.use("/contest", contest);
