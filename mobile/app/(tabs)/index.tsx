@@ -18,8 +18,23 @@ type Status = {
 };
 
 type Goal = { id: string; title: string; target: number; current: number; period: string };
+type NotificationItem = { id: string; title: string; body: string; type: string; read: boolean; createdAt: string };
 
 const money = (value: number) => `฿${Number(value).toLocaleString("th-TH")}`;
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "สวัสดีตอนเช้า";
+  if (h < 18) return "สวัสดีตอนบ่าย";
+  return "สวัสดีตอนเย็น";
+}
+
+const TIPS = [
+  "เริ่มต้นวันนี้ด้วยการติดต่อลูกค้าเก่า 1 คน",
+  "แชร์สินค้าที่คุณใช้จริงให้เพื่อนๆ ดู",
+  "ตั้งเป้าหมายเล็กๆ แล้วทำให้สำเร็จทุกวัน",
+  "เรียนรู้สินค้าใหม่ 1 รายการ จะช่วยปิดการขายได้ดีขึ้น",
+];
 
 export default function Dashboard() {
   const { color } = useTheme();
@@ -27,6 +42,8 @@ export default function Dashboard() {
   const [rows, setRows] = useState<Row[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [meName, setMeName] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,11 +51,15 @@ export default function Dashboard() {
       api<Row[]>("/sales/summary?by=month"),
       api<Status>("/me/status").catch(() => null),
       api<Goal[]>("/goals").catch(() => []),
+      api<{ name: string }>("/me").catch(() => null),
+      api<NotificationItem[]>("/notifications").catch(() => []),
     ])
-      .then(([salesRows, meStatus, goalsData]) => {
+      .then(([salesRows, meStatus, goalsData, meData, notifData]) => {
         setRows(salesRows);
         setStatus(meStatus);
         setGoals(goalsData);
+        setMeName(meData?.name ?? "");
+        setNotifications(notifData);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -50,6 +71,21 @@ export default function Dashboard() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      {/* Greeting */}
+      <View style={styles.greeting}>
+        <View>
+          <Text style={styles.greetingText}>
+            {greeting()} {meName ? `คุณ${meName.split(" ")[0]}` : ""}
+          </Text>
+          <Text style={styles.greetingDate}>
+            {new Date().toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+          </Text>
+        </View>
+        <View style={styles.greetingBadge}>
+          <Ionicons name="sunny-outline" size={22} color={color} />
+        </View>
+      </View>
+
       {/* การ์ดหลัก */}
       <View style={[styles.hero, { backgroundColor: color }]}>
         <View style={styles.heroTop}>
@@ -123,6 +159,35 @@ export default function Dashboard() {
           </Pressable>
         ))}
       </View>
+
+      {/* แจ้งเตือน */}
+      {notifications.length > 0 ? (
+        <>
+          <SectionHeader title="แจ้งเตือน" />
+          <View style={styles.list}>
+            {notifications.slice(0, 3).map((item) => (
+              <Card key={item.id} style={styles.notifCard}>
+                <View style={styles.notifHeader}>
+                  <View style={[styles.notifIcon, { backgroundColor: color + "1a" }]}>
+                    <Ionicons
+                      name={item.type === "promo" ? "gift-outline" : item.type === "event" ? "calendar-outline" : "information-circle-outline"}
+                      size={16}
+                      color={color}
+                    />
+                  </View>
+                  <Text style={styles.notifTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  {!item.read ? <View style={styles.notifDot} /> : null}
+                </View>
+                <Text style={styles.notifBody} numberOfLines={2}>
+                  {item.body}
+                </Text>
+              </Card>
+            ))}
+          </View>
+        </>
+      ) : null}
 
       {/* เป้าหมาย */}
       {goals.length > 0 ? (
@@ -198,6 +263,25 @@ export default function Dashboard() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  greeting: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.lg,
+  },
+  greetingText: { ...font.h2 },
+  greetingDate: { ...font.caption, marginTop: 2 },
+  greetingBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.card,
+  },
   hero: {
     borderRadius: radius.xl,
     padding: spacing.xl,
@@ -256,6 +340,18 @@ const styles = StyleSheet.create({
   },
   goalBarFill: { height: 8, borderRadius: 4 },
   goalMeta: { ...font.caption, marginTop: spacing.sm },
+  notifCard: { padding: spacing.lg, marginBottom: spacing.md },
+  notifHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: spacing.xs },
+  notifIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notifTitle: { ...font.title, flex: 1 },
+  notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger },
+  notifBody: { ...font.label },
   list: { gap: spacing.md },
   rowCard: { padding: spacing.lg },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
