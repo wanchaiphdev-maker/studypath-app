@@ -16,6 +16,7 @@ import customers from "./routes/customers";
 import news from "./routes/news";
 import events from "./routes/events";
 import goals from "./routes/goals";
+import notifications from "./routes/notifications";
 import { canAccessRoom } from "./services/access";
 
 const app = express(); app.use(cors(), express.json());
@@ -83,6 +84,7 @@ app.use("/customers", customers);
 app.use("/news", news);
 app.use("/events", events);
 app.use("/goals", goals);
+app.use("/notifications", notifications);
 
 // โปรไฟล์ของตัวเอง
 app.get("/me", requireAuth(), async (req: any, res) => {
