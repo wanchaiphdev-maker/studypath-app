@@ -50,6 +50,10 @@ export default function MoreScreen() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerNote, setCustomerNote] = useState("");
+  const [newsOpen, setNewsOpen] = useState(false);
+  const [eventsOpen, setEventsOpen] = useState(false);
+  const [selectedNewsId, setSelectedNewsId] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -230,60 +234,148 @@ export default function MoreScreen() {
 
       {/* ข่าวสาร / โปรโมชั่น */}
       <Text style={styles.section}>ข่าวสารและโปรโมชั่น</Text>
+      <Pressable accessibilityRole="button" onPress={() => setNewsOpen(true)} style={styles.sectionAction}>
+        <Ionicons name="gift-outline" size={16} color={color} />
+        <Text style={styles.sectionActionText}>ดูข่าวทั้งหมด ({news.length})</Text>
+      </Pressable>
       {news.length === 0 ? (
         <EmptyState icon="newspaper-outline" message="ยังไม่มีข่าวสาร" />
       ) : (
-        <View style={styles.list}>
-          {news.map((item) => (
-            <Card key={item.id} style={styles.newsCard}>
-              <View style={styles.newsHeader}>
-                <Ionicons name="megaphone-outline" size={16} color={color} />
-                <Text style={styles.newsTitle} numberOfLines={1}>
-                  {item.title}
-                </Text>
-              </View>
-              <Text style={styles.newsBody} numberOfLines={2}>
-                {item.body}
-              </Text>
-            </Card>
-          ))}
-        </View>
+        <Modal visible={newsOpen} transparent animationType="fade" onRequestClose={() => setNewsOpen(false)}>
+          <View style={styles.backdrop}>
+            <View style={styles.dialog}>
+              <Text style={styles.dialogTitle}>ข่าวและโปรโมชั่น</Text>
+              <ScrollView style={{ maxHeight: 400 }}>
+
+{/* --- แท็บเมนูข่าว --- */}
+                <View style={styles.newsTabs}>
+                  {news.map((item) => (
+                    <Pressable
+                      key={item.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.title}
+                      onPress={() => setSelectedNewsId(item.id)}
+                      style={[
+                        styles.newsTab,
+                        { backgroundColor: selectedNewsId === item.id ? color : colors.surface },
+                      ]}
+                    >
+                      <Text style={[
+                        styles.newsTabLabel,
+                        { color: selectedNewsId === item.id ? colors.text : colors.textMuted },
+                      ]}>
+                        {item.title}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+{/* --- เนื้อหาข่าวที่เลือก --- */}
+                {selectedNewsId && news.filter(n => n.id === selectedNewsId).length > 0 ? (
+                  <View style={styles.newsDetail}>
+                    {news.filter(n => n.id === selectedNewsId).map((item) => (
+                      <Card key={item.id} style={styles.newsCard}>
+                        <View style={styles.newsHeader}>
+                          <Ionicons name="megaphone-outline" size={16} color={color} />
+                          <Text style={styles.newsTitle} numberOfLines={1}>
+                            {item.title}
+                          </Text>
+                        </View>
+                        <Text style={styles.newsBody} numberOfLines={2}>
+                          {item.body}
+                        </Text>
+                      </Card>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={{ padding: 20 }}>
+                    <Text style={styles.body}>เลือกข่าวจากแท็บด้านบน</Text>
+                  </View>
+                )}
+
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       )}
 
       {/* กิจกรรม */}
       <Text style={styles.section}>กิจกรรมที่กำลังจะมาถึง</Text>
+      <Pressable accessibilityRole="button" onPress={() => setEventsOpen(true)} style={styles.sectionAction}>
+        <Ionicons name="calendar-outline" size={16} color={color} />
+        <Text style={styles.sectionActionText}>ดูกิจกรรมทั้งหมด ({events.length})</Text>
+      </Pressable>
       {events.length === 0 ? (
         <EmptyState icon="calendar-outline" message="ยังไม่มีกิจกรรม" />
       ) : (
-        <View style={styles.list}>
-          {events.map((item) => (
-            <Card key={item.id} style={styles.newsCard}>
-              <View style={styles.newsHeader}>
-                <Ionicons name="calendar-outline" size={16} color={color} />
-                <Text style={styles.newsTitle} numberOfLines={1}>
-                  {item.title}
-                </Text>
-              </View>
-              {item.description ? (
-                <Text style={styles.newsBody} numberOfLines={2}>
-                  {item.description}
-                </Text>
-              ) : null}
-              <View style={styles.eventMeta}>
-                <Ionicons name="time-outline" size={13} color={colors.textMuted} />
-                <Text style={styles.eventMetaText}>
-                  {new Date(item.startsAt).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}
-                </Text>
-                {item.location ? (
-                  <>
-                    <Ionicons name="location-outline" size={13} color={colors.textMuted} />
-                    <Text style={styles.eventMetaText}>{item.location}</Text>
-                  </>
-                ) : null}
-              </View>
-            </Card>
-          ))}
-        </View>
+        <Modal visible={eventsOpen} transparent animationType="fade" onRequestClose={() => setEventsOpen(false)}>
+          <View style={styles.backdrop}>
+            <View style={styles.dialog}>
+              <Text style={styles.dialogTitle}>กิจกรรมที่กำลังจะมาถึง</Text>
+              <ScrollView style={{ maxHeight: 400 }}>
+
+{/* --- แท็บเมนูกิจกรรม --- */}
+                <View style={styles.eventsTabs}>
+                  {events.map((item) => (
+                    <Pressable
+                      key={item.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.title}
+                      onPress={() => setSelectedEventId(item.id)}
+                      style={[
+                        styles.eventsTab,
+                        { backgroundColor: selectedEventId === item.id ? color : colors.surface },
+                      ]}
+                    >
+                      <Text style={[
+                        styles.eventsTabLabel,
+                        { color: selectedEventId === item.id ? colors.text : colors.textMuted },
+                      ]}>
+                        {item.title}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+{/* --- เนื้อหากิจกรรมที่เลือก --- */}
+                {selectedEventId && events.filter(e => e.id === selectedEventId).length > 0 ? (
+                  <View style={styles.eventsDetail}>
+                    {events.filter(e => e.id === selectedEventId).map((item) => (
+                      <Card key={item.id} style={styles.newsCard}>
+                        <View style={styles.newsHeader}>
+                          <Ionicons name="calendar-outline" size={16} color={color} />
+                          <Text style={styles.newsTitle} numberOfLines={1}>
+                            {item.title}
+                          </Text>
+                        </View>
+                        <Text style={styles.newsBody} numberOfLines={2}>
+                          {item.description ?? "ไม่มีรายละเอียด"}
+                        </Text>
+                        {item.location ? (
+                          <View style={styles.eventMeta}>
+                            <Ionicons name="location-outline" size={13} color={colors.textMuted} />
+                            <Text style={styles.eventMetaText}>{item.location}</Text>
+                          </View>
+                        ) : null}
+                        <View style={styles.eventMeta}>
+                          <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+                          <Text style={styles.eventMetaText}>
+                            {new Date(item.startsAt).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}
+                          </Text>
+                        </View>
+                      </Card>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={{ padding: 20 }}>
+                    <Text style={styles.body}>เลือกกิจกรรมจากแท็บด้านบน</Text>
+                  </View>
+                )}
+
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       )}
 
       {/* นัดประชุม */}
@@ -442,6 +534,17 @@ export default function MoreScreen() {
 }
 
 const styles = StyleSheet.create({
+    // News/Events tab menus
+    newsTabs: { flexDirection: "row", padding: 8, backgroundColor: colors.surface, borderRadius: 20, overflow: "hidden" },
+    newsTab: { flex: 1, padding: 8, margin: 2, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+    newsTabLabel: { fontSize: 11, fontWeight: "600" },
+    newsDetail: { padding: 16 },
+    newsCard: { marginBottom: 12, },
+    eventsTabs: { flexDirection: "row", padding: 8, backgroundColor: colors.surface, borderRadius: 20, overflow: "hidden" },
+    eventsTab: { flex: 1, padding: 8, margin: 2, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+    eventsTabLabel: { fontSize: 11, fontWeight: "600" },
+    eventsDetail: { padding: 16 },
+    eventsCard: { marginBottom: 12, },
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },

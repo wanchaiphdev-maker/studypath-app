@@ -14,10 +14,12 @@ const TAB_CONFIG: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: 
 };
 
 function CustomTabBar({ state, navigation }: any) {
-  const { color } = useTheme();
+  const theme = useTheme();
+  const color = theme?.color ?? colors.accent;
+  const routes = state?.routes ?? [];
   return (
     <View style={styles.tabBar}>
-      {state.routes.map((route: any, index: number) => {
+      {routes.map((route: any, index: number) => {
         const isFocused = state.index === index;
         const config = TAB_CONFIG[route.name] ?? { icon: "ellipse-outline" as const, label: route.name };
         const isHome = route.name === "index";
