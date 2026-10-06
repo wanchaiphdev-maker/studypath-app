@@ -33,4 +33,21 @@ r.get("/history", requireAuth(), async (req: any, res) =>
   res.json(await prisma.sale.findMany({
     where: { userId: req.user.id }, include: { items: { include: { product: true } } },
     orderBy: { date: "desc" }, take: 100 })));
+
+// การขายล่าสุด (สำหรับหน้าหลัก)
+r.get("/recent", requireAuth(), async (req: any, res) => {
+  const sales = await prisma.sale.findMany({
+    where: { userId: req.user.id },
+    orderBy: { date: "desc" },
+    take: 10,
+    include: { items: { select: { qty: true } } },
+  });
+  res.json(sales.map((s) => ({
+    id: s.id,
+    date: s.date.toISOString(),
+    totalAmount: Number(s.totalAmount),
+    totalPV: Number(s.totalPV),
+    itemCount: s.items.reduce((a: number, i: any) => a + i.qty, 0),
+  })));
+});
 export default r;

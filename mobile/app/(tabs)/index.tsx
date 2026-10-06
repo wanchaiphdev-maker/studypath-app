@@ -19,6 +19,7 @@ type Status = {
 
 type Goal = { id: string; title: string; target: number; current: number; period: string };
 type NotificationItem = { id: string; title: string; body: string; type: string; read: boolean; createdAt: string };
+type RecentSale = { id: string; date: string; totalAmount: number; totalPV: number; itemCount: number };
 
 const money = (value: number) => `฿${Number(value).toLocaleString("th-TH")}`;
 
@@ -44,6 +45,7 @@ export default function Dashboard() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
   const [meName, setMeName] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -54,13 +56,15 @@ export default function Dashboard() {
       api<Goal[]>("/goals").catch(() => []),
       api<{ name: string }>("/me").catch(() => null),
       api<NotificationItem[]>("/notifications").catch(() => []),
+      api<RecentSale[]>("/sales/recent").catch(() => []),
     ])
-      .then(([salesRows, meStatus, goalsData, meData, notifData]) => {
+      .then(([salesRows, meStatus, goalsData, meData, notifData, recentData]) => {
         setRows(salesRows);
         setStatus(meStatus);
         setGoals(goalsData);
         setMeName(meData?.name ?? "");
         setNotifications(notifData);
+        setRecentSales(recentData);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -195,6 +199,32 @@ export default function Dashboard() {
                 <Text style={styles.notifBody} numberOfLines={2}>
                   {item.body}
                 </Text>
+              </Card>
+            ))}
+          </View>
+        </>
+      ) : null}
+
+      {/* กิจกรรมล่าสุด */}
+      {recentSales.length > 0 ? (
+        <>
+          <SectionHeader title="กิจกรรมล่าสุด" />
+          <View style={styles.list}>
+            {recentSales.slice(0, 5).map((sale) => (
+              <Card key={sale.id} style={styles.activityCard}>
+                <View style={styles.activityIcon}>
+                  <Ionicons name="receipt-outline" size={18} color={color} />
+                </View>
+                <View style={styles.activityInfo}>
+                  <Text style={styles.activityTitle}>บันทึกการขาย</Text>
+                  <Text style={styles.activityMeta}>
+                    {new Date(sale.date).toLocaleDateString("th-TH", { day: "numeric", month: "short" })} · {sale.itemCount} รายการ
+                  </Text>
+                </View>
+                <View style={styles.activityRight}>
+                  <Text style={styles.activityAmount}>{money(sale.totalAmount)}</Text>
+                  <Text style={styles.activityPV}>{Number(sale.totalPV).toLocaleString("th-TH")} PV</Text>
+                </View>
               </Card>
             ))}
           </View>
@@ -433,6 +463,21 @@ const styles = StyleSheet.create({
   notifTitle: { ...font.title, flex: 1 },
   notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger },
   notifBody: { ...font.label },
+  activityCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, marginBottom: spacing.sm },
+  activityIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activityInfo: { flex: 1 },
+  activityTitle: { ...font.title },
+  activityMeta: { ...font.caption, marginTop: 2 },
+  activityRight: { alignItems: "flex-end" },
+  activityAmount: { ...font.title },
+  activityPV: { ...font.caption, marginTop: 2 },
   list: { gap: spacing.md },
   rowCard: { padding: spacing.lg },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
