@@ -105,24 +105,38 @@ export default function TeamScreen() {
       }
       ListEmptyComponent={<EmptyState icon="people-outline" message="ยังไม่มีสมาชิกในสายงาน" />}
       renderItem={({ item }) => (
-        <View style={styles.row}>
-          <Avatar name={item.name} color={item.themeColor} size={44} />
-          <View style={styles.rowMain}>
-            <View style={styles.rowNameLine}>
-              <Text style={styles.name} numberOfLines={1}>
-                {item.name}
+        <Card style={styles.row}>
+          <View style={styles.rowTop}>
+            <Avatar name={item.name} color={item.themeColor} size={48} />
+            <View style={styles.rowMain}>
+              <View style={styles.rowNameLine}>
+                <Text style={styles.name} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <Pill text={ROLE_LABEL[item.role]} />
+              </View>
+              <Text style={styles.meta} numberOfLines={1}>
+                {money(item.group.downlineCount)} คนใต้บังคับบัญชา
               </Text>
-              <Pill text={ROLE_LABEL[item.role]} />
             </View>
-            <Text style={styles.meta} numberOfLines={1}>
-              {money(item.group.downlineCount)} คนใต้บังคับบัญชา
-            </Text>
           </View>
-          <View style={styles.rowRight}>
-            <Text style={styles.amount}>฿{money(item.group.amount)}</Text>
-            <Text style={styles.pv}>{money(item.group.pv)} PV</Text>
+          <View style={styles.rowStats}>
+            <View style={styles.rowStat}>
+              <Text style={styles.rowStatValue}>฿{money(item.personal.amount)}</Text>
+              <Text style={styles.rowStatLabel}>ส่วนตัว</Text>
+            </View>
+            <View style={styles.rowStatDivider} />
+            <View style={styles.rowStat}>
+              <Text style={styles.rowStatValue}>฿{money(item.group.amount)}</Text>
+              <Text style={styles.rowStatLabel}>ทีม</Text>
+            </View>
+            <View style={styles.rowStatDivider} />
+            <View style={styles.rowStat}>
+              <Text style={styles.rowStatValue}>{money(item.group.pv)}</Text>
+              <Text style={styles.rowStatLabel}>PV</Text>
+            </View>
           </View>
-        </View>
+        </Card>
       )}
     />
   );
@@ -142,21 +156,29 @@ const styles = StyleSheet.create({
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
   section: { ...font.h3 },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
+    padding: spacing.lg,
     marginBottom: spacing.md,
     ...shadow.card,
   },
-  rowMain: { flex: 1, marginLeft: spacing.md },
+  rowTop: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  rowMain: { flex: 1 },
   rowNameLine: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   name: { ...font.title, flexShrink: 1 },
   meta: { ...font.caption, marginTop: 2 },
-  rowRight: { alignItems: "flex-end" },
-  amount: { ...font.title },
-  pv: { ...font.caption, marginTop: 2 },
+  rowStats: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  rowStat: { flex: 1, alignItems: "center" },
+  rowStatDivider: { width: 1, height: 24, backgroundColor: colors.border },
+  rowStatValue: { ...font.title },
+  rowStatLabel: { ...font.caption, marginTop: 2 },
 });
