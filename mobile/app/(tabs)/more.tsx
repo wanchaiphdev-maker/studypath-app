@@ -6,7 +6,7 @@ import * as SecureStore from "expo-secure-store";
 import { api } from "../../lib/api";
 import { closeSocket } from "../../lib/socket";
 import { useTheme, colors, spacing, radius, font, shadow } from "../../lib/theme";
-import { Avatar, Card, Pill } from "../../lib/ui";
+import { Avatar, Card, Pill, EmptyState } from "../../lib/ui";
 
 type Me = {
   id: string;
@@ -15,6 +15,9 @@ type Me = {
   role: "ADMIN" | "LEADER" | "MEMBER";
   themeColor: string;
 };
+
+type NewsItem = { id: string; title: string; body: string; createdAt: string };
+type EventItem = { id: string; title: string; description: string | null; location: string | null; startsAt: string };
 
 const ROLE_LABEL: Record<Me["role"], string> = {
   ADMIN: "แอดมิน",
@@ -27,13 +30,22 @@ const COLORS = ["#2563eb", "#147d64", "#7c3aed", "#db2777", "#ea580c", "#0891b2"
 export default function MoreScreen() {
   const { color, setColor } = useTheme();
   const [me, setMe] = useState<Me | null>(null);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [events, setEvents] = useState<EventItem[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setMe(await api<Me>("/me"));
+      const [meData, newsData, eventsData] = await Promise.all([
+        api<Me>("/me"),
+        api<NewsItem[]>("/news").catch(() => []),
+        api<EventItem[]>("/events").catch(() => []),
+      ]);
+      setMe(meData);
+      setNews(newsData);
+      setEvents(eventsData);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "โหลดโปรไฟล์ไม่สำเร็จ");
@@ -129,6 +141,64 @@ export default function MoreScreen() {
         </View>
       </Card>
 
+      {/* ข่าวสาร / โปรโมชั่น */}
+      <Text style={styles.section}>ข่าวสารและโปรโมชั่น</Text>
+      {news.length === 0 ? (
+        <EmptyState icon="newspaper-outline" message="ยังไม่มีข่าวสาร" />
+      ) : (
+        <View style={styles.list}>
+          {news.map((item) => (
+            <Card key={item.id} style={styles.newsCard}>
+              <View style={styles.newsHeader}>
+                <Ionicons name="megaphone-outline" size={16} color={color} />
+                <Text style={styles.newsTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+              </View>
+              <Text style={styles.newsBody} numberOfLines={2}>
+                {item.body}
+              </Text>
+            </Card>
+          ))}
+        </View>
+      )}
+
+      {/* กิจกรรม */}
+      <Text style={styles.section}>กิจกรรมที่กำลังจะมาถึง</Text>
+      {events.length === 0 ? (
+        <EmptyState icon="calendar-outline" message="ยังไม่มีกิจกรรม" />
+      ) : (
+        <View style={styles.list}>
+          {events.map((item) => (
+            <Card key={item.id} style={styles.newsCard}>
+              <View style={styles.newsHeader}>
+                <Ionicons name="calendar-outline" size={16} color={color} />
+                <Text style={styles.newsTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+              </View>
+              {item.description ? (
+                <Text style={styles.newsBody} numberOfLines={2}>
+                  {item.description}
+                </Text>
+              ) : null}
+              <View style={styles.eventMeta}>
+                <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+                <Text style={styles.eventMetaText}>
+                  {new Date(item.startsAt).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}
+                </Text>
+                {item.location ? (
+                  <>
+                    <Ionicons name="location-outline" size={13} color={colors.textMuted} />
+                    <Text style={styles.eventMetaText}>{item.location}</Text>
+                  </>
+                ) : null}
+              </View>
+            </Card>
+          ))}
+        </View>
+      )}
+
       {/* ออกจากระบบ */}
       <Pressable accessibilityRole="button" onPress={logout} style={styles.logoutBtn}>
         <Ionicons name="log-out-outline" size={18} color={colors.danger} />
@@ -174,4 +244,11 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: colors.danger, fontWeight: "700", fontSize: 15 },
   footer: { ...font.caption, textAlign: "center", marginTop: spacing.xxl },
+  list: { gap: spacing.md, marginBottom: spacing.xl },
+  newsCard: { padding: spacing.lg, marginBottom: 0 },
+  newsHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: spacing.xs },
+  newsTitle: { ...font.title, flex: 1 },
+  newsBody: { ...font.label },
+  eventMeta: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: spacing.sm },
+  eventMetaText: { ...font.caption },
 });
