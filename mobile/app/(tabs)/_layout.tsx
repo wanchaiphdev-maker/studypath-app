@@ -1,71 +1,121 @@
 import { Tabs } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme, colors, spacing } from "../../lib/theme";
 
-export default function TabsLayout() {
-  const { color } = useTheme();
+const HOME_BLUE = "#4A90D9";
 
+const TAB_CONFIG: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
+  team: { icon: "people-outline", label: "ทีม" },
+  index: { icon: "home", label: "หน้าหลัก" },
+  chat: { icon: "chatbubbles-outline", label: "แชท" },
+  more: { icon: "person-circle-outline", label: "โปรไฟล์" },
+};
+
+function CustomTabBar({ state, navigation }: any) {
+  const { color } = useTheme();
+  return (
+    <View style={styles.tabBar}>
+      {state.routes.map((route: any, index: number) => {
+        const isFocused = state.index === index;
+        const config = TAB_CONFIG[route.name] ?? { icon: "ellipse-outline" as const, label: route.name };
+        const isHome = route.name === "index";
+
+        if (isHome) {
+          return (
+            <Pressable
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityLabel="หน้าหลัก"
+              onPress={() => navigation.navigate(route.name)}
+              style={styles.centerWrap}
+            >
+              <View style={[styles.centerButton, isFocused && styles.centerButtonActive]}>
+                <Ionicons name="home" size={30} color="#fff" />
+              </View>
+              <Text style={[styles.centerLabel, { color: isFocused ? HOME_BLUE : colors.textMuted }]}>
+                หน้าหลัก
+              </Text>
+            </Pressable>
+          );
+        }
+
+        return (
+          <Pressable
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityLabel={config.label}
+            onPress={() => navigation.navigate(route.name)}
+            style={styles.tab}
+          >
+            <Ionicons name={config.icon} size={24} color={isFocused ? color : colors.textMuted} />
+            <Text style={[styles.tabLabel, { color: isFocused ? color : colors.textMuted }]}>
+              {config.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+export default function TabsLayout() {
   return (
     <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: color,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 6,
-          paddingTop: 6,
-        },
-      }}
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <CustomTabBar {...props} />}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "ภาพรวม",
-          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="products"
-        options={{
-          title: "สินค้า",
-          tabBarIcon: ({ color, size }) => <Ionicons name="pricetag-outline" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="team"
-        options={{
-          title: "ทีม",
-          tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="customers"
-        options={{
-          title: "ลูกค้า",
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: "แชท",
-          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles-outline" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="more"
-        options={{
-          title: "โปรไฟล์",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-circle-outline" color={color} size={size} />
-          ),
-        }}
-      />
+      <Tabs.Screen name="team" />
+      <Tabs.Screen name="index" />
+      <Tabs.Screen name="chat" />
+      <Tabs.Screen name="more" />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    height: 76,
+    paddingBottom: 8,
+    paddingHorizontal: spacing.sm,
+  },
+  tab: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingBottom: 4,
+    gap: 2,
+  },
+  tabLabel: { fontSize: 11, fontWeight: "600" },
+  centerWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingBottom: 4,
+  },
+  centerButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: HOME_BLUE,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
+    shadowColor: HOME_BLUE,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 3,
+    borderColor: colors.surface,
+  },
+  centerButtonActive: {
+    transform: [{ scale: 1.08 }],
+  },
+  centerLabel: { fontSize: 11, fontWeight: "700" },
+});
