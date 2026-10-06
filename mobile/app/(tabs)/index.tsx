@@ -237,6 +237,34 @@ export default function Dashboard() {
         </>
       ) : null}
 
+      {/* สรุปทีม */}
+      {teamSummary ? (
+        <>
+          <SectionHeader title="สรุปทีมเดือนนี้" />
+          <Card style={styles.teamCard}>
+            <View style={styles.teamRow}>
+              <View style={styles.teamItem}>
+                <Ionicons name="people-outline" size={20} color={color} />
+                <Text style={styles.teamValue}>{teamSummary.members}</Text>
+                <Text style={styles.teamLabel}>สมาชิก</Text>
+              </View>
+              <View style={styles.teamDivider} />
+              <View style={styles.teamItem}>
+                <Ionicons name="cash-outline" size={20} color={color} />
+                <Text style={styles.teamValue}>{money(teamSummary.totalAmount)}</Text>
+                <Text style={styles.teamLabel}>ยอดขาย</Text>
+              </View>
+              <View style={styles.teamDivider} />
+              <View style={styles.teamItem}>
+                <Ionicons name="star-outline" size={20} color={color} />
+                <Text style={styles.teamValue}>{Number(teamSummary.totalPV).toLocaleString("th-TH")}</Text>
+                <Text style={styles.teamLabel}>PV</Text>
+              </View>
+            </View>
+          </Card>
+        </>
+      ) : null}
+
       {/* กิจกรรมล่าสุด */}
       {recentSales.length > 0 ? (
         <>
