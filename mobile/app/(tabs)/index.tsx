@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { api } from "../../lib/api";
@@ -43,6 +43,7 @@ export default function Dashboard() {
   const [status, setStatus] = useState<Status | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [meName, setMeName] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -70,7 +71,8 @@ export default function Dashboard() {
   const avg = rows.length ? total / rows.length : 0;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <>
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {/* Greeting */}
       <View style={styles.greeting}>
         <View>
@@ -81,9 +83,19 @@ export default function Dashboard() {
             {new Date().toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </Text>
         </View>
-        <View style={styles.greetingBadge}>
-          <Ionicons name="sunny-outline" size={22} color={color} />
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="แจ้งเตือน"
+          onPress={() => setNotifOpen(true)}
+          style={styles.greetingBadge}
+        >
+          <Ionicons name="notifications-outline" size={22} color={color} />
+          {notifications.filter((n) => !n.read).length > 0 ? (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>{notifications.filter((n) => !n.read).length}</Text>
+            </View>
+          ) : null}
+        </Pressable>
       </View>
 
       {/* การ์ดหลัก */}
@@ -257,6 +269,47 @@ export default function Dashboard() {
         </View>
       )}
     </ScrollView>
+
+    {/* รายการแจ้งเตือน */}
+    <Modal visible={notifOpen} transparent animationType="slide" onRequestClose={() => setNotifOpen(false)}>
+      <View style={styles.sheetBackdrop}>
+        <View style={styles.sheet}>
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>แจ้งเตือน</Text>
+            <Pressable accessibilityRole="button" onPress={() => setNotifOpen(false)}>
+              <Ionicons name="close" size={24} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+          {notifications.length === 0 ? (
+            <EmptyState icon="notifications-outline" message="ยังไม่มีแจ้งเตือน" />
+          ) : (
+            <ScrollView>
+              {notifications.map((item) => (
+                <Card key={item.id} style={styles.notifCard}>
+                  <View style={styles.notifHeader}>
+                    <View style={[styles.notifIcon, { backgroundColor: color + "1a" }]}>
+                      <Ionicons
+                        name={item.type === "promo" ? "gift-outline" : item.type === "event" ? "calendar-outline" : "information-circle-outline"}
+                        size={16}
+                        color={color}
+                      />
+                    </View>
+                    <Text style={styles.notifTitle} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    {!item.read ? <View style={styles.notifDot} /> : null}
+                  </View>
+                  <Text style={styles.notifBody} numberOfLines={2}>
+                    {item.body}
+                  </Text>
+                </Card>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -282,6 +335,34 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     ...shadow.card,
   },
+  bellBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.danger,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  bellBadgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  sheetBackdrop: { flex: 1, backgroundColor: "#0009", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
+    maxHeight: "80%",
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  sheetTitle: { ...font.h2 },
   hero: {
     borderRadius: radius.xl,
     padding: spacing.xl,
