@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -18,6 +18,7 @@ type Me = {
 
 type NewsItem = { id: string; title: string; body: string; createdAt: string };
 type EventItem = { id: string; title: string; description: string | null; location: string | null; startsAt: string };
+type MeetingItem = { id: string; title: string; startsAt: string; hostId: string; groupId: string | null };
 
 const ROLE_LABEL: Record<Me["role"], string> = {
   ADMIN: "แอดมิน",
@@ -32,20 +33,26 @@ export default function MoreScreen() {
   const [me, setMe] = useState<Me | null>(null);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [meetingOpen, setMeetingOpen] = useState(false);
+  const [meetingTitle, setMeetingTitle] = useState("");
+  const [meetingDate, setMeetingDate] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [meData, newsData, eventsData] = await Promise.all([
+      const [meData, newsData, eventsData, meetingsData] = await Promise.all([
         api<Me>("/me"),
         api<NewsItem[]>("/news").catch(() => []),
         api<EventItem[]>("/events").catch(() => []),
+        api<MeetingItem[]>("/meetings").catch(() => []),
       ]);
       setMe(meData);
       setNews(newsData);
       setEvents(eventsData);
+      setMeetings(meetingsData);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "โหลดโปรไฟล์ไม่สำเร็จ");
@@ -92,6 +99,27 @@ export default function MoreScreen() {
       },
     ]);
   }, []);
+
+  const createMeeting = useCallback(async () => {
+    if (saving || !meetingTitle.trim() || !meetingDate.trim()) return;
+    setSaving(true);
+    try {
+      const startsAt = new Date(meetingDate);
+      if (!Number.isFinite(startsAt.getTime())) throw new Error("วันที่ไม่ถูกต้อง");
+      await api("/meetings", {
+        method: "POST",
+        body: JSON.stringify({ title: meetingTitle, startsAt: startsAt.toISOString() }),
+      });
+      setMeetingOpen(false);
+      setMeetingTitle("");
+      setMeetingDate("");
+      await load();
+    } catch (cause) {
+      Alert.alert("สร้างประชุมไม่สำเร็จ", cause instanceof Error ? cause.message : "ลองใหม่อีกครั้ง");
+    } finally {
+      setSaving(false);
+    }
+  }, [meetingTitle, meetingDate, load, saving]);
 
   if (loading) {
     return (
@@ -199,6 +227,40 @@ export default function MoreScreen() {
         </View>
       )}
 
+      {/* นัดประชุม */}
+      <View style={styles.sectionRow}>
+        <Text style={styles.section}>นัดประชุม</Text>
+        {me?.role !== "MEMBER" ? (
+          <Pressable accessibilityRole="button" onPress={() => setMeetingOpen(true)} style={styles.sectionAction}>
+            <Ionicons name="add" size={16} color={color} />
+            <Text style={styles.sectionActionText}>สร้าง</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      {meetings.length === 0 ? (
+        <EmptyState icon="videocam-outline" message="ยังไม่มีการนัดประชุม" />
+      ) : (
+        <View style={styles.list}>
+          {meetings.map((item) => (
+            <Card key={item.id} style={styles.newsCard}>
+              <View style={styles.newsHeader}>
+                <Ionicons name="videocam-outline" size={16} color={color} />
+                <Text style={styles.newsTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+              </View>
+              <View style={styles.eventMeta}>
+                <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+                <Text style={styles.eventMetaText}>
+                  {new Date(item.startsAt).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}{" "}
+                  {new Date(item.startsAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                </Text>
+              </View>
+            </Card>
+          ))}
+        </View>
+      )}
+
       {/* ออกจากระบบ */}
       <Pressable accessibilityRole="button" onPress={logout} style={styles.logoutBtn}>
         <Ionicons name="log-out-outline" size={18} color={colors.danger} />
@@ -206,6 +268,40 @@ export default function MoreScreen() {
       </Pressable>
 
       <Text style={styles.footer}>Amway Team</Text>
+
+      {/* สร้างการนัดประชุม */}
+      <Modal visible={meetingOpen} transparent animationType="fade" onRequestClose={() => setMeetingOpen(false)}>
+        <View style={styles.backdrop}>
+          <View style={styles.dialog}>
+            <Text style={styles.dialogTitle}>สร้างการนัดประชุม</Text>
+            <TextInput
+              placeholder="หัวข้อประชุม"
+              value={meetingTitle}
+              onChangeText={setMeetingTitle}
+              style={styles.input}
+            />
+            <TextInput
+              placeholder="วันและเวลา เช่น 2026-10-10 14:00"
+              value={meetingDate}
+              onChangeText={setMeetingDate}
+              style={styles.input}
+            />
+            <View style={styles.dialogActions}>
+              <Pressable accessibilityRole="button" onPress={() => setMeetingOpen(false)} style={styles.ghostBtn}>
+                <Text style={styles.ghostText}>ยกเลิก</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={saving || !meetingTitle.trim() || !meetingDate.trim()}
+                onPress={() => void createMeeting()}
+                style={[styles.primaryBtn, { backgroundColor: color }]}
+              >
+                <Text style={styles.primaryText}>{saving ? "กำลังสร้าง..." : "สร้าง"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -251,4 +347,24 @@ const styles = StyleSheet.create({
   newsBody: { ...font.label },
   eventMeta: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: spacing.sm },
   eventMetaText: { ...font.caption },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  sectionAction: { flexDirection: "row", alignItems: "center", gap: 4 },
+  sectionActionText: { fontSize: 13, fontWeight: "600", color: colors.accent },
+  backdrop: { flex: 1, backgroundColor: "#0009", alignItems: "center", justifyContent: "center", padding: spacing.lg },
+  dialog: { width: "100%", maxWidth: 400, backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, gap: spacing.md, ...shadow.raised },
+  dialogTitle: { ...font.h3 },
+  dialogActions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm, marginTop: spacing.sm },
+  ghostBtn: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.md },
+  ghostText: { color: colors.textSecondary, fontWeight: "600" },
+  primaryBtn: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: "center" },
+  primaryText: { color: "#fff", fontWeight: "700" },
+  input: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    color: colors.text,
+  },
 });

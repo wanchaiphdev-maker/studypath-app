@@ -60,9 +60,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="more"
         options={{
-          title: "เพิ่มเติม",
+          title: "โปรไฟล์",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="ellipsis-horizontal-circle-outline" color={color} size={size} />
+            <Ionicons name="person-circle-outline" color={color} size={size} />
           ),
         }}
       />
