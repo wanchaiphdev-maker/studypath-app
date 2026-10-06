@@ -20,6 +20,7 @@ type Status = {
 type Goal = { id: string; title: string; target: number; current: number; period: string };
 type NotificationItem = { id: string; title: string; body: string; type: string; read: boolean; createdAt: string };
 type RecentSale = { id: string; date: string; totalAmount: number; totalPV: number; itemCount: number };
+type TeamSummary = { members: number; totalAmount: number; totalPV: number };
 
 const money = (value: number) => `฿${Number(value).toLocaleString("th-TH")}`;
 
@@ -46,6 +47,7 @@ export default function Dashboard() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
+  const [teamSummary, setTeamSummary] = useState<TeamSummary | null>(null);
   const [meName, setMeName] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -57,14 +59,16 @@ export default function Dashboard() {
       api<{ name: string }>("/me").catch(() => null),
       api<NotificationItem[]>("/notifications").catch(() => []),
       api<RecentSale[]>("/sales/recent").catch(() => []),
+      api<TeamSummary>("/team/summary").catch(() => null),
     ])
-      .then(([salesRows, meStatus, goalsData, meData, notifData, recentData]) => {
+      .then(([salesRows, meStatus, goalsData, meData, notifData, recentData, teamData]) => {
         setRows(salesRows);
         setStatus(meStatus);
         setGoals(goalsData);
         setMeName(meData?.name ?? "");
         setNotifications(notifData);
         setRecentSales(recentData);
+        setTeamSummary(teamData);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -202,6 +206,34 @@ export default function Dashboard() {
               </Card>
             ))}
           </View>
+        </>
+      ) : null}
+
+      {/* สรุปทีม */}
+      {teamSummary ? (
+        <>
+          <SectionHeader title="สรุปทีมเดือนนี้" />
+          <Card style={styles.teamCard}>
+            <View style={styles.teamRow}>
+              <View style={styles.teamItem}>
+                <Ionicons name="people-outline" size={20} color={color} />
+                <Text style={styles.teamValue}>{teamSummary.members}</Text>
+                <Text style={styles.teamLabel}>สมาชิก</Text>
+              </View>
+              <View style={styles.teamDivider} />
+              <View style={styles.teamItem}>
+                <Ionicons name="cash-outline" size={20} color={color} />
+                <Text style={styles.teamValue}>{money(teamSummary.totalAmount)}</Text>
+                <Text style={styles.teamLabel}>ยอดขาย</Text>
+              </View>
+              <View style={styles.teamDivider} />
+              <View style={styles.teamItem}>
+                <Ionicons name="star-outline" size={20} color={color} />
+                <Text style={styles.teamValue}>{Number(teamSummary.totalPV).toLocaleString("th-TH")}</Text>
+                <Text style={styles.teamLabel}>PV</Text>
+              </View>
+            </View>
+          </Card>
         </>
       ) : null}
 
@@ -478,6 +510,12 @@ const styles = StyleSheet.create({
   activityRight: { alignItems: "flex-end" },
   activityAmount: { ...font.title },
   activityPV: { ...font.caption, marginTop: 2 },
+  teamCard: { marginBottom: spacing.xl },
+  teamRow: { flexDirection: "row", alignItems: "center" },
+  teamItem: { flex: 1, alignItems: "center", gap: 4 },
+  teamDivider: { width: 1, height: 36, backgroundColor: colors.border },
+  teamValue: { ...font.h3 },
+  teamLabel: { ...font.caption },
   list: { gap: spacing.md },
   rowCard: { padding: spacing.lg },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },

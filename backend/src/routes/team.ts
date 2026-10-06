@@ -66,4 +66,24 @@ router.get("/income", requireAuth("LEADER", "ADMIN"), async (req: any, res) => {
   return res.json(member ?? null);
 });
 
+// สรุปทีมสำหรับหน้าหลัก
+router.get("/summary", requireAuth(), async (req: any, res) => {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const members = await prisma.user.findMany({
+    where: { id: req.user.id },
+    select: { id: true },
+  });
+  const memberIds = members.map((m) => m.id);
+  const sales = await prisma.sale.findMany({
+    where: { userId: { in: memberIds }, date: { gte: from } },
+    select: { totalAmount: true, totalPV: true },
+  });
+  res.json({
+    members: memberIds.length,
+    totalAmount: sales.reduce((a, s) => a + Number(s.totalAmount), 0),
+    totalPV: sales.reduce((a, s) => a + Number(s.totalPV), 0),
+  });
+});
+
 export default router;
