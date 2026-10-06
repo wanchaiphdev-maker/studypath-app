@@ -52,6 +52,8 @@ export default function MoreScreen() {
   const [customerNote, setCustomerNote] = useState("");
   const [newsOpen, setNewsOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
+  const [meetingsOpen, setMeetingsOpen] = useState(false);
+  const [customersOpen, setCustomersOpen] = useState(false);
   const [selectedNewsId, setSelectedNewsId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
@@ -232,220 +234,255 @@ export default function MoreScreen() {
         </View>
       </Card>
 
-      {/* ข่าวสาร / โปรโมชั่น */}
-      <Text style={styles.section}>ข่าวสารและโปรโมชั่น</Text>
-      <Pressable accessibilityRole="button" onPress={() => setNewsOpen(true)} style={styles.sectionAction}>
-        <Ionicons name="gift-outline" size={16} color={color} />
-        <Text style={styles.sectionActionText}>ดูข่าวทั้งหมด ({news.length})</Text>
-      </Pressable>
-      {news.length === 0 ? (
-        <EmptyState icon="newspaper-outline" message="ยังไม่มีข่าวสาร" />
-      ) : (
-        <Modal visible={newsOpen} transparent animationType="fade" onRequestClose={() => setNewsOpen(false)}>
-          <View style={styles.backdrop}>
-            <View style={styles.dialog}>
-              <Text style={styles.dialogTitle}>ข่าวและโปรโมชั่น</Text>
-              <ScrollView style={{ maxHeight: 400 }}>
-
-{/* --- แท็บเมนูข่าว --- */}
-                <View style={styles.newsTabs}>
-                  {news.map((item) => (
-                    <Pressable
-                      key={item.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={item.title}
-                      onPress={() => setSelectedNewsId(item.id)}
-                      style={[
-                        styles.newsTab,
-                        { backgroundColor: selectedNewsId === item.id ? color : colors.surface },
-                      ]}
-                    >
-                      <Text style={[
-                        styles.newsTabLabel,
-                        { color: selectedNewsId === item.id ? colors.text : colors.textMuted },
-                      ]}>
-                        {item.title}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-{/* --- เนื้อหาข่าวที่เลือก --- */}
-                {selectedNewsId && news.filter(n => n.id === selectedNewsId).length > 0 ? (
-                  <View style={styles.newsDetail}>
-                    {news.filter(n => n.id === selectedNewsId).map((item) => (
-                      <Card key={item.id} style={styles.newsCard}>
-                        <View style={styles.newsHeader}>
-                          <Ionicons name="megaphone-outline" size={16} color={color} />
-                          <Text style={styles.newsTitle} numberOfLines={1}>
-                            {item.title}
-                          </Text>
-                        </View>
-                        <Text style={styles.newsBody} numberOfLines={2}>
-                          {item.body}
-                        </Text>
-                      </Card>
-                    ))}
-                  </View>
-                ) : (
-                  <View style={{ padding: 20 }}>
-                    <Text style={styles.body}>เลือกข่าวจากแท็บด้านบน</Text>
-                  </View>
-                )}
-
-              </ScrollView>
-            </View>
+      {/* ข่าวสาร / โปรโมชั่น — เมนูย่อ กดเพื่อดูทีละอัน */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`ข่าวสารและโปรโมชั่น ${news.length} รายการ`}
+        onPress={() => setNewsOpen((v) => !v)}
+        style={styles.accHeader}
+      >
+        <View style={styles.accLeft}>
+          <View style={[styles.accIcon, { backgroundColor: color + "1a" }]}>
+            <Ionicons name="megaphone-outline" size={18} color={color} />
           </View>
-        </Modal>
-      )}
-
-      {/* กิจกรรม */}
-      <Text style={styles.section}>กิจกรรมที่กำลังจะมาถึง</Text>
-      <Pressable accessibilityRole="button" onPress={() => setEventsOpen(true)} style={styles.sectionAction}>
-        <Ionicons name="calendar-outline" size={16} color={color} />
-        <Text style={styles.sectionActionText}>ดูกิจกรรมทั้งหมด ({events.length})</Text>
-      </Pressable>
-      {events.length === 0 ? (
-        <EmptyState icon="calendar-outline" message="ยังไม่มีกิจกรรม" />
-      ) : (
-        <Modal visible={eventsOpen} transparent animationType="fade" onRequestClose={() => setEventsOpen(false)}>
-          <View style={styles.backdrop}>
-            <View style={styles.dialog}>
-              <Text style={styles.dialogTitle}>กิจกรรมที่กำลังจะมาถึง</Text>
-              <ScrollView style={{ maxHeight: 400 }}>
-
-{/* --- แท็บเมนูกิจกรรม --- */}
-                <View style={styles.eventsTabs}>
-                  {events.map((item) => (
-                    <Pressable
-                      key={item.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={item.title}
-                      onPress={() => setSelectedEventId(item.id)}
-                      style={[
-                        styles.eventsTab,
-                        { backgroundColor: selectedEventId === item.id ? color : colors.surface },
-                      ]}
-                    >
-                      <Text style={[
-                        styles.eventsTabLabel,
-                        { color: selectedEventId === item.id ? colors.text : colors.textMuted },
-                      ]}>
-                        {item.title}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-{/* --- เนื้อหากิจกรรมที่เลือก --- */}
-                {selectedEventId && events.filter(e => e.id === selectedEventId).length > 0 ? (
-                  <View style={styles.eventsDetail}>
-                    {events.filter(e => e.id === selectedEventId).map((item) => (
-                      <Card key={item.id} style={styles.newsCard}>
-                        <View style={styles.newsHeader}>
-                          <Ionicons name="calendar-outline" size={16} color={color} />
-                          <Text style={styles.newsTitle} numberOfLines={1}>
-                            {item.title}
-                          </Text>
-                        </View>
-                        <Text style={styles.newsBody} numberOfLines={2}>
-                          {item.description ?? "ไม่มีรายละเอียด"}
-                        </Text>
-                        {item.location ? (
-                          <View style={styles.eventMeta}>
-                            <Ionicons name="location-outline" size={13} color={colors.textMuted} />
-                            <Text style={styles.eventMetaText}>{item.location}</Text>
-                          </View>
-                        ) : null}
-                        <View style={styles.eventMeta}>
-                          <Ionicons name="time-outline" size={13} color={colors.textMuted} />
-                          <Text style={styles.eventMetaText}>
-                            {new Date(item.startsAt).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}
-                          </Text>
-                        </View>
-                      </Card>
-                    ))}
-                  </View>
-                ) : (
-                  <View style={{ padding: 20 }}>
-                    <Text style={styles.body}>เลือกกิจกรรมจากแท็บด้านบน</Text>
-                  </View>
-                )}
-
-              </ScrollView>
-            </View>
+          <View style={styles.accTextBox}>
+            <Text style={styles.accTitle}>ข่าวสารและโปรโมชั่น</Text>
+            <Text style={styles.accSub} numberOfLines={1}>
+              {news.length === 0
+                ? "ยังไม่มีข่าวสาร"
+                : `${news.length} รายการ`}
+            </Text>
           </View>
-        </Modal>
-      )}
+        </View>
+        <Ionicons name={newsOpen ? "chevron-up" : "chevron-down"} size={20} color={colors.textMuted} />
+      </Pressable>
+      {newsOpen ? (
+        news.length === 0 ? (
+          <EmptyState icon="newspaper-outline" message="ยังไม่มีข่าวสาร" />
+        ) : (
+          <View style={styles.accBody}>
+            {news.map((item, idx) => (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={item.title}
+                onPress={() => setSelectedNewsId(selectedNewsId === item.id ? null : item.id)}
+                style={styles.accRow}
+              >
+                <View style={styles.accRowTop}>
+                  <View style={[styles.accDot, { backgroundColor: idx === 0 ? color : colors.border }]} />
+                  <Text style={[styles.accRowTitle, selectedNewsId === item.id && { color }]} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <Ionicons
+                    name={selectedNewsId === item.id ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color={colors.textMuted}
+                  />
+                </View>
+                {selectedNewsId === item.id ? (
+                  <Text style={styles.accRowBody}>{item.body}</Text>
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+        )
+      ) : null}
 
-      {/* นัดประชุม */}
-      <View style={styles.sectionRow}>
-        <Text style={styles.section}>นัดประชุม</Text>
-        {me?.role !== "MEMBER" ? (
-          <Pressable accessibilityRole="button" onPress={() => setMeetingOpen(true)} style={styles.sectionAction}>
-            <Ionicons name="add" size={16} color={color} />
-            <Text style={styles.sectionActionText}>สร้าง</Text>
+      {/* กิจกรรม — เมนูย่อ กดเพื่อดูทีละอัน */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`กิจกรรมที่กำลังจะมาถึง ${events.length} รายการ`}
+        onPress={() => setEventsOpen((v) => !v)}
+        style={styles.accHeader}
+      >
+        <View style={styles.accLeft}>
+          <View style={[styles.accIcon, { backgroundColor: color + "1a" }]}>
+            <Ionicons name="calendar-outline" size={18} color={color} />
+          </View>
+          <View style={styles.accTextBox}>
+            <Text style={styles.accTitle}>กิจกรรมที่กำลังจะมาถึง</Text>
+            <Text style={styles.accSub} numberOfLines={1}>
+              {events.length === 0
+                ? "ยังไม่มีกิจกรรม"
+                : events[0]
+                  ? new Date(events[0].startsAt).toLocaleDateString("th-TH", { day: "numeric", month: "short" })
+                  : `${events.length} รายการ`}
+            </Text>
+          </View>
+        </View>
+        <Ionicons name={eventsOpen ? "chevron-up" : "chevron-down"} size={20} color={colors.textMuted} />
+      </Pressable>
+      {eventsOpen ? (
+        events.length === 0 ? (
+          <EmptyState icon="calendar-outline" message="ยังไม่มีกิจกรรม" />
+        ) : (
+          <View style={styles.accBody}>
+            {events.map((item) => (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={item.title}
+                onPress={() => setSelectedEventId(selectedEventId === item.id ? null : item.id)}
+                style={styles.accRow}
+              >
+                <View style={styles.accRowTop}>
+                  <View style={[styles.accDot, { backgroundColor: color }]} />
+                  <Text style={[styles.accRowTitle, selectedEventId === item.id && { color }]} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <Ionicons
+                    name={selectedEventId === item.id ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color={colors.textMuted}
+                  />
+                </View>
+                {selectedEventId === item.id ? (
+                  <View>
+                    {item.description ? <Text style={styles.accRowBody}>{item.description}</Text> : null}
+                    <View style={styles.accMetaRow}>
+                      <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                      <Text style={styles.accMetaText}>
+                        {new Date(item.startsAt).toLocaleDateString("th-TH", {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })}{" "}
+                        {new Date(item.startsAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                      </Text>
+                    </View>
+                    {item.location ? (
+                      <View style={styles.accMetaRow}>
+                        <Ionicons name="location-outline" size={12} color={colors.textMuted} />
+                        <Text style={styles.accMetaText}>{item.location}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+        )
+      ) : null}
+
+      {/* นัดประชุม — เมนูย่อ */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`นัดประชุม ${meetings.length} รายการ`}
+        onPress={() => setMeetingsOpen((v) => !v)}
+        style={styles.accHeader}
+      >
+        <View style={styles.accLeft}>
+          <View style={[styles.accIcon, { backgroundColor: color + "1a" }]}>
+            <Ionicons name="videocam-outline" size={18} color={color} />
+          </View>
+          <View style={styles.accTextBox}>
+            <Text style={styles.accTitle}>นัดประชุม</Text>
+            <Text style={styles.accSub} numberOfLines={1}>
+              {meetings.length === 0 ? "ยังไม่มีการนัดประชุม" : `${meetings.length} รายการ`}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.accRight}>
+          {me?.role !== "MEMBER" ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="สร้างการนัดประชุม"
+              onPress={() => setMeetingOpen(true)}
+              hitSlop={8}
+              style={styles.accAddBtn}
+            >
+              <Ionicons name="add" size={18} color={color} />
+            </Pressable>
+          ) : null}
+          <Ionicons name={meetingsOpen ? "chevron-up" : "chevron-down"} size={20} color={colors.textMuted} />
+        </View>
+      </Pressable>
+      {meetingsOpen ? (
+        meetings.length === 0 ? (
+          <EmptyState icon="videocam-outline" message="ยังไม่มีการนัดประชุม" />
+        ) : (
+          <View style={styles.accBody}>
+            {meetings.map((item) => (
+              <View key={item.id} style={styles.accRowStatic}>
+                <View style={styles.accRowTop}>
+                  <View style={[styles.accDot, { backgroundColor: color }]} />
+                  <Text style={styles.accRowTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                </View>
+                <View style={styles.accMetaRow}>
+                  <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                  <Text style={styles.accMetaText}>
+                    {new Date(item.startsAt).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}{" "}
+                    {new Date(item.startsAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )
+      ) : null}
+
+      {/* ลูกค้า — เมนูย่อ */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`ลูกค้า ${customers.length} รายการ`}
+        onPress={() => setCustomersOpen((v) => !v)}
+        style={styles.accHeader}
+      >
+        <View style={styles.accLeft}>
+          <View style={[styles.accIcon, { backgroundColor: color + "1a" }]}>
+            <Ionicons name="people-outline" size={18} color={color} />
+          </View>
+          <View style={styles.accTextBox}>
+            <Text style={styles.accTitle}>ลูกค้า</Text>
+            <Text style={styles.accSub} numberOfLines={1}>
+              {customers.length === 0 ? "ยังไม่มีลูกค้า" : `${customers.length} คน`}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.accRight}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="เพิ่มลูกค้า"
+            onPress={() => setCustomerOpen(true)}
+            hitSlop={8}
+            style={styles.accAddBtn}
+          >
+            <Ionicons name="add" size={18} color={color} />
           </Pressable>
-        ) : null}
-      </View>
-      {meetings.length === 0 ? (
-        <EmptyState icon="videocam-outline" message="ยังไม่มีการนัดประชุม" />
-      ) : (
-        <View style={styles.list}>
-          {meetings.map((item) => (
-            <Card key={item.id} style={styles.newsCard}>
-              <View style={styles.newsHeader}>
-                <Ionicons name="videocam-outline" size={16} color={color} />
-                <Text style={styles.newsTitle} numberOfLines={1}>
-                  {item.title}
-                </Text>
-              </View>
-              <View style={styles.eventMeta}>
-                <Ionicons name="time-outline" size={13} color={colors.textMuted} />
-                <Text style={styles.eventMetaText}>
-                  {new Date(item.startsAt).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}{" "}
-                  {new Date(item.startsAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
-                </Text>
-              </View>
-            </Card>
-          ))}
+          <Ionicons name={customersOpen ? "chevron-up" : "chevron-down"} size={20} color={colors.textMuted} />
         </View>
-      )}
-
-      {/* ลูกค้า */}
-      <View style={styles.sectionRow}>
-        <Text style={styles.section}>ลูกค้า</Text>
-        <Pressable accessibilityRole="button" onPress={() => setCustomerOpen(true)} style={styles.sectionAction}>
-          <Ionicons name="add" size={16} color={color} />
-          <Text style={styles.sectionActionText}>เพิ่ม</Text>
-        </Pressable>
-      </View>
-      {customers.length === 0 ? (
-        <EmptyState icon="people-outline" message="ยังไม่มีลูกค้า" />
-      ) : (
-        <View style={styles.list}>
-          {customers.map((item) => (
-            <Card key={item.id} style={styles.customerRow}>
-              <Avatar name={item.name} color={color} size={40} />
-              <View style={styles.productInfo}>
-                <Text style={styles.productName} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                {item.phone ? (
-                  <Text style={styles.productMeta} numberOfLines={1}>
-                    {item.phone}
+      </Pressable>
+      {customersOpen ? (
+        customers.length === 0 ? (
+          <EmptyState icon="people-outline" message="ยังไม่มีลูกค้า" />
+        ) : (
+          <View style={styles.accBody}>
+            {customers.map((item) => (
+              <View key={item.id} style={styles.accRowStatic}>
+                <Avatar name={item.name} color={color} size={36} />
+                <View style={styles.accTextBox}>
+                  <Text style={styles.accRowTitle} numberOfLines={1}>
+                    {item.name}
                   </Text>
-                ) : null}
-                {item.note ? (
-                  <Text style={styles.customerNote} numberOfLines={1}>
-                    {item.note}
-                  </Text>
-                ) : null}
+                  {item.phone ? (
+                    <Text style={styles.accMetaText} numberOfLines={1}>
+                      {item.phone}
+                    </Text>
+                  ) : null}
+                  {item.note ? (
+                    <Text style={styles.customerNote} numberOfLines={1}>
+                      {item.note}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
-            </Card>
-          ))}
-        </View>
-      )}
+            ))}
+          </View>
+        )
+      ) : null}
 
       {/* ออกจากระบบ */}
       <Pressable accessibilityRole="button" onPress={logout} style={styles.logoutBtn}>
@@ -534,17 +571,60 @@ export default function MoreScreen() {
 }
 
 const styles = StyleSheet.create({
-    // News/Events tab menus
-    newsTabs: { flexDirection: "row", padding: 8, backgroundColor: colors.surface, borderRadius: 20, overflow: "hidden" },
-    newsTab: { flex: 1, padding: 8, margin: 2, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-    newsTabLabel: { fontSize: 11, fontWeight: "600" },
-    newsDetail: { padding: 16 },
-    newsCard: { marginBottom: 12, },
-    eventsTabs: { flexDirection: "row", padding: 8, backgroundColor: colors.surface, borderRadius: 20, overflow: "hidden" },
-    eventsTab: { flex: 1, padding: 8, margin: 2, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-    eventsTabLabel: { fontSize: 11, fontWeight: "600" },
-    eventsDetail: { padding: 16 },
-    eventsCard: { marginBottom: 12, },
+  // Accordion (เมนูย่อ/ขยาย)
+  accHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+    ...shadow.card,
+  },
+  accLeft: { flexDirection: "row", alignItems: "center", flex: 1, gap: spacing.md },
+  accRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  accIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  accTextBox: { flex: 1 },
+  accTitle: { ...font.title, fontSize: 15 },
+  accSub: { ...font.caption, marginTop: 1 },
+  accAddBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceAlt,
+  },
+  accBody: { marginBottom: spacing.lg, gap: spacing.sm },
+  accRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  accRowStatic: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  accRowTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  accDot: { width: 8, height: 8, borderRadius: 4 },
+  accRowTitle: { ...font.label, fontWeight: "600", color: colors.text, flex: 1 },
+  accRowBody: { ...font.body, color: colors.textSecondary, marginTop: spacing.sm },
+  accMetaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: spacing.xs },
+  accMetaText: { ...font.caption },
+
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
