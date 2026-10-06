@@ -12,6 +12,10 @@ import contest from "./routes/contest";
 import meetings from "./routes/meeting";
 import products from "./routes/products";
 import chat from "./routes/chat";
+import customers from "./routes/customers";
+import news from "./routes/news";
+import events from "./routes/events";
+import goals from "./routes/goals";
 import { canAccessRoom } from "./services/access";
 
 const app = express(); app.use(cors(), express.json());
@@ -75,6 +79,10 @@ app.use("/contest", contest);
 app.use("/meetings", meetings);
 app.use("/products", products);
 app.use("/chat", chat);
+app.use("/customers", customers);
+app.use("/news", news);
+app.use("/events", events);
+app.use("/goals", goals);
 
 // โปรไฟล์ของตัวเอง
 app.get("/me", requireAuth(), async (req: any, res) => {
@@ -102,6 +110,32 @@ app.patch("/me", requireAuth(), async (req: any, res) => {
     where: { id: req.user.id },
     select: { id: true, name: true, email: true, role: true, themeColor: true, avatarUrl: true, groupId: true },
   }));
+});
+
+// สถานะธุรกิจของฉัน: ระดับ + PV ส่วนตัว/ทีม + ลูกค้า + เป้าหมาย
+app.get("/me/status", requireAuth(), async (req: any, res) => {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const [user, customerCount, goalCount] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { rank: true, role: true, name: true },
+    }),
+    prisma.customer.count({ where: { ownerId: req.user.id } }),
+    prisma.goal.count({ where: { userId: req.user.id } }),
+  ]);
+  const personal = await prisma.sale.aggregate({
+    where: { userId: req.user.id, date: { gte: from } },
+    _sum: { totalPV: true, totalAmount: true },
+  });
+  res.json({
+    rank: user?.rank ?? "สมาชิก",
+    role: user?.role,
+    personalPV: Number(personal._sum.totalPV ?? 0),
+    personalAmount: Number(personal._sum.totalAmount ?? 0),
+    customerCount,
+    goalCount,
+  });
 });
 
 // LiveKit token (วิดีโอ/เสียง/ประชุม)

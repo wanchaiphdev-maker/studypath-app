@@ -98,12 +98,57 @@ async function main() {
     });
   }
 
+  // ข่าวสาร / โปรโมชั่น
+  const newsItems = [
+    { title: "โปรโมชั่นพิเศษประจำเดือน", body: "ซื้อ Nutrilite Daily Multivitamin 3 กล่อง แถม 1 กล่อง เฉพาะเดือนนี้เท่านั้น เริ่มต้นวันนี้ – สิ้นสุดสิ้นเดือน" },
+    { title: "เปิดตัวสินค้าใหม่ XS Energy", body: "XS Energy Drink รสซิตรัส เติมพลังสูตรใหม่ ลดน้ำตาล 0% พร้อมสั่งซื้อแล้ววันนี้" },
+    { title: "ฟรีค่าส่งทั่วประเทศ", body: "สั่งซื้อสินค้าครบ 2,000 บาท ฟรีค่าส่งทั่วประเทศ ไม่มีขั้นต่ำเพิ่มเติม" },
+  ];
+  for (const item of newsItems) {
+    const existing = await prisma.news.findFirst({ where: { title: item.title } });
+    if (!existing) await prisma.news.create({ data: item });
+  }
+
+  // กิจกรรม
+  const eventItems = [
+    { title: "ประชุมทีมประจำสัปดาห์", description: "ประชุมทีมออนไลน์ เพื่อทบทวนยอดขายและวางแผนสัปดาห์หน้า", location: "ห้องประชุมออนไลน์", startsAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) },
+    { title: "อบรมสินค้า Nutrilite", description: "อบรมเชิงปฏิบัติการเกี่ยวกับสินค้า Nutrilite สำหรับสมาชิกใหม่", location: "ศูนย์อบรม Amway", startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+  ];
+  for (const item of eventItems) {
+    const existing = await prisma.event.findFirst({ where: { title: item.title } });
+    if (!existing) await prisma.event.create({ data: item });
+  }
+
+  // เป้าหมายของหัวหน้าทีม
+  const goalItems = [
+    { title: "เป้าหมายยอดขายเดือนนี้", target: 50000, current: 12000, period: "monthly", userId: leader.id },
+    { title: "เป้าหมายสมาชิกใหม่", target: 10, current: 3, period: "monthly", userId: leader.id },
+  ];
+  for (const item of goalItems) {
+    const existing = await prisma.goal.findFirst({ where: { title: item.title, userId: item.userId } });
+    if (!existing) await prisma.goal.create({ data: item });
+  }
+
+  // ลูกค้าของหัวหน้าทีม
+  const customerItems = [
+    { name: "คุณแม่สมหญิง", phone: "081-234-5678", email: "", note: "ลูกค้าประจำ สั่ง Nutrilite ทุกเดือน", ownerId: leader.id },
+    { name: "คุณวิชัย", phone: "089-876-5432", email: "wichai@example.com", note: "สนใจสินค้าบำรุงผิว", ownerId: leader.id },
+  ];
+  for (const item of customerItems) {
+    const existing = await prisma.customer.findFirst({ where: { name: item.name, ownerId: item.ownerId } });
+    if (!existing) await prisma.customer.create({ data: item });
+  }
+
   const counts = {
     users: await prisma.user.count(),
     products: await prisma.product.count(),
     rooms: await prisma.room.count(),
     messages: await prisma.message.count(),
     groups: await prisma.group.count(),
+    news: await prisma.news.count(),
+    events: await prisma.event.count(),
+    goals: await prisma.goal.count(),
+    customers: await prisma.customer.count(),
   };
   console.log("seed complete:", JSON.stringify(counts));
   console.log("บัญชีทดสอบ (รหัสเดียวกันทุกคน):", DEMO_PASSWORD);
