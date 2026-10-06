@@ -19,7 +19,6 @@ type Me = {
 type NewsItem = { id: string; title: string; body: string; createdAt: string };
 type EventItem = { id: string; title: string; description: string | null; location: string | null; startsAt: string };
 type MeetingItem = { id: string; title: string; startsAt: string; hostId: string; groupId: string | null };
-type ProductItem = { id: string; name: string; price: number; pv: number; note: string | null };
 type CustomerItem = { id: string; name: string; phone: string | null; email: string | null; note: string | null };
 
 const ROLE_LABEL: Record<Me["role"], string> = {
@@ -36,7 +35,6 @@ export default function MoreScreen() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
-  const [products, setProducts] = useState<ProductItem[]>([]);
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -44,8 +42,6 @@ export default function MoreScreen() {
   const [meetingOpen, setMeetingOpen] = useState(false);
   const [meetingTitle, setMeetingTitle] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
-  const [picker, setPicker] = useState<ProductItem | null>(null);
-  const [qty, setQty] = useState(1);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -53,19 +49,17 @@ export default function MoreScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [meData, newsData, eventsData, meetingsData, productsData, customersData] = await Promise.all([
+      const [meData, newsData, eventsData, meetingsData, customersData] = await Promise.all([
         api<Me>("/me"),
         api<NewsItem[]>("/news").catch(() => []),
         api<EventItem[]>("/events").catch(() => []),
         api<MeetingItem[]>("/meetings").catch(() => []),
-        api<ProductItem[]>("/products").catch(() => []),
         api<CustomerItem[]>("/customers").catch(() => []),
       ]);
       setMe(meData);
       setNews(newsData);
       setEvents(eventsData);
       setMeetings(meetingsData);
-      setProducts(productsData);
       setCustomers(customersData);
       setError("");
     } catch (cause) {
@@ -134,24 +128,6 @@ export default function MoreScreen() {
       setSaving(false);
     }
   }, [meetingTitle, meetingDate, load, saving]);
-
-  const recordSale = useCallback(async () => {
-    if (!picker || saving) return;
-    setSaving(true);
-    try {
-      await api("/sales", {
-        method: "POST",
-        body: JSON.stringify({ items: [{ productId: picker.id, qty }] }),
-      });
-      setPicker(null);
-      setQty(1);
-      Alert.alert("บันทึกการขายแล้ว", `${picker.name} x ${qty}`);
-    } catch (cause) {
-      Alert.alert("บันทึกไม่สำเร็จ", cause instanceof Error ? cause.message : "ลองใหม่อีกครั้ง");
-    } finally {
-      setSaving(false);
-    }
-  }, [picker, qty, saving]);
 
   const createCustomer = useCallback(async () => {
     if (saving || !customerName.trim()) return;
@@ -313,36 +289,6 @@ export default function MoreScreen() {
         </View>
       )}
 
-      {/* สินค้า */}
-      <Text style={styles.section}>สินค้า</Text>
-      {products.length === 0 ? (
-        <EmptyState icon="pricetag-outline" message="ยังไม่มีสินค้า" />
-      ) : (
-        <View style={styles.list}>
-          {products.map((item) => (
-            <Pressable
-              key={item.id}
-              accessibilityRole="button"
-              onPress={() => {
-                setPicker(item);
-                setQty(1);
-              }}
-              style={styles.productRow}
-            >
-              <View style={styles.productInfo}>
-                <Text style={styles.productName} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Text style={styles.productMeta}>
-                  ฿{Number(item.price).toLocaleString("th-TH")} · {Number(item.pv).toLocaleString("th-TH")} PV
-                </Text>
-              </View>
-              <Ionicons name="add-circle-outline" size={24} color={color} />
-            </Pressable>
-          ))}
-        </View>
-      )}
-
       {/* ลูกค้า */}
       <View style={styles.sectionRow}>
         <Text style={styles.section}>ลูกค้า</Text>
@@ -414,43 +360,6 @@ export default function MoreScreen() {
                 style={[styles.primaryBtn, { backgroundColor: color }]}
               >
                 <Text style={styles.primaryText}>{saving ? "กำลังสร้าง..." : "สร้าง"}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* บันทึกการขาย */}
-      <Modal visible={!!picker} transparent animationType="fade" onRequestClose={() => setPicker(null)}>
-        <View style={styles.backdrop}>
-          <View style={styles.dialog}>
-            <Text style={styles.dialogTitle}>{picker?.name}</Text>
-            <Text style={styles.dialogMeta}>
-              {picker ? `฿${Number(picker.price).toLocaleString("th-TH")} · ${Number(picker.pv).toLocaleString("th-TH")} PV` : ""}
-            </Text>
-            <View style={styles.stepper}>
-              <Pressable accessibilityRole="button" onPress={() => setQty((q) => Math.max(1, q - 1))} style={styles.stepBtn}>
-                <Ionicons name="remove" size={20} color={colors.text} />
-              </Pressable>
-              <Text style={styles.qty}>{qty}</Text>
-              <Pressable accessibilityRole="button" onPress={() => setQty((q) => q + 1)} style={styles.stepBtn}>
-                <Ionicons name="add" size={20} color={colors.text} />
-              </Pressable>
-            </View>
-            {picker ? (
-              <Text style={styles.total}>รวม ฿{Number(Number(picker.price) * qty).toLocaleString("th-TH")}</Text>
-            ) : null}
-            <View style={styles.dialogActions}>
-              <Pressable accessibilityRole="button" onPress={() => setPicker(null)} style={styles.ghostBtn}>
-                <Text style={styles.ghostText}>ยกเลิก</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                disabled={saving}
-                onPress={() => void recordSale()}
-                style={[styles.primaryBtn, { backgroundColor: color }]}
-              >
-                <Text style={styles.primaryText}>{saving ? "กำลังบันทึก..." : "บันทึกการขาย"}</Text>
               </Pressable>
             </View>
           </View>
@@ -579,17 +488,4 @@ const styles = StyleSheet.create({
   customerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, marginBottom: 0 },
   customerNote: { ...font.caption, marginTop: 2 },
   dialogMeta: { ...font.label },
-  stepper: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.lg, marginVertical: spacing.sm },
-  stepBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surfaceAlt,
-  },
-  qty: { fontSize: 20, fontWeight: "700", color: colors.text, minWidth: 40, textAlign: "center" },
-  total: { ...font.title, textAlign: "center" },
 });

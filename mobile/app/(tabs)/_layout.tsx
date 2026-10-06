@@ -7,8 +7,9 @@ const HOME_BLUE = "#4A90D9";
 
 const TAB_CONFIG: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
   team: { icon: "people-outline", label: "ทีม" },
-  index: { icon: "home", label: "หน้าหลัก" },
   chat: { icon: "chatbubbles-outline", label: "แชท" },
+  index: { icon: "home", label: "หน้าหลัก" },
+  products: { icon: "pricetag-outline", label: "สินค้า" },
   more: { icon: "person-circle-outline", label: "โปรไฟล์" },
 };
 
@@ -31,7 +32,7 @@ function CustomTabBar({ state, navigation }: any) {
               style={styles.centerWrap}
             >
               <View style={[styles.centerButton, isFocused && styles.centerButtonActive]}>
-                <Ionicons name="home" size={30} color="#fff" />
+                <Ionicons name="home" size={32} color="#fff" />
               </View>
               <Text style={[styles.centerLabel, { color: isFocused ? HOME_BLUE : colors.textMuted }]}>
                 หน้าหลัก
@@ -48,7 +49,7 @@ function CustomTabBar({ state, navigation }: any) {
             onPress={() => navigation.navigate(route.name)}
             style={styles.tab}
           >
-            <Ionicons name={config.icon} size={24} color={isFocused ? color : colors.textMuted} />
+            <Ionicons name={config.icon} size={26} color={isFocused ? color : colors.textMuted} />
             <Text style={[styles.tabLabel, { color: isFocused ? color : colors.textMuted }]}>
               {config.label}
             </Text>
@@ -66,8 +67,9 @@ export default function TabsLayout() {
       tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tabs.Screen name="team" />
-      <Tabs.Screen name="index" />
       <Tabs.Screen name="chat" />
+      <Tabs.Screen name="index" />
+      <Tabs.Screen name="products" />
       <Tabs.Screen name="more" />
     </Tabs>
   );
@@ -80,32 +82,32 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    height: 76,
-    paddingBottom: 8,
+    height: 84,
+    paddingBottom: 10,
     paddingHorizontal: spacing.sm,
   },
   tab: {
     flex: 1,
     alignItems: "center",
     justifyContent: "flex-end",
-    paddingBottom: 4,
-    gap: 2,
+    paddingBottom: 6,
+    gap: 3,
   },
-  tabLabel: { fontSize: 11, fontWeight: "600" },
+  tabLabel: { fontSize: 12, fontWeight: "600" },
   centerWrap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "flex-end",
-    paddingBottom: 4,
+    paddingBottom: 6,
   },
   centerButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: HOME_BLUE,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 18,
+    marginBottom: 20,
     shadowColor: HOME_BLUE,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
@@ -117,5 +119,5 @@ const styles = StyleSheet.create({
   centerButtonActive: {
     transform: [{ scale: 1.08 }],
   },
-  centerLabel: { fontSize: 11, fontWeight: "700" },
+  centerLabel: { fontSize: 12, fontWeight: "700" },
 });
