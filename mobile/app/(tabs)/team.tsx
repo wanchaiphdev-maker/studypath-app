@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { api } from "../../lib/api";
 import { useTheme, colors, spacing, radius, font, shadow } from "../../lib/theme";
 import { Avatar, Card, EmptyState, Pill } from "../../lib/ui";
@@ -97,6 +100,23 @@ export default function TeamScreen() {
               </Text>
             </View>
           ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="ดูประกวดและกระดานจัดอันดับ"
+            onPress={() => router.push("/contest")}
+            style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
+          >
+            <View style={[styles.contestRow, { backgroundColor: color + "12", borderColor: color + "33" }]}>
+              <View style={[styles.contestIcon, { backgroundColor: color }]}>
+                <Ionicons name="trophy" size={18} color="#fff" />
+              </View>
+              <View style={styles.contestInfo}>
+                <Text style={styles.contestTitle}>ประกวด &amp; กระดานจัดอันดับ</Text>
+                <Text style={styles.contestSub}>ดูอันดับยอดขายของทีม</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={color} />
+            </View>
+          </Pressable>
           <View style={styles.sectionRow}>
             <Text style={styles.section}>รายชื่อสมาชิก</Text>
             <Pill text={`${members.length} คน`} />
@@ -154,6 +174,19 @@ const styles = StyleSheet.create({
   cardSub: { color: "#ffffffe6", fontSize: 13, marginTop: 2 },
   cardDivider: { height: 1, backgroundColor: "#ffffff40", marginVertical: spacing.md },
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  contestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  contestIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  contestInfo: { flex: 1, gap: 1 },
+  contestTitle: { ...font.label, fontWeight: "700", color: colors.text },
+  contestSub: { ...font.caption },
   section: { ...font.h3 },
   row: {
     backgroundColor: colors.surface,

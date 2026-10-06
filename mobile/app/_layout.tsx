@@ -49,6 +49,8 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat/[id]" />
         <Stack.Screen name="call/[room]" />
+        <Stack.Screen name="contest/index" />
+        <Stack.Screen name="contest/[id]" />
       </Stack>
     </ThemeProvider>
   );

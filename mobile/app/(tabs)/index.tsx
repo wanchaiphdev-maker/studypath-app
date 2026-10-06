@@ -165,6 +165,7 @@ export default function Dashboard() {
           { icon: "person-add-outline" as const, label: "เพิ่มลูกค้า", route: "/more" },
           { icon: "calendar-outline" as const, label: "นัดประชุม", route: "/more" },
           { icon: "chatbubbles-outline" as const, label: "แชททีม", route: "/chat" },
+          { icon: "trophy-outline" as const, label: "ประกวด", route: "/contest" },
         ].map((action) => (
           <Pressable
             key={action.label}
