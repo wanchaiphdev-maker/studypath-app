@@ -20,6 +20,7 @@ type NewsItem = { id: string; title: string; body: string; createdAt: string };
 type EventItem = { id: string; title: string; description: string | null; location: string | null; startsAt: string };
 type MeetingItem = { id: string; title: string; startsAt: string; hostId: string; groupId: string | null };
 type CustomerItem = { id: string; name: string; phone: string | null; email: string | null; note: string | null };
+type IncomeData = { personal: { amount: number; pv: number }; group: { amount: number; pv: number; downlineCount: number } };
 
 const ROLE_LABEL: Record<Me["role"], string> = {
   ADMIN: "แอดมิน",
@@ -29,9 +30,12 @@ const ROLE_LABEL: Record<Me["role"], string> = {
 
 const COLORS = ["#2563eb", "#147d64", "#7c3aed", "#db2777", "#ea580c", "#0891b2"];
 
+const money = (value: number) => `฿${Number(value).toLocaleString("th-TH")}`;
+
 export default function MoreScreen() {
   const { color, setColor } = useTheme();
   const [me, setMe] = useState<Me | null>(null);
+  const [income, setIncome] = useState<IncomeData | null>(null);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
@@ -49,18 +53,20 @@ export default function MoreScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [meData, newsData, eventsData, meetingsData, customersData] = await Promise.all([
+      const [meData, newsData, eventsData, meetingsData, customersData, incomeData] = await Promise.all([
         api<Me>("/me"),
         api<NewsItem[]>("/news").catch(() => []),
         api<EventItem[]>("/events").catch(() => []),
         api<MeetingItem[]>("/meetings").catch(() => []),
         api<CustomerItem[]>("/customers").catch(() => []),
+        api<IncomeData>("/team/income").catch(() => null),
       ]);
       setMe(meData);
       setNews(newsData);
       setEvents(eventsData);
       setMeetings(meetingsData);
       setCustomers(customersData);
+      setIncome(incomeData);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "โหลดโปรไฟล์ไม่สำเร็จ");
@@ -173,11 +179,36 @@ export default function MoreScreen() {
         </View>
       ) : null}
 
+      {/* รายได้ของฉัน */}
+      <Text style={styles.section}>รายได้ของฉัน</Text>
+      {income ? (
+        <Card style={styles.incomeCard}>
+          <View style={styles.incomeRow}>
+            <View style={styles.incomeItem}>
+              <Text style={styles.incomeLabel}>ยอดส่วนตัว</Text>
+              <Text style={[styles.incomeValue, { color }]}>{money(income.personal.amount)}</Text>
+              <Text style={styles.incomeSub}>{Number(income.personal.pv).toLocaleString("th-TH")} PV</Text>
+            </View>
+            <View style={styles.incomeDivider} />
+            <View style={styles.incomeItem}>
+              <Text style={styles.incomeLabel}>ยอดทีมรวม</Text>
+              <Text style={[styles.incomeValue, { color }]}>{money(income.group.amount)}</Text>
+              <Text style={styles.incomeSub}>{Number(income.group.pv).toLocaleString("th-TH")} PV · {income.group.downlineCount} คน</Text>
+            </View>
+          </View>
+        </Card>
+      ) : (
+        <Card>
+          <Text style={font.body}>ยังไม่มีข้อมูลรายได้</Text>
+        </Card>
+      )}
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {/* สีธีม */}
-      <Text style={styles.section}>สีธีมของแอป</Text>
+      {/* ตั้งค่า */}
+      <Text style={styles.section}>ตั้งค่า</Text>
       <Card>
+        <Text style={styles.settingLabel}>สีธีมของแอป</Text>
         <View style={styles.colorRow}>
           {COLORS.map((swatch) => (
             <Pressable
@@ -428,6 +459,14 @@ const styles = StyleSheet.create({
   profileName: { color: "#fff", fontSize: 20, fontWeight: "700" },
   profileEmail: { color: "#ffffffd9", fontSize: 13, marginTop: 2 },
   section: { ...font.h3, marginBottom: spacing.md },
+  incomeCard: { marginBottom: spacing.lg },
+  incomeRow: { flexDirection: "row", alignItems: "center" },
+  incomeItem: { flex: 1, alignItems: "center" },
+  incomeDivider: { width: 1, height: 40, backgroundColor: colors.border },
+  incomeLabel: { ...font.caption },
+  incomeValue: { fontSize: 20, fontWeight: "700", marginTop: 2 },
+  incomeSub: { ...font.caption, marginTop: 2 },
+  settingLabel: { ...font.label, marginBottom: spacing.md },
   colorRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
   swatch: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   logoutBtn: {

@@ -42,6 +42,7 @@ export default function ProductsScreen() {
   const [formName, setFormName] = useState("");
   const [formPrice, setFormPrice] = useState("");
   const [formPv, setFormPv] = useState("");
+  const [editing, setEditing] = useState<Product | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -84,21 +85,32 @@ export default function ProductsScreen() {
     if (saving) return;
     setSaving(true);
     try {
-      await api("/products", {
-        method: "POST",
-        body: JSON.stringify({ name: formName, price: formPrice, pv: formPv }),
-      });
+      const body = { name: formName, price: formPrice, pv: formPv };
+      if (editing) {
+        await api(`/products/${editing.id}`, { method: "PUT", body: JSON.stringify(body) });
+      } else {
+        await api("/products", { method: "POST", body: JSON.stringify(body) });
+      }
       setFormOpen(false);
       setFormName("");
       setFormPrice("");
       setFormPv("");
+      setEditing(null);
       await load();
     } catch (cause) {
       Alert.alert("บันทึกไม่สำเร็จ", cause instanceof Error ? cause.message : "ลองใหม่อีกครั้ง");
     } finally {
       setSaving(false);
     }
-  }, [formName, formPrice, formPv, load, saving]);
+  }, [formName, formPrice, formPv, load, saving, editing]);
+
+  const startEdit = useCallback((product: Product) => {
+    setEditing(product);
+    setFormName(product.name);
+    setFormPrice(String(product.price));
+    setFormPv(String(product.pv));
+    setFormOpen(true);
+  }, []);
 
   const removeProduct = useCallback(
     (product: Product) => {
@@ -177,9 +189,14 @@ export default function ProductsScreen() {
               {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
             </View>
             {isAdmin ? (
-              <Pressable accessibilityRole="button" hitSlop={8} onPress={() => removeProduct(item)}>
-                <Ionicons name="trash-outline" size={20} color={colors.danger} />
-              </Pressable>
+              <View style={styles.cardActions}>
+                <Pressable accessibilityRole="button" hitSlop={8} onPress={() => startEdit(item)}>
+                  <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
+                </Pressable>
+                <Pressable accessibilityRole="button" hitSlop={8} onPress={() => removeProduct(item)}>
+                  <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                </Pressable>
+              </View>
             ) : (
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             )}
@@ -228,7 +245,7 @@ export default function ProductsScreen() {
       <Modal visible={formOpen} transparent animationType="fade" onRequestClose={() => setFormOpen(false)}>
         <View style={styles.backdrop}>
           <View style={styles.dialog}>
-            <Text style={styles.dialogTitle}>เพิ่มสินค้า</Text>
+            <Text style={styles.dialogTitle}>{editing ? "แก้ไขสินค้า" : "เพิ่มสินค้า"}</Text>
             <TextInput
               placeholder="ชื่อสินค้า"
               value={formName}
@@ -297,6 +314,7 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   cardMain: { flex: 1, marginRight: spacing.sm },
+  cardActions: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   name: { ...font.title },
   meta: { ...font.label, marginTop: 2 },
   note: { ...font.caption, marginTop: 2 },

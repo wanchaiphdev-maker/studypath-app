@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { api } from "../../lib/api";
 import { useTheme, colors, spacing, radius, font, shadow } from "../../lib/theme";
 import { Card, SectionHeader, StatCard, EmptyState, Pill } from "../../lib/ui";
@@ -16,22 +17,28 @@ type Status = {
   goalCount: number;
 };
 
+type Goal = { id: string; title: string; target: number; current: number; period: string };
+
 const money = (value: number) => `฿${Number(value).toLocaleString("th-TH")}`;
 
 export default function Dashboard() {
   const { color } = useTheme();
+  const router = useRouter();
   const [rows, setRows] = useState<Row[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api<Row[]>("/sales/summary?by=month"),
       api<Status>("/me/status").catch(() => null),
+      api<Goal[]>("/goals").catch(() => []),
     ])
-      .then(([salesRows, meStatus]) => {
+      .then(([salesRows, meStatus, goalsData]) => {
         setRows(salesRows);
         setStatus(meStatus);
+        setGoals(goalsData);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -93,6 +100,56 @@ export default function Dashboard() {
             </View>
           </View>
         </Card>
+      ) : null}
+
+      {/* Quick Actions */}
+      <View style={styles.quickActions}>
+        {[
+          { icon: "pricetag-outline" as const, label: "บันทึกการขาย", route: "/products" },
+          { icon: "person-add-outline" as const, label: "เพิ่มลูกค้า", route: "/more" },
+          { icon: "calendar-outline" as const, label: "นัดประชุม", route: "/more" },
+          { icon: "chatbubbles-outline" as const, label: "แชททีม", route: "/chat" },
+        ].map((action) => (
+          <Pressable
+            key={action.label}
+            accessibilityRole="button"
+            onPress={() => router.push(action.route as any)}
+            style={({ pressed }) => [styles.quickAction, pressed && { opacity: 0.7 }]}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: color + "1a" }]}>
+              <Ionicons name={action.icon} size={22} color={color} />
+            </View>
+            <Text style={styles.quickActionLabel}>{action.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* เป้าหมาย */}
+      {goals.length > 0 ? (
+        <>
+          <SectionHeader title="เป้าหมายของฉัน" />
+          <View style={styles.list}>
+            {goals.map((goal) => {
+              const pct = goal.target > 0 ? Math.min(100, Math.round((goal.current / goal.target) * 100)) : 0;
+              return (
+                <Card key={goal.id} style={styles.goalCard}>
+                  <View style={styles.goalTop}>
+                    <Text style={styles.goalTitle} numberOfLines={1}>
+                      {goal.title}
+                    </Text>
+                    <Pill text={`${pct}%`} color={color} />
+                  </View>
+                  <View style={styles.goalBarTrack}>
+                    <View style={[styles.goalBarFill, { width: `${pct}%`, backgroundColor: color }]} />
+                  </View>
+                  <Text style={styles.goalMeta}>
+                    {money(goal.current)} / {money(goal.target)}
+                  </Text>
+                </Card>
+              );
+            })}
+          </View>
+        </>
       ) : null}
 
       {/* สถิติ */}
@@ -173,6 +230,32 @@ const styles = StyleSheet.create({
   statusValue: { ...font.h3 },
   statusCaption: { ...font.caption, marginTop: 2 },
   stats: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.xl },
+  quickActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.xl,
+    gap: spacing.sm,
+  },
+  quickAction: { flex: 1, alignItems: "center", gap: 6 },
+  quickActionIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickActionLabel: { fontSize: 11, fontWeight: "600", color: colors.textSecondary, textAlign: "center" },
+  goalCard: { padding: spacing.lg, marginBottom: spacing.md },
+  goalTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
+  goalTitle: { ...font.title, flex: 1, marginRight: spacing.sm },
+  goalBarTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.surfaceAlt,
+    overflow: "hidden",
+  },
+  goalBarFill: { height: 8, borderRadius: 4 },
+  goalMeta: { ...font.caption, marginTop: spacing.sm },
   list: { gap: spacing.md },
   rowCard: { padding: spacing.lg },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
