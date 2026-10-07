@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Amway Team",
-    "slug": "amway-app",
+    "name": "StudyPath",
+    "slug": "studypath",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -16,7 +16,7 @@
       "bitcode": false
     },
     "android": {
-      "package": "com.amway.app",
+      "package": "com.studypath.app",
       "versionCode": 1,
       "permissions": [
         "CAMERA",
@@ -62,9 +62,7 @@
     },
     "extra": {
       "router": {},
-      "eas": {
-        "projectId": "10d5270f-9d84-4ef1-8b74-295d8c4ed6d6"
-      }
+      "eas": {}
     },
     "owner": "wanchai.dev"
   }

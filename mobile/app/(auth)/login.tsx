@@ -101,8 +101,8 @@ export default function LoginScreen() {
           <View style={styles.brandIcon}>
             <Ionicons name="people" size={28} color="#fff" />
           </View>
-          <Text style={styles.brandName}>Amway Team</Text>
-          <Text style={styles.brandTag}>จัดการทีมขายของคุณ</Text>
+          <Text style={styles.brandName}>StudyPath</Text>
+          <Text style={styles.brandTag}>Personal Learning OS สำหรับมหาวิทยาลัย</Text>
         </View>
 
         <Text style={styles.title}>เข้าสู่ระบบ</Text>

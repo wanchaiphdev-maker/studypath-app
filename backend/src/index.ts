@@ -17,6 +17,7 @@ import news from "./routes/news";
 import events from "./routes/events";
 import goals from "./routes/goals";
 import notifications from "./routes/notifications";
+import studypath from "./routes/studypath";
 import { canAccessRoom } from "./services/access";
 
 const app = express(); app.use(cors(), express.json());
@@ -85,6 +86,7 @@ app.use("/news", news);
 app.use("/events", events);
 app.use("/goals", goals);
 app.use("/notifications", notifications);
+app.use("/studypath", studypath);
 
 // โปรไฟล์ของตัวเอง
 app.get("/me", requireAuth(), async (req: any, res) => {

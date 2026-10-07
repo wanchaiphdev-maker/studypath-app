@@ -48,3 +48,15 @@ export async function register(name: string, email: string, password: string) {
   await SecureStore.setItemAsync("token", body.token);
   return body.user;
 }
+export async function getCurriculum() { return api<any[]>("/studypath/curriculum"); }
+export async function createYear(name: string) { return api("/studypath/curriculum/years", { method: "POST", body: JSON.stringify({ name }) }); }
+export async function createSemester(academicYearId: string, name: string) { return api("/studypath/curriculum/semesters", { method: "POST", body: JSON.stringify({ academicYearId, name }) }); }
+export async function getSubjects() { return api<any[]>("/studypath/subjects"); }
+export async function createSubject(semesterId: string, name: string, code = "") { return api("/studypath/subjects", { method: "POST", body: JSON.stringify({ semesterId, name, code }) }); }
+export async function getSubject(id: string) { return api<any>("/studypath/subjects/" + id); }
+export async function createMaterial(subjectId: string, title: string, textContent: string) { return api("/studypath/materials", { method: "POST", body: JSON.stringify({ subjectId, title, textContent }) }); }
+export async function askMaterial(materialId: string, question: string) { return api("/studypath/materials/" + materialId + "/ask", { method: "POST", body: JSON.stringify({ question }) }); }
+export async function generateQuiz(subjectId: string, count = 5) { return api<any>("/studypath/subjects/" + subjectId + "/quizzes/generate", { method: "POST", body: JSON.stringify({ count }) }); }
+export async function submitQuiz(quizId: string, answers: any[]) { return api<any>("/studypath/quizzes/" + quizId + "/attempt", { method: "POST", body: JSON.stringify({ answers }) }); }
+export async function getProgress() { return api<any>("/studypath/progress"); }
+export async function logStudySession(minutes: number, subjectId?: string, goal?: string) { return api("/studypath/study-sessions", { method: "POST", body: JSON.stringify({ minutes, subjectId, goal }) }); }

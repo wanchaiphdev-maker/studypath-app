@@ -51,6 +51,8 @@ export default function RootLayout() {
         <Stack.Screen name="call/[room]" />
         <Stack.Screen name="contest/index" />
         <Stack.Screen name="contest/[id]" />
+        <Stack.Screen name="subject/[id]" />
+        <Stack.Screen name="quiz/[id]" />
       </Stack>
     </ThemeProvider>
   );

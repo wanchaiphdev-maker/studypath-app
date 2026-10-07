@@ -18,24 +18,60 @@ enum RoomType {
   GROUP
 }
 
+enum SubjectStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+enum MaterialStatus {
+  UPLOADING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum MaterialSourceType {
+  OFFICIAL
+  LECTURER
+  PERSONAL
+  COMMUNITY
+  IMPORTED
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  SHORT_ANSWER
+}
+
 model User {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  passwordHash String
-  role         Role      @default(MEMBER)
-  rank         String    @default("สมาชิก")
-  uplineId     String?
-  upline       User?     @relation("Line", fields: [uplineId], references: [id])
-  downlines    User[]    @relation("Line")
-  groupId      String?
-  group        Group?    @relation(fields: [groupId], references: [id])
-  themeColor   String    @default("#2563eb")
-  avatarUrl    String?
-  sales        Sale[]
-  messages     Message[]
-  customers    Customer[]
-  goals        Goal[]
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  passwordHash    String
+  role            Role      @default(MEMBER)
+  rank            String    @default("สมาชิก")
+  uplineId        String?
+  upline          User?     @relation("Line", fields: [uplineId], references: [id])
+  downlines       User[]    @relation("Line")
+  groupId         String?
+  group           Group?    @relation(fields: [groupId], references: [id])
+  themeColor      String    @default("#2563eb")
+  avatarUrl       String?
+  sales           Sale[]
+  messages        Message[]
+  customers       Customer[]
+  goals           Goal[]
+  academicYears   AcademicYear[]
+  semesters       Semester[]
+  subjects        Subject[]
+  materials       Material[]
+  quizzes         Quiz[]
+  attempts        Attempt[]
+  progress        LearningProgress[]
+  studySessions   StudySession[]
 }
 
 model Group {
@@ -164,4 +200,150 @@ model Notification {
   read      Boolean  @default(false)
   userId    String?
   createdAt DateTime @default(now())
+}
+
+model AcademicYear {
+  id        String     @id @default(cuid())
+  name      String
+  order     Int        @default(0)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  semesters Semester[]
+
+  @@index([userId, order])
+}
+
+model Semester {
+  id             String       @id @default(cuid())
+  name           String
+  order          Int          @default(0)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  subjects       Subject[]
+
+  @@index([userId, academicYearId])
+}
+
+model Subject {
+  id          String        @id @default(cuid())
+  code        String?
+  name        String
+  description String?
+  credits     Int?
+  instructor  String?
+  color       String        @default("#2563eb")
+  status      SubjectStatus @default(NOT_STARTED)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  semesterId  String
+  semester    Semester      @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  materials   Material[]
+  quizzes     Quiz[]
+  progress    LearningProgress[]
+
+  @@index([userId, semesterId])
+}
+
+model Material {
+  id           String              @id @default(cuid())
+  title        String
+  fileName     String?
+  mimeType     String?
+  sourceType   MaterialSourceType  @default(IMPORTED)
+  status       MaterialStatus      @default(PROCESSING)
+  textContent  String              @db.Text
+  pageCount    Int?
+  userId       String
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId    String
+  subject      Subject             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  chunks       MaterialChunk[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([userId, subjectId, createdAt])
+}
+
+model MaterialChunk {
+  id         String   @id @default(cuid())
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  content    String   @db.Text
+  chunkIndex Int
+  pageNumber Int?
+  embedding  Json?
+  createdAt  DateTime @default(now())
+
+  @@unique([materialId, chunkIndex])
+  @@index([materialId])
+}
+
+model Quiz {
+  id         String     @id @default(cuid())
+  title      String
+  subjectId  String
+  subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions  Question[]
+  attempts   Attempt[]
+  createdAt  DateTime   @default(now())
+
+  @@index([userId, subjectId, createdAt])
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  quizId      String
+  quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  type        QuestionType @default(MULTIPLE_CHOICE)
+  prompt      String       @db.Text
+  options     Json?
+  answer      String       @db.Text
+  explanation String?      @db.Text
+  source      Json?
+  order       Int
+}
+
+model Attempt {
+  id          String    @id @default(cuid())
+  quizId      String
+  quiz        Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score       Float
+  answers     Json
+  mistakes    Json?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model LearningProgress {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId  String
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  mastery    Float    @default(0)
+  studyMins  Int      @default(0)
+  lastActive DateTime @default(now())
+  evidence   Json?
+
+  @@unique([userId, subjectId])
+}
+
+model StudySession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId String?
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
+  minutes   Int       @default(0)
+  goal      String?
+
+  @@index([userId, startedAt])
 }
