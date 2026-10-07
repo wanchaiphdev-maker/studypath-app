@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
 import { useLocalSearchParams, router } from "expo-router";
 import { colors, font, radius, spacing } from "../../lib/theme";
 import { Card, Button, SectionHeader } from "../../lib/ui";
-import { askMaterial, createMaterial, generateQuiz, getSubject } from "../../lib/api";
+import { askMaterial, createMaterial, generateQuiz, getSubject, uploadMaterial } from "../../lib/api";
 
 export default function SubjectDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -27,6 +28,31 @@ export default function SubjectDetail() {
     try { await createMaterial(String(id), title || "Lecture Note", text); setText(""); setTitle(""); await load(); }
     catch (e) { Alert.alert("เพิ่มเอกสารไม่สำเร็จ", String(e)); }
     finally { setBusy(false); }
+  }
+
+  async function pickFile() {
+    setBusy(true);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "text/plain"],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const file = result.assets[0];
+      await uploadMaterial(String(id), {
+        uri: file.uri,
+        name: file.name || "learning-material.pdf",
+        mimeType: file.mimeType || "application/pdf",
+      }, title || file.name);
+      setTitle("");
+      await load();
+      Alert.alert("เพิ่มเอกสารสำเร็จ", "ระบบอ่านเนื้อหาและสร้าง Knowledge Base ให้แล้ว");
+    } catch (e) {
+      Alert.alert("อัปโหลดเอกสารไม่สำเร็จ", String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function ask() {
@@ -63,7 +89,8 @@ export default function SubjectDetail() {
       <Card>
         <TextInput value={title} onChangeText={setTitle} placeholder="ชื่อเอกสาร" placeholderTextColor={colors.textMuted} style={styles.input} />
         <TextInput value={text} onChangeText={setText} multiline placeholder="วางเนื้อหา Lecture / Note ที่นี่..." placeholderTextColor={colors.textMuted} style={[styles.input, styles.textarea]} />
-        <Button onPress={addMaterial} loading={busy} icon="cloud-upload-outline">บันทึกเข้า Knowledge Base</Button>
+        <Button onPress={addMaterial} loading={busy} icon="text-outline">บันทึกข้อความเข้า Knowledge Base</Button>
+        <Button onPress={pickFile} loading={busy} variant="secondary" icon="document-attach-outline">เลือก PDF / TXT จากเครื่อง</Button>
       </Card>
 
       <SectionHeader title="Materials" />

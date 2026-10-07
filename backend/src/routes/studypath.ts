@@ -1,5 +1,16 @@
 import { Router } from "express";
+import multer from "multer";
+import { PDFParse } from "pdf-parse";
 import { prisma, requireAuth } from "../auth";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ["application/pdf", "text/plain"];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
 
 const router = Router();
 
@@ -54,6 +65,67 @@ router.get("/subjects/:subjectId", requireAuth(), async (req: any, res) => {
   });
   if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
   res.json(subject);
+});
+
+router.post("/materials/upload", requireAuth(), upload.single("file"), async (req: any, res) => {
+  try {
+    const subjectId = String(req.body?.subjectId || "").trim();
+    const title = String(req.body?.title || req.file?.originalname || "เอกสารการเรียน").trim().slice(0, 200);
+    if (!subjectId) return res.status(400).json({ error: "กรุณาระบุวิชา" });
+    if (!req.file) return res.status(400).json({ error: "กรุณาเลือกไฟล์ PDF หรือ TXT" });
+
+    const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id } });
+    if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
+
+    let textContent = "";
+    let pageCount: number | undefined;
+    if (req.file.mimetype === "application/pdf") {
+      const parser = new PDFParse({ data: req.file.buffer });
+      const result = await parser.getText();
+      textContent = String(result.text || "").trim();
+      pageCount = Number(result.total || 0) || undefined;
+      await parser.destroy();
+    } else {
+      textContent = req.file.buffer.toString("utf8").trim();
+    }
+
+    if (textContent.length < 20) {
+      return res.status(422).json({ error: "ไฟล์นี้ไม่มีข้อความที่อ่านได้เพียงพอ หากเป็น PDF สแกนภาพจะต้องใช้ OCR เพิ่มเติม" });
+    }
+
+    const parts = textContent.split(/(?<=[.!?。！？])\s+|\n+/).map((x: string) => x.trim()).filter(Boolean);
+    const chunks: string[] = [];
+    let current = "";
+    for (const part of parts) {
+      if ((current + " " + part).trim().length > 1200 && current) { chunks.push(current.trim()); current = part; }
+      else current = (current + " " + part).trim();
+    }
+    if (current) chunks.push(current);
+
+    const material = await prisma.material.create({
+      data: {
+        title,
+        fileName: req.file.originalname.slice(0, 255),
+        mimeType: req.file.mimetype,
+        sourceType: "IMPORTED",
+        status: "COMPLETED",
+        textContent,
+        pageCount,
+        userId: req.user.id,
+        subjectId,
+        chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) },
+      },
+      include: { chunks: true },
+    });
+    await prisma.subject.update({ where: { id: subjectId }, data: { status: "IN_PROGRESS" } });
+    res.status(201).json({
+      id: material.id, title: material.title, fileName: material.fileName,
+      status: material.status, pageCount: material.pageCount, chunkCount: material.chunks.length,
+    });
+  } catch (error) {
+    console.error("StudyPath material upload failed", error);
+    res.status(500).json({ error: "ประมวลผลเอกสารไม่สำเร็จ" });
+  }
 });
 
 router.post("/materials", requireAuth(), async (req: any, res) => {

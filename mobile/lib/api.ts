@@ -55,6 +55,29 @@ export async function getSubjects() { return api<any[]>("/studypath/subjects"); 
 export async function createSubject(semesterId: string, name: string, code = "") { return api("/studypath/subjects", { method: "POST", body: JSON.stringify({ semesterId, name, code }) }); }
 export async function getSubject(id: string) { return api<any>("/studypath/subjects/" + id); }
 export async function createMaterial(subjectId: string, title: string, textContent: string) { return api("/studypath/materials", { method: "POST", body: JSON.stringify({ subjectId, title, textContent }) }); }
+
+export async function uploadMaterial(subjectId: string, file: { uri: string; name: string; mimeType?: string }, title?: string) {
+  const token = await SecureStore.getItemAsync("token");
+  if (!BASE) throw new Error("ตั้งค่า EXPO_PUBLIC_API_URL ในไฟล์ .env ก่อน");
+  const form = new FormData();
+  form.append("subjectId", subjectId);
+  if (title?.trim()) form.append("title", title.trim());
+  form.append("file", {
+    uri: file.uri,
+    name: file.name,
+    type: file.mimeType || "application/pdf",
+  } as any);
+  const response = await fetch(getUrl("/studypath/materials/upload"), {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: form,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || response.statusText);
+  return body;
+}
 export async function askMaterial(materialId: string, question: string) { return api("/studypath/materials/" + materialId + "/ask", { method: "POST", body: JSON.stringify({ question }) }); }
 export async function generateQuiz(subjectId: string, count = 5) { return api<any>("/studypath/subjects/" + subjectId + "/quizzes/generate", { method: "POST", body: JSON.stringify({ count }) }); }
 export async function submitQuiz(quizId: string, answers: any[]) { return api<any>("/studypath/quizzes/" + quizId + "/attempt", { method: "POST", body: JSON.stringify({ answers }) }); }

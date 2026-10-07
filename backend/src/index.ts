@@ -36,7 +36,7 @@ app.get("/auth/facebook/callback", facebookCallback);
 const legalPage = (title: string, body: string) => `<!doctype html>
 <html lang="th"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} - Amway Team</title>
+<title>${title} - StudyPath</title>
 <style>
 body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.7;color:#0f172a;background:#f8fafc;margin:0;padding:32px 20px}
 main{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px}
@@ -45,11 +45,11 @@ p,li{font-size:15px;color:#334155}small{color:#64748b}
 </style></head><body><main>
 <h1>${title}</h1><small>ปรับปรุงล่าสุด: 5 ตุลาคม 2569 (2026)</small>
 ${body}
-<p><small>แอป Amway Team</small></p>
+<p><small>แอป StudyPath</small></p>
 </main></body></html>`;
 
 app.get("/privacy", (_req, res) => res.type("html").send(legalPage("นโยบายความเป็นส่วนตัว", `
-<p>แอป Amway Team เก็บและใช้ข้อมูลของคุณดังต่อไปนี้</p>
+<p>แอป StudyPath เก็บและใช้ข้อมูลของคุณเพื่อให้บริการการเรียนรู้ส่วนบุคคลดังต่อไปนี้</p>
 <h2>ข้อมูลที่เก็บ</h2>
 <ul>
 <li><b>ข้อมูลที่คุณบันทึกเอง</b> เช่น ชื่อ อีเมล เลขที่สมาชิก ข้อมูลการขาย และข้อความในแชท</li>
