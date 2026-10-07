@@ -83,3 +83,15 @@ export async function generateQuiz(subjectId: string, count = 5) { return api<an
 export async function submitQuiz(quizId: string, answers: any[]) { return api<any>("/studypath/quizzes/" + quizId + "/attempt", { method: "POST", body: JSON.stringify({ answers }) }); }
 export async function getProgress() { return api<any>("/studypath/progress"); }
 export async function logStudySession(minutes: number, subjectId?: string, goal?: string) { return api("/studypath/study-sessions", { method: "POST", body: JSON.stringify({ minutes, subjectId, goal }) }); }
+export async function getReviewCards() { return api<any[]>("/studypath/review"); }
+export async function generateReviewCards(subjectId?: string) { return api("/studypath/review/generate", { method: "POST", body: JSON.stringify({ subjectId }) }); }
+export async function reviewCard(cardId: string, rating: number) { return api("/studypath/review/" + cardId + "/review", { method: "POST", body: JSON.stringify({ rating }) }); }
+export async function getPlanner() { return api<any[]>("/studypath/planner"); }
+export async function createPlannerTask(input: any) { return api("/studypath/planner", { method: "POST", body: JSON.stringify(input) }); }
+export async function completePlannerTask(id: string, completed: boolean) { return api("/studypath/planner/" + id, { method: "PATCH", body: JSON.stringify({ completed }) }); }
+export async function getKnowledge(subjectId: string) { return api<any>("/studypath/knowledge/" + subjectId); }
+export async function getCommunity() { return api<any[]>("/studypath/community"); }
+export async function createCommunityPost(title: string, content: string, subjectId?: string) { return api("/studypath/community", { method: "POST", body: JSON.stringify({ title, content, subjectId }) }); }
+export async function getCommunityPost(id: string) { return api<any>("/studypath/community/" + id); }
+export async function commentCommunity(id: string, content: string) { return api("/studypath/community/" + id + "/comments", { method: "POST", body: JSON.stringify({ content }) }); }
+export async function getPortalOverview() { return api<any>("/studypath/portal/overview"); }

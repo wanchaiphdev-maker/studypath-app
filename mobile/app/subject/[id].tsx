@@ -4,7 +4,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { useLocalSearchParams, router } from "expo-router";
 import { colors, font, radius, spacing } from "../../lib/theme";
 import { Card, Button, SectionHeader } from "../../lib/ui";
-import { askMaterial, createMaterial, generateQuiz, getSubject, uploadMaterial } from "../../lib/api";
+import { askMaterial, createMaterial, generateQuiz, getSubject, uploadMaterial, getKnowledge } from "../../lib/api";
 
 export default function SubjectDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -115,6 +115,7 @@ export default function SubjectDetail() {
       </Card>
 
       <Button onPress={quiz} loading={busy} icon="help-circle-outline">สร้าง Quiz 5 ข้อ</Button>
+      <Button onPress={async () => { setBusy(true); try { const graph = await getKnowledge(String(id)); Alert.alert("Knowledge Graph", `พบ ${graph.nodes?.length || 0} concepts จากเอกสารของวิชานี้`); } catch (e) { Alert.alert("Knowledge Graph", String(e)); } finally { setBusy(false); } }} loading={busy} variant="secondary" icon="git-network-outline">สร้าง / ดู Knowledge Graph</Button>
     </ScrollView>
   );
 }

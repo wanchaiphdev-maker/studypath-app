@@ -72,6 +72,11 @@ model User {
   attempts        Attempt[]
   progress        LearningProgress[]
   studySessions   StudySession[]
+  reviewCards     ReviewCard[]
+  plannerTasks    PlannerTask[]
+  communityPosts  CommunityPost[]
+  communityComments CommunityComment[]
+  knowledgeNodes  KnowledgeNode[]
 }
 
 model Group {
@@ -344,6 +349,72 @@ model StudySession {
   endedAt   DateTime?
   minutes   Int       @default(0)
   goal      String?
-
   @@index([userId, startedAt])
+}
+
+model ReviewCard {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId   String?
+  prompt      String   @db.Text
+  answer      String   @db.Text
+  source      Json?
+  dueAt       DateTime @default(now())
+  intervalDays Int     @default(1)
+  ease        Float    @default(2.5)
+  repetitions Int      @default(0)
+  lapses      Int      @default(0)
+  lastReviewedAt DateTime?
+  @@index([userId, dueAt])
+}
+
+model PlannerTask {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId   String?
+  title       String
+  description String?
+  dueAt       DateTime?
+  durationMin Int      @default(30)
+  completed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  @@index([userId, dueAt])
+}
+
+model CommunityPost {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId String?
+  title     String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  comments  CommunityComment[]
+  @@index([createdAt])
+}
+
+model CommunityComment {
+  id        String   @id @default(cuid())
+  postId   String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  @@index([postId, createdAt])
+}
+
+model KnowledgeNode {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId String?
+  label     String
+  kind      String   @default("concept")
+  source    Json?
+  createdAt DateTime @default(now())
+  @@index([userId, subjectId])
 }

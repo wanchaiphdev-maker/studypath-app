@@ -20,7 +20,17 @@ import notifications from "./routes/notifications";
 import studypath from "./routes/studypath";
 import { canAccessRoom } from "./services/access";
 
-const app = express(); app.use(cors(), express.json());
+const app = express();
+const allowedOrigin = process.env.CORS_ORIGIN?.trim();
+app.use(cors({ origin: allowedOrigin ? allowedOrigin.split(",").map(x => x.trim()) : true }));
+app.use(express.json({ limit: "2mb" }));
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
 
 // health check สำหรับ Render (ใช้ตอน deploy และตอนโหลดเย็น)
 app.get("/health", (_req, res) => res.json({ ok: true, uptime: process.uptime() }));

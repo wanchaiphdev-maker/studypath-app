@@ -72,6 +72,10 @@ export default function Dashboard() {
           <Ionicons name="refresh-outline" size={26} color={colors.accent} />
           <Text style={font.label}>ทบทวน</Text>
         </Pressable>
+        <Pressable onPress={() => router.push("/community" as any)} style={styles.action}>
+          <Ionicons name="people-outline" size={26} color={colors.accent} />
+          <Text style={font.label}>Community</Text>
+        </Pressable>
       </View>
 
       <SectionHeader title="Learning Progress" />

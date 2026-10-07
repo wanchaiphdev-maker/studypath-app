@@ -14,6 +14,29 @@ const upload = multer({
 
 const router = Router();
 
+async function groundedModelAnswer(question: string, context: string) {
+  const endpoint = process.env.AI_BASE_URL?.replace(/\/$/, "");
+  const key = process.env.AI_API_KEY;
+  const model = process.env.AI_MODEL;
+  if (!endpoint || !key || !model) return null;
+  const response = await fetch(endpoint + "/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+    body: JSON.stringify({
+      model,
+      temperature: 0.1,
+      messages: [
+        { role: "system", content: "Answer only from the supplied study sources. If the sources do not support the answer, say that there is not enough evidence. Do not invent citations." },
+        { role: "user", content: "Question:\n" + question + "\n\nStudy sources:\n" + context },
+      ],
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) throw new Error("AI provider error " + response.status);
+  const body: any = await response.json();
+  return body?.choices?.[0]?.message?.content?.trim() || null;
+}
+
 router.get("/curriculum", requireAuth(), async (req: any, res) => {
   const years = await prisma.academicYear.findMany({
     where: { userId: req.user.id },
@@ -167,11 +190,17 @@ router.post("/materials/:materialId/ask", requireAuth(), async (req: any, res) =
     return { chunk, score };
   }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
   if (!ranked.length) return res.json({ grounded: false, answer: "ยังไม่พบข้อมูลที่ตรงกับคำถามในเอกสารนี้", sources: [] });
-  res.json({
-    grounded: true, mode: "grounded-retrieval",
-    answer: ranked.map((x) => x.chunk.content).join("\n\n"),
-    sources: ranked.map((x) => ({ materialId: material.id, title: material.title, chunk: x.chunk.chunkIndex + 1, excerpt: x.chunk.content.slice(0, 220) })),
-  });
+  const sources = ranked.map((x) => ({ materialId: material.id, title: material.title, chunk: x.chunk.chunkIndex + 1, excerpt: x.chunk.content.slice(0, 220) }));
+  const context = ranked.map((x) => "[Source " + (x.chunk.chunkIndex + 1) + "] " + x.chunk.content).join("\n\n");
+  let answer = ranked.map((x) => x.chunk.content).join("\n\n");
+  let mode = "grounded-retrieval";
+  try {
+    const modelAnswer = await groundedModelAnswer(question, context);
+    if (modelAnswer) { answer = modelAnswer; mode = "grounded-llm"; }
+  } catch (error) {
+    console.warn("AI provider unavailable; using grounded retrieval fallback", error);
+  }
+  res.json({ grounded: true, mode, answer, sources });
 });
 
 router.post("/subjects/:subjectId/quizzes/generate", requireAuth(), async (req: any, res) => {
@@ -241,6 +270,139 @@ router.post("/study-sessions", requireAuth(), async (req: any, res) => {
   const session = await prisma.studySession.create({ data: { userId: req.user.id, subjectId: String(req.body?.subjectId || "") || null, minutes, goal: String(req.body?.goal || "") || null, endedAt: new Date() } });
   if (session.subjectId) await prisma.learningProgress.updateMany({ where: { userId: req.user.id, subjectId: session.subjectId }, data: { studyMins: { increment: minutes }, lastActive: new Date() } });
   res.status(201).json(session);
+});
+
+router.get("/review", requireAuth(), async (req: any, res) => {
+  const cards = await prisma.reviewCard.findMany({
+    where: { userId: req.user.id, dueAt: { lte: new Date() } },
+    orderBy: { dueAt: "asc" }, take: 30,
+  });
+  res.json(cards);
+});
+
+router.post("/review/generate", requireAuth(), async (req: any, res) => {
+  const subjectId = String(req.body?.subjectId || "").trim();
+  const material = await prisma.material.findFirst({
+    where: { userId: req.user.id, ...(subjectId ? { subjectId } : {}) },
+    orderBy: { createdAt: "desc" }, include: { chunks: { take: 20, orderBy: { chunkIndex: "asc" } } },
+  });
+  if (!material) return res.status(404).json({ error: "ยังไม่มีเอกสารสำหรับสร้างบัตรทบทวน" });
+  const cards = [];
+  for (const chunk of material.chunks.slice(0, 10)) {
+    const first = chunk.content.split(/[.!?。！？\n]/).map((x: string) => x.trim()).filter(Boolean)[0];
+    if (!first || first.length < 20) continue;
+    const words = first.split(/\s+/).filter((x: string) => x.length >= 4);
+    const key = words[Math.floor(words.length / 2)] || words[0];
+    cards.push({
+      userId: req.user.id, subjectId: material.subjectId,
+      prompt: "อธิบายหรือเติมคำจากแนวคิดนี้: " + first.replace(key, "_____"),
+      answer: key, source: { materialId: material.id, chunk: chunk.chunkIndex + 1 },
+    });
+  }
+  if (cards.length) await prisma.reviewCard.createMany({ data: cards });
+  res.status(201).json({ created: cards.length });
+});
+
+router.post("/review/:cardId/review", requireAuth(), async (req: any, res) => {
+  const rating = Math.min(5, Math.max(0, Number(req.body?.rating) || 0));
+  const card = await prisma.reviewCard.findFirst({ where: { id: req.params.cardId, userId: req.user.id } });
+  if (!card) return res.status(404).json({ error: "ไม่พบบัตรทบทวน" });
+  let repetitions = card.repetitions;
+  let intervalDays = card.intervalDays;
+  let ease = card.ease;
+  let lapses = card.lapses;
+  if (rating < 3) { repetitions = 0; lapses += 1; intervalDays = 1; ease = Math.max(1.3, ease - 0.2); }
+  else {
+    repetitions += 1;
+    if (repetitions === 1) intervalDays = 1;
+    else if (repetitions === 2) intervalDays = 3;
+    else intervalDays = Math.max(1, Math.round(intervalDays * ease * (rating === 5 ? 1.25 : 1)));
+    ease = Math.max(1.3, ease + (0.1 - (5 - rating) * 0.08));
+  }
+  const dueAt = new Date(Date.now() + intervalDays * 86400000);
+  const updated = await prisma.reviewCard.update({ where: { id: card.id }, data: { repetitions, intervalDays, ease, lapses, dueAt, lastReviewedAt: new Date() } });
+  res.json(updated);
+});
+
+router.get("/planner", requireAuth(), async (req: any, res) => {
+  const tasks = await prisma.plannerTask.findMany({ where: { userId: req.user.id }, orderBy: [{ completed: "asc" }, { dueAt: "asc" }] });
+  res.json(tasks);
+});
+
+router.post("/planner", requireAuth(), async (req: any, res) => {
+  const title = String(req.body?.title || "").trim().slice(0, 180);
+  if (!title) return res.status(400).json({ error: "กรุณาระบุชื่องาน" });
+  const dueAt = req.body?.dueAt ? new Date(req.body.dueAt) : null;
+  if (dueAt && Number.isNaN(dueAt.getTime())) return res.status(400).json({ error: "กำหนดเวลาไม่ถูกต้อง" });
+  const task = await prisma.plannerTask.create({ data: {
+    userId: req.user.id, subjectId: String(req.body?.subjectId || "") || null,
+    title, description: String(req.body?.description || "").slice(0, 1000) || null,
+    dueAt, durationMin: Math.min(600, Math.max(5, Number(req.body?.durationMin) || 30)),
+  }});
+  res.status(201).json(task);
+});
+
+router.patch("/planner/:taskId", requireAuth(), async (req: any, res) => {
+  const task = await prisma.plannerTask.findFirst({ where: { id: req.params.taskId, userId: req.user.id } });
+  if (!task) return res.status(404).json({ error: "ไม่พบงาน" });
+  const updated = await prisma.plannerTask.update({ where: { id: task.id }, data: {
+    completed: typeof req.body?.completed === "boolean" ? req.body.completed : task.completed,
+    title: req.body?.title ? String(req.body.title).slice(0, 180) : task.title,
+  }});
+  res.json(updated);
+});
+
+router.get("/knowledge/:subjectId", requireAuth(), async (req: any, res) => {
+  const subject = await prisma.subject.findFirst({ where: { id: req.params.subjectId, userId: req.user.id } });
+  if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
+  const materials = await prisma.material.findMany({ where: { subjectId: subject.id, userId: req.user.id }, include: { chunks: { orderBy: { chunkIndex: "asc" }, take: 50 } } });
+  const nodes = await prisma.knowledgeNode.findMany({ where: { userId: req.user.id, subjectId: subject.id } });
+  if (!nodes.length) {
+    const labels = new Set<string>();
+    for (const material of materials) for (const chunk of material.chunks) {
+      for (const word of chunk.content.split(/\s+/).filter((x: string) => x.length >= 5).slice(0, 60)) labels.add(word.replace(/[^\p{L}\p{N}-]/gu, ""));
+    }
+    const generated = Array.from(labels).filter(Boolean).slice(0, 40).map(label => ({ userId: req.user.id, subjectId: subject.id, label, kind: "concept" }));
+    if (generated.length) await prisma.knowledgeNode.createMany({ data: generated });
+  }
+  const finalNodes = await prisma.knowledgeNode.findMany({ where: { userId: req.user.id, subjectId: subject.id }, orderBy: { label: "asc" }, take: 80 });
+  res.json({ nodes: finalNodes, edges: [] });
+});
+
+router.get("/community", requireAuth(), async (_req: any, res) => {
+  const posts = await prisma.communityPost.findMany({ orderBy: { createdAt: "desc" }, take: 50, include: { user: { select: { id: true, name: true } }, _count: { select: { comments: true } } } });
+  res.json(posts);
+});
+
+router.post("/community", requireAuth(), async (req: any, res) => {
+  const title = String(req.body?.title || "").trim().slice(0, 180);
+  const content = String(req.body?.content || "").trim().slice(0, 5000);
+  if (!title || !content) return res.status(400).json({ error: "กรุณาระบุหัวข้อและเนื้อหา" });
+  const post = await prisma.communityPost.create({ data: { userId: req.user.id, subjectId: String(req.body?.subjectId || "") || null, title, content }, include: { user: { select: { id: true, name: true } } } });
+  res.status(201).json(post);
+});
+
+router.get("/community/:postId", requireAuth(), async (req: any, res) => {
+  const post = await prisma.communityPost.findUnique({ where: { id: req.params.postId }, include: { user: { select: { id: true, name: true } }, comments: { orderBy: { createdAt: "asc" }, include: { user: { select: { id: true, name: true } } } } } });
+  if (!post) return res.status(404).json({ error: "ไม่พบโพสต์" });
+  res.json(post);
+});
+
+router.post("/community/:postId/comments", requireAuth(), async (req: any, res) => {
+  const content = String(req.body?.content || "").trim().slice(0, 3000);
+  if (!content) return res.status(400).json({ error: "กรุณาระบุความคิดเห็น" });
+  const post = await prisma.communityPost.findUnique({ where: { id: req.params.postId } });
+  if (!post) return res.status(404).json({ error: "ไม่พบโพสต์" });
+  const comment = await prisma.communityComment.create({ data: { postId: post.id, userId: req.user.id, content }, include: { user: { select: { id: true, name: true } } } });
+  res.status(201).json(comment);
+});
+
+router.get("/portal/overview", requireAuth(), async (req: any, res) => {
+  if (!["ADMIN", "LEADER"].includes(req.user.role)) return res.status(403).json({ error: "ไม่มีสิทธิ์เข้าถึง Portal" });
+  const [users, subjects, materials, quizzes] = await Promise.all([
+    prisma.user.count(), prisma.subject.count(), prisma.material.count(), prisma.quiz.count(),
+  ]);
+  res.json({ users, subjects, materials, quizzes });
 });
 
 export default router;

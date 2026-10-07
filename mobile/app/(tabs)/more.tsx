@@ -484,13 +484,23 @@ export default function MoreScreen() {
         )
       ) : null}
 
+      {me?.role !== "MEMBER" ? (
+        <Pressable accessibilityRole="button" onPress={async () => {
+          try { const overview = await api<any>("/studypath/portal/overview"); Alert.alert("StudyPath Portal", `ผู้ใช้ ${overview.users} · วิชา ${overview.subjects} · เอกสาร ${overview.materials} · Quiz ${overview.quizzes}`); }
+          catch (cause) { Alert.alert("Portal", cause instanceof Error ? cause.message : "ไม่มีสิทธิ์"); }
+        }} style={styles.accHeader}>
+          <View style={styles.accLeft}><View style={[styles.accIcon,{backgroundColor:color+"1a"}]}><Ionicons name="school-outline" size={18} color={color}/></View><View style={styles.accTextBox}><Text style={styles.accTitle}>University / Lecturer Portal</Text><Text style={styles.accSub}>ภาพรวมการใช้งาน StudyPath</Text></View></View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted}/>
+        </Pressable>
+      ) : null}
+
       {/* ออกจากระบบ */}
       <Pressable accessibilityRole="button" onPress={logout} style={styles.logoutBtn}>
         <Ionicons name="log-out-outline" size={18} color={colors.danger} />
         <Text style={styles.logoutText}>ออกจากระบบ</Text>
       </Pressable>
 
-      <Text style={styles.footer}>Amway Team</Text>
+      <Text style={styles.footer}>StudyPath · Personal Learning OS</Text>
 
       {/* สร้างการนัดประชุม */}
       <Modal visible={meetingOpen} transparent animationType="fade" onRequestClose={() => setMeetingOpen(false)}>
