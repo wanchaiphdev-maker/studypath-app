@@ -20,7 +20,7 @@ export default function Dashboard(){
   <SectionHeader title="ทำอะไรต่อดี?" />
   <View style={styles.actions}>{[
    ["sparkles-outline","ถาม AI","/(tabs)/tutor","#a855f7"],["cloud-upload-outline","เพิ่มเนื้อหา",first?("/subject/"+first.id):"/(tabs)/subjects","#38bdf8"],
-   ["refresh-outline","ทบทวน","/(tabs)/review","#34d399"],["people-outline","Community","/community","#f59e0b"]
+   ["refresh-outline","ทบทวน","/(tabs)/review","#34d399"],["people-outline","Community","/community","#f59e0b"],["logo-google","Classroom","/classroom","#4285F4"]
   ].map(([icon,label,path,c],i)=><Pressable key={i} onPress={()=>router.push(path as any)} style={styles.action}><IconTile icon={icon as any} color={c}/><Text style={styles.actionText}>{label}</Text></Pressable>)}</View>
   <SectionHeader title="ภาพรวมการเรียน" />
   {progress.slice(0,3).map(item=><Card key={item.id} style={styles.progress}><View style={styles.progressRow}><Text style={font.title}>{item.subject?.name||"วิชา"}</Text><Text style={styles.pct}>{Math.round(item.mastery||0)}%</Text></View><ProgressBar value={Number(item.mastery||0)}/></Card>)}
