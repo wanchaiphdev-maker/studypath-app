@@ -1,172 +1,51 @@
 import { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { Pressable, StyleSheet, Text, View, ViewStyle } from "react-native";
 import { colors, font, radius, shadow, spacing } from "./theme";
 
-/** การ์ดพื้นผิวขาว — โค้งมุน เงาเบา */
-export function Card({ children, style, gap }: { children: ReactNode; style?: ViewStyle; gap?: number }) {
-  return <View style={[styles.card, gap ? { gap } : null, style]}>{children}</View>;
+export function Card({children,style}: {children:ReactNode;style?:ViewStyle}) {
+  return <View style={[styles.card,style]}>{children}</View>;
 }
-
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
-
-/** ปุ่มหลัก/รอง/ghost/อันตราย */
-export function Button({
-  children,
-  onPress,
-  variant = "primary",
-  disabled,
-  loading,
-  icon,
-  style,
-}: {
-  children: ReactNode;
-  onPress?: () => void;
-  variant?: ButtonVariant;
-  disabled?: boolean;
-  loading?: boolean;
-  icon?: keyof typeof Ionicons.glyphMap;
-  style?: ViewStyle;
-}) {
-  const isPrimary = variant === "primary";
-  const isDanger = variant === "danger";
-  const isGhost = variant === "ghost";
-  const bg = isPrimary ? "PRIMARY" : isDanger ? colors.danger : "transparent";
-  const fg = isPrimary || isDanger ? "#fff" : isGhost ? colors.textSecondary : colors.textSecondary;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled || loading}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        { backgroundColor: bg, opacity: disabled || loading ? 0.5 : pressed ? 0.85 : 1 },
-        variant === "secondary" && { borderWidth: 1, borderColor: colors.border },
-        isGhost && { paddingHorizontal: spacing.md },
-        style,
-      ]}
-    >
-      {loading ? (
-        <Text style={[styles.buttonText, { color: fg }]}>กำลังโหลด...</Text>
-      ) : (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          {icon ? <Ionicons name={icon} size={18} color={fg} /> : null}
-          <Text style={[styles.buttonText, { color: fg }]}>{children}</Text>
-        </View>
-      )}
-    </Pressable>
-  );
+export function GlowCard({children,style,colors:gradient=colors.gradient}: {children:ReactNode;style?:ViewStyle;colors?:string[]}) {
+  return <LinearGradient colors={gradient as any} start={{x:0,y:0}} end={{x:1,y:1}} style={[styles.glow,style]}>{children}</LinearGradient>;
 }
-
-/** หัวข้อส่วน + ปุ่มเสริม (เช่น "ดูทั้งหมด") */
-export function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
-  return (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {action ? (
-        <Pressable accessibilityRole="button" onPress={onAction} hitSlop={8}>
-          <Text style={styles.sectionAction}>{action}</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
+export function IconTile({icon,color=colors.accent,size=46}: {icon:keyof typeof Ionicons.glyphMap;color?:string;size?:number}) {
+  return <View style={{width:size,height:size,borderRadius:size*0.32,backgroundColor:color+"22",alignItems:"center",justifyContent:"center"}}><Ionicons name={icon} size={size*0.48} color={color}/></View>;
 }
-
-/** รูปโปรไฟล์วงกลมตัวอักษรย่อ */
-export function Avatar({ name, color, size = 44 }: { name: string; color: string; size?: number }) {
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: color,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <Text style={{ color: "#fff", fontSize: size * 0.4, fontWeight: "700" }}>
-        {name.trim().charAt(0).toUpperCase()}
-      </Text>
-    </View>
-  );
+export function ProgressBar({value,color=colors.accent}: {value:number;color?:string}) {
+  return <View style={styles.track}><View style={[styles.fill,{width:Math.max(2,Math.min(100,value))+"%" as any,backgroundColor:color}]}/></View>;
 }
-
-/** การ์ดสถิติ — ค่า + หัวข้อ + คำอธิบายเสริม */
-export function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
-  return (
-    <View style={styles.statCard}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      {sub ? <Text style={styles.statSub}>{sub}</Text> : null}
-    </View>
-  );
+export function SectionHeader({title,action,onAction}:{title:string;action?:string;onAction?:()=>void}) {
+  return <View style={styles.section}><Text style={font.h3}>{title}</Text>{action?<Pressable onPress={onAction}><Text style={styles.action}>{action}</Text></Pressable>:null}</View>;
 }
-
-/** ป้ายชื่อเล็กแบบ pill */
-export function Pill({ text, color }: { text: string; color?: string }) {
-  return (
-    <View style={[styles.pill, { backgroundColor: (color ?? colors.accent) + "1a" }]}>
-      <Text style={[styles.pillText, { color: color ?? colors.accent }]}>{text}</Text>
-    </View>
-  );
+export function Pill({text,color=colors.accent}:{text:string;color?:string}) {
+  return <View style={[styles.pill,{backgroundColor:color+"20"}]}><Text style={[styles.pillText,{color}]}>{text}</Text></View>;
 }
-
-/** สถานะว่างเปล่า */
-export function EmptyState({ icon, message, sub }: { icon: keyof typeof Ionicons.glyphMap; message: string; sub?: string }) {
-  return (
-    <View style={styles.empty}>
-      <Ionicons name={icon} size={40} color={colors.textMuted} />
-      <Text style={styles.emptyMessage}>{message}</Text>
-      {sub ? <Text style={styles.emptySub}>{sub}</Text> : null}
-    </View>
-  );
+export function Button({children,onPress,icon,variant="primary",loading=false}:{children:ReactNode;onPress?:()=>void;icon?:keyof typeof Ionicons.glyphMap;variant?:"primary"|"secondary"|"ghost"|"danger";loading?:boolean}) {
+  const primary=variant==="primary"; const danger=variant==="danger"; const ghost=variant==="ghost";
+  return <Pressable onPress={onPress} disabled={loading} style={({pressed})=>[styles.button,primary?styles.primary:danger?styles.danger:ghost?styles.ghost:styles.secondary,pressed&&{opacity:.82}]}>{icon?<Ionicons name={icon} size={18} color={primary?"#fff":colors.text}/>:null}<Text style={[styles.buttonText,{color:primary?"#fff":colors.text}]}>{loading?"กำลังโหลด...":children}</Text></Pressable>;
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    ...shadow.card,
-  },
-  button: {
-    minHeight: 48,
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.lg,
-  },
-  buttonText: { fontSize: 15, fontWeight: "600" },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: spacing.md,
-  },
-  sectionTitle: { ...font.h3 },
-  sectionAction: { fontSize: 13, fontWeight: "600", color: colors.accent },
-  statCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    ...shadow.card,
-  },
-  statLabel: { ...font.caption },
-  statValue: { fontSize: 24, fontWeight: "700", marginTop: spacing.xs },
-  statSub: { ...font.caption, marginTop: 2 },
-  pill: {
-    alignSelf: "flex-start",
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-  },
-  pillText: { fontSize: 12, fontWeight: "600" },
-  empty: { alignItems: "center", paddingVertical: spacing.xxxl, gap: spacing.sm },
-  emptyMessage: { ...font.body, color: colors.textSecondary, textAlign: "center" },
-  emptySub: { ...font.caption, textAlign: "center" },
+export function StatCard({value,label,icon,color=colors.accent}:{value:string;label:string;icon:keyof typeof Ionicons.glyphMap;color?:string}) {
+  return <Card style={styles.stat}><IconTile icon={icon} color={color} size={38}/><Text style={styles.statValue}>{value}</Text><Text style={styles.statLabel}>{label}</Text></Card>;
+}
+export function Avatar({name,size=44}:{name:string;size?:number}) {
+  return <LinearGradient colors={colors.gradient as any} style={{width:size,height:size,borderRadius:size/2,alignItems:"center",justifyContent:"center"}}><Text style={{color:"#fff",fontSize:size*.38,fontWeight:"800"}}>{name.trim().charAt(0).toUpperCase()}</Text></LinearGradient>;
+}
+const styles=StyleSheet.create({
+ card:{backgroundColor:colors.surface,borderRadius:radius.lg,borderWidth:1,borderColor:colors.border,padding:spacing.lg,...shadow.card},
+ glow:{borderRadius:radius.xl,padding:spacing.lg,overflow:"hidden"},
+ track:{height:7,borderRadius:99,backgroundColor:colors.track,overflow:"hidden"},
+ fill:{height:7,borderRadius:99},
+ section:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginBottom:spacing.md},
+ action:{color:colors.accent,fontSize:13,fontWeight:"700"},
+ pill:{alignSelf:"flex-start",paddingHorizontal:10,paddingVertical:5,borderRadius:99},
+ pillText:{fontSize:11,fontWeight:"800"},
+ button:{minHeight:48,borderRadius:radius.md,flexDirection:"row",alignItems:"center",justifyContent:"center",gap:8,paddingHorizontal:18},
+ primary:{backgroundColor:colors.accent},danger:{backgroundColor:colors.danger},ghost:{backgroundColor:"transparent"},
+ secondary:{backgroundColor:colors.surface,borderWidth:1,borderColor:colors.border},
+ buttonText:{fontSize:14,fontWeight:"800"},
+ stat:{flex:1,minWidth:90,padding:12},
+ statValue:{fontSize:21,fontWeight:"900",color:colors.text,marginTop:7},
+ statLabel:{fontSize:11,color:colors.textMuted,marginTop:2}
 });

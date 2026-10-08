@@ -1,134 +1,44 @@
-import { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {useEffect,useState} from "react";
+import {Alert,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import { useLocalSearchParams, router } from "expo-router";
-import { colors, font, radius, spacing } from "../../lib/theme";
-import { Card, Button, SectionHeader } from "../../lib/ui";
-import { askMaterial, createMaterial, generateQuiz, getSubject, uploadMaterial, getKnowledge } from "../../lib/api";
+import {requestRecordingPermissionsAsync,setAudioModeAsync,useAudioRecorder,useAudioRecorderState,RecordingPresets} from "expo-audio";
+import {useLocalSearchParams,router} from "expo-router";
+import {Ionicons} from "@expo/vector-icons";
+import {colors,font,radius,spacing} from "../../lib/theme";
+import {Button,Card,GlowCard,IconTile,Pill,ProgressBar,SectionHeader} from "../../lib/ui";
+import {askMaterial,createMaterial,generateQuiz,getSubject,uploadMaterial,getKnowledge} from "../../lib/api";
 
-export default function SubjectDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const [subject, setSubject] = useState<any>(null);
-  const [title, setTitle] = useState("");
-  const [text, setText] = useState("");
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState<any>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function load() {
-    try { setSubject(await getSubject(String(id))); }
-    catch (e) { Alert.alert("โหลดวิชาไม่สำเร็จ", String(e)); }
-  }
-
-  useEffect(() => { load(); }, [id]);
-
-  async function addMaterial() {
-    if (!text.trim()) return;
-    setBusy(true);
-    try { await createMaterial(String(id), title || "Lecture Note", text); setText(""); setTitle(""); await load(); }
-    catch (e) { Alert.alert("เพิ่มเอกสารไม่สำเร็จ", String(e)); }
-    finally { setBusy(false); }
-  }
-
-  async function pickFile() {
-    setBusy(true);
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/pdf", "text/plain"],
-        copyToCacheDirectory: true,
-        multiple: false,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-      const file = result.assets[0];
-      await uploadMaterial(String(id), {
-        uri: file.uri,
-        name: file.name || "learning-material.pdf",
-        mimeType: file.mimeType || "application/pdf",
-      }, title || file.name);
-      setTitle("");
-      await load();
-      Alert.alert("เพิ่มเอกสารสำเร็จ", "ระบบอ่านเนื้อหาและสร้าง Knowledge Base ให้แล้ว");
-    } catch (e) {
-      Alert.alert("อัปโหลดเอกสารไม่สำเร็จ", String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function ask() {
-    const material = subject?.materials?.[0];
-    if (!material || !question.trim()) { Alert.alert("AI Tutor", "เพิ่ม Material ก่อน แล้วจึงถามคำถาม"); return; }
-    setBusy(true);
-    try { setAnswer(await askMaterial(material.id, question)); }
-    catch (e) { Alert.alert("AI Tutor", String(e)); }
-    finally { setBusy(false); }
-  }
-
-  async function quiz() {
-    setBusy(true);
-    try { const q = await generateQuiz(String(id), 5); router.push(("/quiz/" + q.id) as any); }
-    catch (e) { Alert.alert("สร้าง Quiz ไม่สำเร็จ", String(e)); }
-    finally { setBusy(false); }
-  }
-
-  if (!subject) return <View style={styles.loading}><Text style={font.body}>กำลังโหลด...</Text></View>;
-
-  return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Button variant="ghost" onPress={() => router.back()} icon="arrow-back">กลับ</Button>
-      <Text style={font.h1}>{subject.name}</Text>
-      <Text style={font.caption}>{subject.code || "Subject"}</Text>
-
-      <Card style={styles.hero}>
-        <Text style={font.caption}>MASTERY</Text>
-        <Text style={styles.mastery}>{Math.round(subject.progress?.[0]?.mastery || 0)}%</Text>
-        <Text style={font.body}>เอกสาร {subject.materials?.length || 0} รายการ</Text>
-      </Card>
-
-      <SectionHeader title="Add Learning Material" />
-      <Card>
-        <TextInput value={title} onChangeText={setTitle} placeholder="ชื่อเอกสาร" placeholderTextColor={colors.textMuted} style={styles.input} />
-        <TextInput value={text} onChangeText={setText} multiline placeholder="วางเนื้อหา Lecture / Note ที่นี่..." placeholderTextColor={colors.textMuted} style={[styles.input, styles.textarea]} />
-        <Button onPress={addMaterial} loading={busy} icon="text-outline">บันทึกข้อความเข้า Knowledge Base</Button>
-        <Button onPress={pickFile} loading={busy} variant="secondary" icon="document-attach-outline">เลือก PDF / TXT จากเครื่อง</Button>
-      </Card>
-
-      <SectionHeader title="Materials" />
-      {(subject.materials || []).map((m: any) => (
-        <Card key={m.id} style={styles.material}>
-          <Text style={font.title}>{m.title}</Text>
-          <Text style={font.caption}>{m.status} · source: {m.sourceType}</Text>
-        </Card>
-      ))}
-
-      <SectionHeader title="Grounded AI Tutor" />
-      <Card>
-        <TextInput value={question} onChangeText={setQuestion} multiline placeholder="ถามจากเอกสารของวิชานี้..." placeholderTextColor={colors.textMuted} style={[styles.input, styles.textarea]} />
-        <Button onPress={ask} loading={busy} icon="sparkles-outline">ถาม AI จาก Material</Button>
-        {answer && (
-          <View style={styles.answer}>
-            <Text style={font.title}>{answer.grounded ? "อ้างอิงจาก Knowledge Base" : "ไม่พบ Source"}</Text>
-            <Text style={font.body}>{answer.answer}</Text>
-            {answer.sources?.map((s: any) => <Text key={s.chunk} style={styles.source}>Source · {s.title} · chunk {s.chunk}</Text>)}
-          </View>
-        )}
-      </Card>
-
-      <Button onPress={quiz} loading={busy} icon="help-circle-outline">สร้าง Quiz 5 ข้อ</Button>
-      <Button onPress={async () => { setBusy(true); try { const graph = await getKnowledge(String(id)); Alert.alert("Knowledge Graph", `พบ ${graph.nodes?.length || 0} concepts จากเอกสารของวิชานี้`); } catch (e) { Alert.alert("Knowledge Graph", String(e)); } finally { setBusy(false); } }} loading={busy} variant="secondary" icon="git-network-outline">สร้าง / ดู Knowledge Graph</Button>
-    </ScrollView>
-  );
+export default function SubjectDetail(){
+ const{id}=useLocalSearchParams<{id:string}>();const[subject,setSubject]=useState<any>(null),[title,setTitle]=useState(""),[text,setText]=useState(""),[question,setQuestion]=useState(""),[answer,setAnswer]=useState<any>(null),[busy,setBusy]=useState(false);
+ const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);const state=useAudioRecorderState(recorder);
+ useEffect(()=>{setAudioModeAsync({playsInSilentMode:true,allowsRecording:true}).catch(()=>{})},[]);
+ async function load(){try{setSubject(await getSubject(String(id)))}catch(e){Alert.alert("โหลดวิชาไม่สำเร็จ",String(e))}}useEffect(()=>{load()},[id]);
+ async function addMaterial(){if(!text.trim())return;setBusy(true);try{await createMaterial(String(id),title||"Lecture Note",text);setText("");setTitle("");await load()}catch(e){Alert.alert("เพิ่มเอกสารไม่สำเร็จ",String(e))}finally{setBusy(false)}}
+ async function record(){try{if(state.isRecording){await recorder.stop();const uri=recorder.uri;if(!uri)return;setBusy(true);await uploadMaterial(String(id),{uri,name:"lecture-"+Date.now()+".m4a",mimeType:"audio/mp4"},title||"Lecture Recording");setTitle("");await load();Alert.alert("สำเร็จ","ถอดเสียงและรวมเข้า Knowledge Base แล้ว");setBusy(false)}else{const p=await requestRecordingPermissionsAsync();if(!p.granted){Alert.alert("ต้องอนุญาตไมโครโฟน");return}await recorder.prepareToRecordAsync();recorder.record()}}catch(e){setBusy(false);Alert.alert("บันทึกเสียงไม่สำเร็จ",String(e))}}
+ async function pick(){setBusy(true);try{const r=await DocumentPicker.getDocumentAsync({type:["application/pdf","text/plain","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/vnd.ms-powerpoint","audio/*","video/*"],copyToCacheDirectory:true,multiple:false});if(r.canceled||!r.assets?.[0])return;const f=r.assets[0];await uploadMaterial(String(id),{uri:f.uri,name:f.name||"learning-material",mimeType:f.mimeType||"application/pdf"},title||f.name);setTitle("");await load();Alert.alert("สำเร็จ","เพิ่มเนื้อหาเข้า Knowledge Base แล้ว")}catch(e){Alert.alert("อัปโหลดไม่สำเร็จ",String(e))}finally{setBusy(false)}}
+ async function ask(){const m=subject?.materials?.[0];if(!m||!question.trim()){Alert.alert("AI Tutor","เพิ่มเนื้อหาก่อน");return}setBusy(true);try{setAnswer(await askMaterial(m.id,question))}catch(e){Alert.alert("AI Tutor",String(e))}finally{setBusy(false)}}
+ async function quiz(){setBusy(true);try{const q=await generateQuiz(String(id),5);router.push(("/quiz/"+q.id) as any)}catch(e){Alert.alert("สร้าง Quiz ไม่สำเร็จ",String(e))}finally{setBusy(false)}}
+ if(!subject)return <View style={styles.loading}><Text style={font.body}>กำลังโหลด...</Text></View>;
+ const mastery=Number(subject.progress?.[0]?.mastery||0);
+ return <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+  <View style={styles.header}><Pressable onPress={()=>router.back()}><IconTile icon="arrow-back" color={colors.textSecondary} size={40}/></Pressable><View style={{flex:1,marginLeft:10}}><Text style={styles.mini}>COURSE</Text><Text style={font.title}>{subject.code||"Subject"}</Text></View><Pressable onPress={quiz}><IconTile icon="help-circle-outline" color="#a855f7" size={40}/></Pressable></View>
+  <GlowCard style={styles.hero}><Text style={styles.heroEyebrow}>CURRENT COURSE</Text><Text style={styles.heroTitle}>{subject.name}</Text><View style={styles.heroBottom}><View><Text style={styles.heroPct}>{Math.round(mastery)}%</Text><Text style={styles.heroCaption}>Mastery</Text></View><View style={{flex:1,marginLeft:18}}><ProgressBar value={mastery} color="#fff"/><Text style={styles.heroCaption}>{subject.materials?.length||0} learning materials</Text></View></View></GlowCard>
+  <SectionHeader title="เพิ่มเนื้อหา" />
+  <Card><Text style={font.body}>รวมสไลด์อาจารย์ เสียงในห้อง และโน้ตไว้ใน Knowledge Base เดียว</Text><View style={styles.actions}>
+   <Pressable onPress={pick} style={styles.action}><IconTile icon="cloud-upload-outline" color="#38bdf8"/><Text style={styles.actionTitle}>อัปโหลด</Text><Text style={styles.actionSub}>PDF · PPTX · Audio</Text></Pressable>
+   <Pressable onPress={record} style={[styles.action,state.isRecording&&styles.recording]}><IconTile icon={state.isRecording?"stop-circle":"mic-outline"} color="#34d399"/><Text style={styles.actionTitle}>{state.isRecording?"หยุดบันทึก":"อัดเสียง"}</Text><Text style={styles.actionSub}>{state.isRecording?Math.round(state.durationMillis/1000)+" วินาที":"Lecture Recording"}</Text></Pressable>
+   <Pressable onPress={()=>setText("")} style={styles.action}><IconTile icon="create-outline" color="#a855f7"/><Text style={styles.actionTitle}>เพิ่มโน้ต</Text><Text style={styles.actionSub}>Lecture note</Text></Pressable>
+  </View>
+  <TextInput value={title} onChangeText={setTitle} placeholder="ชื่อเนื้อหา (ถ้าต้องการ)" placeholderTextColor={colors.textMuted} style={styles.input}/>
+  {text!==""?<TextInput value={text} onChangeText={setText} multiline placeholder="วางข้อความจาก Lecture..." placeholderTextColor={colors.textMuted} style={[styles.input,styles.textarea]}/>:null}
+  {text!==""?<Button onPress={addMaterial} loading={busy} icon="checkmark">บันทึกโน้ตเข้า Knowledge Base</Button>:null}</Card>
+  <SectionHeader title="เนื้อหาของวิชา" action={(subject.materials?.length||0)+" รายการ"}/>
+  {(subject.materials||[]).map((m:any)=><Card key={m.id} style={styles.material}><IconTile icon={m.mimeType?.includes("audio")?"mic":"document-text-outline"} color={m.mimeType?.includes("audio")?"#34d399":"#38bdf8"} size={42}/><View style={{flex:1}}><Text style={font.title}>{m.title}</Text><Text style={font.caption}>{m.sourceLabel||m.sourceType} · {m.status}</Text></View><Pill text={m.transcript?"AI Ready":"Indexed"} color={m.transcript?"#34d399":"#38bdf8"}/></Card>)}
+  <SectionHeader title="AI Tutor" />
+  <Card><View style={styles.aiHead}><IconTile icon="sparkles" color="#a855f7"/><View><Text style={font.title}>สอนฉันจากวิชานี้</Text><Text style={font.caption}>ตอบโดยอ้างอิงเนื้อหาที่อัปโหลด</Text></View></View><TextInput value={question} onChangeText={setQuestion} multiline placeholder="เช่น อธิบาย Normalization แบบง่าย..." placeholderTextColor={colors.textMuted} style={[styles.input,styles.textarea]}/><Button onPress={ask} loading={busy} icon="sparkles">ถาม AI Tutor</Button>{answer?<View style={styles.answer}><Text style={styles.grounded}>{answer.grounded?"✓ GROUNDED":"⚠ NO SOURCE"}</Text><Text style={font.body}>{answer.answer}</Text></View>:null}</Card>
+  <View style={styles.bottomActions}><Button onPress={quiz} loading={busy} icon="help-circle-outline">สร้าง Quiz</Button><Button onPress={async()=>{setBusy(true);try{const g=await getKnowledge(String(id));Alert.alert("Knowledge Graph","พบ "+(g.nodes?.length||0)+" concepts")}catch(e){Alert.alert("Knowledge Graph",String(e))}finally{setBusy(false)}}} loading={busy} variant="secondary" icon="git-network-outline">Knowledge Graph</Button></View>
+ </ScrollView>
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: 50, gap: spacing.md },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
-  hero: { marginTop: spacing.md },
-  mastery: { fontSize: 40, fontWeight: "800", color: colors.accent, marginVertical: 4 },
-  input: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface, padding: spacing.md, color: colors.text, marginBottom: spacing.sm },
-  textarea: { minHeight: 120, textAlignVertical: "top" },
-  material: { padding: spacing.md },
-  answer: { marginTop: spacing.md, gap: spacing.sm },
-  source: { fontSize: 12, color: colors.accent, fontWeight: "600" },
+const styles=StyleSheet.create({
+ screen:{flex:1,backgroundColor:colors.background},content:{padding:spacing.lg,paddingBottom:110,maxWidth:900,alignSelf:"center",width:"100%"},loading:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:colors.background},header:{flexDirection:"row",alignItems:"center",marginBottom:spacing.md},mini:{fontSize:9,fontWeight:"900",letterSpacing:1.5,color:"#a78bfa"},hero:{marginBottom:spacing.lg},heroEyebrow:{fontSize:10,fontWeight:"900",letterSpacing:1.5,color:"#ddd6fe"},heroTitle:{fontSize:25,fontWeight:"900",color:"#fff",marginTop:5},heroBottom:{flexDirection:"row",alignItems:"flex-end",marginTop:24},heroPct:{fontSize:32,fontWeight:"900",color:"#fff"},heroCaption:{fontSize:11,color:"#ddd6fe",marginTop:4},actions:{flexDirection:"row",gap:8,marginTop:16},action:{flex:1,backgroundColor:colors.surfaceAlt,borderRadius:16,padding:12,gap:7},actionTitle:{fontSize:12,fontWeight:"900",color:colors.text},actionSub:{fontSize:10,color:colors.textMuted},recording:{borderWidth:1,borderColor:colors.danger},input:{minHeight:46,borderWidth:1,borderColor:colors.border,borderRadius:14,backgroundColor:colors.surfaceAlt,paddingHorizontal:13,color:colors.text,marginTop:12},textarea:{minHeight:105,textAlignVertical:"top",paddingTop:13},material:{flexDirection:"row",alignItems:"center",gap:10,padding:13,marginBottom:8},aiHead:{flexDirection:"row",alignItems:"center",gap:10},answer:{marginTop:14,padding:13,borderRadius:14,backgroundColor:colors.surfaceAlt,gap:7},grounded:{fontSize:10,fontWeight:"900",color:colors.success},bottomActions:{gap:9,marginTop:8}
 });

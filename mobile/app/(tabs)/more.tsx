@@ -1,34 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import { api } from "../../lib/api";
-import { useTheme, colors, spacing, radius, font } from "../../lib/theme";
-import { Avatar, Card } from "../../lib/ui";
+import {useCallback,useEffect,useState} from "react";
+import {ActivityIndicator,Alert,Pressable,ScrollView,StyleSheet,Text,View} from "react-native";
+import {Ionicons} from "@expo/vector-icons";
+import {router} from "expo-router";
+import {api} from "../../lib/api";
+import {useTheme,colors,font,radius,spacing} from "../../lib/theme";
+import {Avatar,Card,IconTile,SectionHeader} from "../../lib/ui";
+import {removeToken} from "../../lib/storage";
 
-type Me = { id: string; name: string; email: string; role: "ADMIN" | "LECTURER" | "MEMBER"; themeColor: string; };
-export default function MoreScreen() {
-  const { color, setColor } = useTheme();
-  const [me, setMe] = useState<Me | null>(null);
-  const [learning, setLearning] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => {
-    try { const [profile, stats] = await Promise.all([api<Me>("/me"), api("/me/learning")]); setMe(profile); setLearning(stats); }
-    catch (e) { Alert.alert("โหลดโปรไฟล์ไม่สำเร็จ", e instanceof Error ? e.message : "ลองใหม่อีกครั้ง"); }
-    finally { setLoading(false); }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
-  const logout = async () => { await SecureStore.deleteItemAsync("token").catch(() => undefined); router.replace("/(auth)/login"); };
-  if (loading) return <View style={styles.center}><ActivityIndicator color={color} /></View>;
-  return <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-    {me && <View style={[styles.profile,{backgroundColor:color}]}><Avatar name={me.name} color="#ffffff33" size={56}/><View style={{flex:1}}><Text style={styles.name}>{me.name}</Text><Text style={styles.email}>{me.email}</Text><Text style={styles.role}>{me.role === "LECTURER" ? "อาจารย์" : me.role === "ADMIN" ? "ผู้ดูแลระบบ" : "นักศึกษา"}</Text></View></View>}
-    <Text style={styles.section}>ภาพรวมการเรียน</Text>
-    <Card><Text style={font.body}>วิชาที่ลงทะเบียน: {learning?.subjects ?? 0}</Text><Text style={font.body}>ทบทวนที่ถึงกำหนด: {learning?.dueReviews ?? 0}</Text><Text style={font.body}>งานที่ยังไม่เสร็จ: {learning?.planner ?? 0}</Text></Card>
-    {me?.role !== "MEMBER" && <Pressable style={styles.item} onPress={async()=>{try{const x=await api<any>("/studypath/portal/overview");Alert.alert("StudyPath Portal",`ผู้ใช้ ${x.users} · วิชา ${x.subjects} · เอกสาร ${x.materials} · Quiz ${x.quizzes}`)}catch(e){Alert.alert("Portal",e instanceof Error?e.message:"ไม่มีสิทธิ์")}}}><Ionicons name="school-outline" size={20} color={color}/><Text style={styles.itemText}>University / Lecturer Portal</Text><Ionicons name="chevron-forward" size={20} color={colors.textMuted}/></Pressable>}
-    <Text style={styles.section}>สีธีม</Text><Card><View style={styles.colors}>{["#2563eb","#147d64","#7c3aed","#db2777","#ea580c","#0891b2"].map(c=><Pressable key={c} onPress={()=>{setColor(c);void api("/me",{method:"PATCH",body:JSON.stringify({themeColor:c})}).catch(()=>undefined)}} style={[styles.swatch,{backgroundColor:c,borderColor:me?.themeColor===c?colors.text:"transparent"}]} />)}</View></Card>
-    <Pressable style={styles.logout} onPress={logout}><Ionicons name="log-out-outline" size={19} color={colors.danger}/><Text style={{color:colors.danger,fontWeight:"700"}}>ออกจากระบบ</Text></Pressable>
-    <Text style={styles.footer}>StudyPath · Personal Learning OS</Text>
-  </ScrollView>;
+type Me={id:string;name:string;email:string;role:"ADMIN"|"LECTURER"|"MEMBER";themeColor:string};
+export default function MoreScreen(){
+ const{color,setColor}=useTheme();const[me,setMe]=useState<Me|null>(null);const[learning,setLearning]=useState<any>(null);const[loading,setLoading]=useState(true);
+ const load=useCallback(async()=>{try{const[p,s]=await Promise.all([api<Me>("/me"),api("/me/learning")]);setMe(p);setLearning(s)}catch(e){Alert.alert("โหลดโปรไฟล์ไม่สำเร็จ",String(e))}finally{setLoading(false)}},[]);
+ useEffect(()=>{load()},[load]);
+ if(loading)return <View style={styles.center}><ActivityIndicator color={colors.accent}/></View>;
+ async function logout(){await removeToken();router.replace("/(auth)/login")}
+ return <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+  <Text style={styles.mini}>ACCOUNT</Text><Text style={font.h1}>โปรไฟล์</Text>
+  {me&&<Card style={styles.profile}><Avatar name={me.name} size={58}/><View style={{flex:1}}><Text style={font.h2}>{me.name}</Text><Text style={font.caption}>{me.email}</Text><View style={styles.role}><Ionicons name="shield-checkmark" size={13} color={colors.accent}/><Text style={styles.roleText}>{me.role==="LECTURER"?"อาจารย์":me.role==="ADMIN"?"ผู้ดูแลระบบ":"นักศึกษา"}</Text></View></View></Card>}
+  <SectionHeader title="Learning overview"/>
+  <View style={styles.grid}><Card style={styles.metric}><IconTile icon="library-outline" color="#a855f7" size={38}/><Text style={styles.metricNum}>{learning?.subjects||0}</Text><Text style={font.caption}>วิชา</Text></Card><Card style={styles.metric}><IconTile icon="repeat" color="#34d399" size={38}/><Text style={styles.metricNum}>{learning?.dueReviews||0}</Text><Text style={font.caption}>Review due</Text></Card><Card style={styles.metric}><IconTile icon="calendar-outline" color="#38bdf8" size={38}/><Text style={styles.metricNum}>{learning?.planner||0}</Text><Text style={font.caption}>งานค้าง</Text></Card></View>
+  <Pressable style={styles.menu} onPress={()=>router.push("/classroom")}><IconTile icon="logo-google" color="#4285F4" size={42}/><View style={{flex:1}}><Text style={font.title}>Google Classroom</Text><Text style={font.caption}>เชื่อมสไลด์และเอกสารเข้าวิชาอัตโนมัติ</Text></View><Ionicons name="chevron-forward" size={18} color={colors.textMuted}/></Pressable>
+  {me?.role!=="MEMBER"&&<Pressable style={styles.menu} onPress={async()=>{try{const x=await api<any>("/studypath/portal/overview");Alert.alert("University Portal","ผู้ใช้ "+x.users+" · วิชา "+x.subjects+" · เอกสาร "+x.materials+" · Quiz "+x.quizzes)}catch(e){Alert.alert("Portal",String(e))}}}><IconTile icon="school-outline" color="#38bdf8" size={42}/><View style={{flex:1}}><Text style={font.title}>University / Lecturer Portal</Text><Text style={font.caption}>จัดการภาพรวมระบบการเรียน</Text></View><Ionicons name="chevron-forward" size={18} color={colors.textMuted}/></Pressable>}
+  <SectionHeader title="สีประจำตัว"/>
+  <Card><View style={styles.colors}>{["#7c3aed","#2563eb","#0891b2","#147d64","#db2777","#ea580c"].map(c=><Pressable key={c} onPress={()=>{setColor(c);void api("/me",{method:"PATCH",body:JSON.stringify({themeColor:c})}).catch(()=>undefined)}} style={[styles.swatch,{backgroundColor:c,borderColor:me?.themeColor===c?"#fff":"transparent"}]}/>)}</View></Card>
+  <Pressable style={styles.logout} onPress={logout}><Ionicons name="log-out-outline" size={19} color={colors.danger}/><Text style={{color:colors.danger,fontWeight:"900"}}>ออกจากระบบ</Text></Pressable>
+  <Text style={styles.footer}>StudyPath · Personal Learning OS</Text>
+ </ScrollView>
 }
-const styles=StyleSheet.create({screen:{flex:1,backgroundColor:colors.background},content:{padding:spacing.lg,paddingBottom:spacing.xxxl},center:{flex:1,alignItems:"center",justifyContent:"center"},profile:{flexDirection:"row",alignItems:"center",borderRadius:radius.xl,padding:spacing.xl,gap:spacing.lg,marginBottom:spacing.xl},name:{color:"#fff",fontSize:20,fontWeight:"700"},email:{color:"#ffffffd9",fontSize:13},role:{color:"#fff",marginTop:6,fontWeight:"600"},section:{...font.h3,marginBottom:spacing.md,marginTop:spacing.lg},item:{flexDirection:"row",alignItems:"center",gap:spacing.md,padding:spacing.lg,borderRadius:radius.lg,borderWidth:1,borderColor:colors.border,backgroundColor:colors.surface},itemText:{...font.label,flex:1},colors:{flexDirection:"row",flexWrap:"wrap",gap:spacing.md},swatch:{width:44,height:44,borderRadius:22,borderWidth:3},logout:{marginTop:spacing.xl,flexDirection:"row",justifyContent:"center",alignItems:"center",gap:8,padding:spacing.lg,borderWidth:1,borderColor:"#f0c9c6",borderRadius:radius.md},footer:{...font.caption,textAlign:"center",marginTop:spacing.xxl}});
+const styles=StyleSheet.create({
+ screen:{flex:1,backgroundColor:colors.background},content:{padding:spacing.lg,paddingBottom:110,maxWidth:760,alignSelf:"center",width:"100%"},center:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:colors.background},mini:{fontSize:10,fontWeight:"900",letterSpacing:1.6,color:"#a78bfa",marginBottom:5},profile:{flexDirection:"row",alignItems:"center",gap:14,marginVertical:spacing.lg},role:{flexDirection:"row",alignItems:"center",gap:5,marginTop:7},roleText:{fontSize:11,fontWeight:"800",color:colors.accent},grid:{flexDirection:"row",gap:9,marginBottom:spacing.lg},metric:{flex:1,padding:13},metricNum:{fontSize:22,fontWeight:"900",color:colors.text,marginTop:7},menu:{flexDirection:"row",alignItems:"center",gap:12,backgroundColor:colors.surface,borderWidth:1,borderColor:colors.border,borderRadius:radius.lg,padding:14,marginBottom:spacing.lg},colors:{flexDirection:"row",flexWrap:"wrap",gap:12},swatch:{width:43,height:43,borderRadius:22,borderWidth:3},logout:{marginTop:spacing.xl,flexDirection:"row",justifyContent:"center",alignItems:"center",gap:8,padding:14,borderWidth:1,borderColor:"#ef5b6f44",borderRadius:radius.md},footer:{...font.caption,textAlign:"center",marginTop:spacing.xxl}
+});

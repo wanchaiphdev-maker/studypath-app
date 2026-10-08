@@ -8,23 +8,14 @@ export const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 const REDIRECT_URI = `${BASE_URL?.replace(/\/$/, "")}/auth/google/callback`;
 
 /** ที่อยู่ให้ backend ส่ง token กลับมาที่แอป (mobile:///login ตอนใช้ APK / exp://…/--/login ตอนใช้ Expo Go) */
-export function appReturnUrl() {
-  return Linking.createURL("login");
+export function appReturnUrl(path = "login") {
+  return Linking.createURL(path);
 }
 
 /** สร้าง URL หน้า consent ของ Google */
-export function buildGoogleAuthUrl() {
-  if (!GOOGLE_CLIENT_ID) throw new Error("ยังไม่ได้ตั้งค่า EXPO_PUBLIC_GOOGLE_CLIENT_ID ในไฟล์ .env");
-  const params: Array<[string, string]> = [
-    ["client_id", GOOGLE_CLIENT_ID],
-    ["redirect_uri", REDIRECT_URI],
-    ["response_type", "code"],
-    ["scope", "openid email profile"],
-    ["state", appReturnUrl()],
-    ["prompt", "select_account"],
-  ];
-  const query = params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
-  return `https://accounts.google.com/o/oauth2/v2/auth?${query}`;
+export function buildGoogleAuthUrl(returnPath = "login") {
+  if (!BASE_URL) throw new Error("ยังไม่ได้ตั้งค่า EXPO_PUBLIC_API_URL ในไฟล์ .env");
+  return `${BASE_URL.replace(/\/$/, "")}/auth/google/start?returnUrl=${encodeURIComponent(appReturnUrl(returnPath))}`;
 }
 
 /**

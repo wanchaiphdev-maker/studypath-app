@@ -1,23 +1,9 @@
-import { Tabs } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { colors } from "../../lib/theme";
-
-const tabs: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
-  index: { icon: "home-outline", label: "วันนี้" },
-  subjects: { icon: "library-outline", label: "วิชา" },
-  tutor: { icon: "sparkles-outline", label: "AI Tutor" },
-  review: { icon: "refresh-outline", label: "ทบทวน" },
-  more: { icon: "person-outline", label: "โปรไฟล์" },
-};
-
-export default function TabsLayout() {
-  return <Tabs screenOptions={({ route }) => ({
-    headerShown: false,
-    tabBarActiveTintColor: colors.accent,
-    tabBarInactiveTintColor: colors.textMuted,
-    tabBarLabel: tabs[route.name]?.label || route.name,
-    tabBarIcon: ({ color, size }) => <Ionicons name={tabs[route.name]?.icon || "ellipse-outline"} size={size} color={color} />,
-  })}>
-    <Tabs.Screen name="index" /><Tabs.Screen name="subjects" /><Tabs.Screen name="tutor" /><Tabs.Screen name="review" /><Tabs.Screen name="more" />
-  </Tabs>;
+import {Tabs} from "expo-router";
+import {Ionicons} from "@expo/vector-icons";
+import {colors,radius} from "../../lib/theme";
+const tabs:any={index:["home","วันนี้"],subjects:["library","วิชา"],tutor:["sparkles","AI"],review:["repeat","ทบทวน"],more:["person","โปรไฟล์"]};
+export default function TabsLayout(){
+ return <Tabs screenOptions={({route})=>({headerShown:false,tabBarActiveTintColor:"#fff",tabBarInactiveTintColor:colors.textMuted,tabBarLabel:tabs[route.name]?.[1]||route.name,tabBarLabelStyle:{fontSize:10,fontWeight:"800",marginBottom:3},tabBarStyle:{position:"absolute",left:12,right:12,bottom:12,height:68,borderRadius:radius.xl,borderTopWidth:1,borderWidth:1,borderColor:colors.border,backgroundColor:"#121426ee",paddingTop:8,paddingBottom:8,shadowColor:"#000",shadowOpacity:.3,shadowRadius:20,elevation:10},tabBarIcon:({color,size,focused})=><Ionicons name={(tabs[route.name]?.[0]||"ellipse")+"-outline" as any} size={focused?23:21} color={color}/>})}>
+ <Tabs.Screen name="index"/><Tabs.Screen name="subjects"/><Tabs.Screen name="tutor"/><Tabs.Screen name="review"/><Tabs.Screen name="more"/>
+ </Tabs>
 }

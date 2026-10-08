@@ -1,5 +1,8 @@
 import { Router } from "express";
 import multer from "multer";
+import AdmZip from "adm-zip";
+import fs from "fs";
+import path from "path";
 import { PDFParse } from "pdf-parse";
 import { prisma, requireAuth } from "../auth";
 
@@ -7,10 +10,78 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = ["application/pdf", "text/plain"];
+    const allowed = [
+      "application/pdf",
+      "text/plain",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/vnd.ms-powerpoint",
+      "audio/mpeg",
+      "audio/mp4",
+      "audio/wav",
+      "audio/x-wav",
+      "audio/webm",
+      "audio/ogg",
+      "video/mp4",
+      "video/webm",
+    ];
     cb(null, allowed.includes(file.mimetype));
   },
 });
+
+const MEDIA_DIR = path.resolve(process.env.MEDIA_DIR || path.join(process.cwd(), "storage", "materials"));
+fs.mkdirSync(MEDIA_DIR, { recursive: true });
+
+function chunkText(text: string) {
+  const parts = text.split(/(?<=[.!?。！？])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+  const chunks: string[] = [];
+  let current = "";
+  for (const part of parts) {
+    if ((current + " " + part).trim().length > 1200 && current) {
+      chunks.push(current.trim());
+      current = part;
+    } else current = (current + " " + part).trim();
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function extractPptxText(buffer: Buffer) {
+  const zip = new AdmZip(buffer);
+  return zip.getEntries()
+    .filter((e) => /^ppt\/slides\/slide\d+\.xml$/i.test(e.entryName))
+    .sort((a, b) => {
+      const na = Number(a.entryName.match(/slide(\d+)/i)?.[1] || 0);
+      const nb = Number(b.entryName.match(/slide(\d+)/i)?.[1] || 0);
+      return na - nb;
+    })
+    .map((entry, index) => {
+      const xml = entry.getData().toString("utf8");
+      const texts = Array.from(xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)).map((m) =>
+        m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      );
+      return "[สไลด์ " + (index + 1) + "] " + texts.join(" ");
+    })
+    .filter((x) => x.length > 10)
+    .join("\n\n");
+}
+
+async function transcribeAudio(buffer: Buffer, filename: string, mimeType: string) {
+  const endpoint = process.env.AI_BASE_URL?.replace(/\/$/, "");
+  const key = process.env.AI_API_KEY;
+  if (!endpoint || !key) return null;
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(buffer)], { type: mimeType }), filename);
+  form.append("model", process.env.AI_TRANSCRIBE_MODEL || process.env.AI_MODEL || "whisper-1");
+  const response = await fetch(endpoint + "/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + key },
+    body: form,
+    signal: AbortSignal.timeout(120000),
+  });
+  if (!response.ok) throw new Error("Transcription provider error " + response.status);
+  const body: any = await response.json();
+  return String(body?.text || "").trim() || null;
+}
 
 const router = Router();
 
@@ -95,61 +166,64 @@ router.post("/materials/upload", requireAuth(), upload.single("file"), async (re
     const subjectId = String(req.body?.subjectId || "").trim();
     const title = String(req.body?.title || req.file?.originalname || "เอกสารการเรียน").trim().slice(0, 200);
     if (!subjectId) return res.status(400).json({ error: "กรุณาระบุวิชา" });
-    if (!req.file) return res.status(400).json({ error: "กรุณาเลือกไฟล์ PDF หรือ TXT" });
+    if (!req.file) return res.status(400).json({ error: "กรุณาเลือกไฟล์ PDF, PPTX, TXT หรือไฟล์บันทึกเสียง" });
 
     const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id } });
     if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
 
+    const isAudio = req.file.mimetype.startsWith("audio/") || req.file.mimetype.startsWith("video/");
+    const isPptx = req.file.mimetype.includes("presentationml") || /\.pptx?$/i.test(req.file.originalname);
     let textContent = "";
     let pageCount: number | undefined;
-    if (req.file.mimetype === "application/pdf") {
+    let transcript: string | null = null;
+    let sourceLabel = "เอกสารการเรียน";
+    if (isAudio) {
+      const savedName = Date.now() + "-" + req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const savedPath = path.join(MEDIA_DIR, savedName);
+      fs.writeFileSync(savedPath, req.file.buffer);
+      transcript = await transcribeAudio(req.file.buffer, req.file.originalname, req.file.mimetype);
+      if (!transcript) return res.status(422).json({ error: "บันทึกเสียงถูกเก็บไว้แล้ว แต่ยังถอดเสียงไม่ได้ กรุณาตั้งค่า AI_BASE_URL และ AI_API_KEY สำหรับระบบ Transcription" });
+      textContent = "[บันทึกเสียงในชั้นเรียน]\\n" + transcript;
+      sourceLabel = "Lecture Recording";
+      const chunks = chunkText(textContent);
+      const material = await prisma.material.create({
+        data: { title, fileName: req.file.originalname.slice(0,255), mimeType: req.file.mimetype, sourceType: "LECTURER", status: "COMPLETED", textContent, transcript, filePath: savedPath, sourceLabel, userId: req.user.id, subjectId, chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) } },
+        include: { chunks: true },
+      });
+      await prisma.subject.update({ where: { id: subjectId }, data: { status: "IN_PROGRESS" } });
+      return res.status(201).json({ id: material.id, title: material.title, status: material.status, chunkCount: material.chunks.length, sourceLabel, transcriptAvailable: true });
+    }
+    if (isPptx) {
+      textContent = extractPptxText(req.file.buffer);
+      sourceLabel = "Lecture Slides";
+    } else if (req.file.mimetype === "application/pdf") {
       const parser = new PDFParse({ data: req.file.buffer });
       const result = await parser.getText();
       textContent = String(result.text || "").trim();
       pageCount = Number(result.total || 0) || undefined;
       await parser.destroy();
+      sourceLabel = "PDF Lecture Material";
     } else {
       textContent = req.file.buffer.toString("utf8").trim();
+      sourceLabel = "Lecture Note";
     }
-
-    if (textContent.length < 20) {
-      return res.status(422).json({ error: "ไฟล์นี้ไม่มีข้อความที่อ่านได้เพียงพอ หากเป็น PDF สแกนภาพจะต้องใช้ OCR เพิ่มเติม" });
-    }
-
-    const parts = textContent.split(/(?<=[.!?。！？])\s+|\n+/).map((x: string) => x.trim()).filter(Boolean);
-    const chunks: string[] = [];
-    let current = "";
-    for (const part of parts) {
-      if ((current + " " + part).trim().length > 1200 && current) { chunks.push(current.trim()); current = part; }
-      else current = (current + " " + part).trim();
-    }
-    if (current) chunks.push(current);
-
+    if (textContent.length < 20) return res.status(422).json({ error: "ไฟล์นี้ไม่มีข้อความที่อ่านได้เพียงพอ หากเป็น PDF สแกนภาพให้ใช้ OCR เพิ่มเติม" });
+    const chunks = chunkText(textContent);
+    const savedName = Date.now() + "-" + req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const savedPath = path.join(MEDIA_DIR, savedName);
+    fs.writeFileSync(savedPath, req.file.buffer);
     const material = await prisma.material.create({
-      data: {
-        title,
-        fileName: req.file.originalname.slice(0, 255),
-        mimeType: req.file.mimetype,
-        sourceType: "IMPORTED",
-        status: "COMPLETED",
-        textContent,
-        pageCount,
-        userId: req.user.id,
-        subjectId,
-        chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) },
-      },
+      data: { title, fileName: req.file.originalname.slice(0,255), mimeType: req.file.mimetype, sourceType: "LECTURER", status: "COMPLETED", textContent, pageCount, filePath: savedPath, sourceLabel, userId: req.user.id, subjectId, chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) } },
       include: { chunks: true },
     });
     await prisma.subject.update({ where: { id: subjectId }, data: { status: "IN_PROGRESS" } });
-    res.status(201).json({
-      id: material.id, title: material.title, fileName: material.fileName,
-      status: material.status, pageCount: material.pageCount, chunkCount: material.chunks.length,
-    });
+    res.status(201).json({ id: material.id, title: material.title, fileName: material.fileName, status: material.status, pageCount: material.pageCount, chunkCount: material.chunks.length, sourceLabel });
   } catch (error) {
     console.error("StudyPath material upload failed", error);
-    res.status(500).json({ error: "ประมวลผลเอกสารไม่สำเร็จ" });
+    res.status(500).json({ error: "ประมวลผล Learning Material ไม่สำเร็จ: " + String(error instanceof Error ? error.message : error) });
   }
 });
+
 
 router.post("/materials", requireAuth(), async (req: any, res) => {
   const subjectId = String(req.body?.subjectId || "").trim();
@@ -181,17 +255,32 @@ router.post("/materials", requireAuth(), async (req: any, res) => {
 router.post("/materials/:materialId/ask", requireAuth(), async (req: any, res) => {
   const question = String(req.body?.question || "").trim();
   if (!question) return res.status(400).json({ error: "กรุณาพิมพ์คำถาม" });
-  const material = await prisma.material.findFirst({ where: { id: req.params.materialId, userId: req.user.id }, include: { chunks: true } });
+  const material = await prisma.material.findFirst({ where: { id: req.params.materialId, userId: req.user.id } });
   if (!material) return res.status(404).json({ error: "ไม่พบเอกสาร" });
+  const materials = await prisma.material.findMany({
+    where: { subjectId: material.subjectId, userId: req.user.id, status: "COMPLETED" },
+    include: { chunks: true },
+    orderBy: { createdAt: "asc" },
+  });
   const q = new Set(question.toLowerCase().split(/\s+/).filter((x: string) => x.length > 1));
-  const ranked = material.chunks.map((chunk) => {
+  const ranked = materials.flatMap((m) => m.chunks.map((chunk) => {
     const words = chunk.content.toLowerCase().split(/\s+/);
     const score = words.reduce((n: number, word: string) => n + (q.has(word.replace(/[^\p{L}\p{N}]/gu, "")) ? 1 : 0), 0);
-    return { chunk, score };
-  }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
-  if (!ranked.length) return res.json({ grounded: false, answer: "ยังไม่พบข้อมูลที่ตรงกับคำถามในเอกสารนี้", sources: [] });
-  const sources = ranked.map((x) => ({ materialId: material.id, title: material.title, chunk: x.chunk.chunkIndex + 1, excerpt: x.chunk.content.slice(0, 220) }));
-  const context = ranked.map((x) => "[Source " + (x.chunk.chunkIndex + 1) + "] " + x.chunk.content).join("\n\n");
+    return { material: m, chunk, score };
+  })).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 8);
+  if (!ranked.length) return res.json({
+    grounded: false,
+    answer: "ยังไม่พบข้อมูลที่ตรงกับคำถามในเนื้อหาของวิชานี้ กรุณาเพิ่มสไลด์หรือบันทึกเสียงการเรียนที่เกี่ยวข้อง",
+    sources: [],
+  });
+  const sources = ranked.map((x) => ({
+    materialId: x.material.id,
+    title: x.material.title,
+    sourceLabel: x.material.sourceLabel,
+    chunk: x.chunk.chunkIndex + 1,
+    excerpt: x.chunk.content.slice(0, 220),
+  }));
+  const context = ranked.map((x) => "[" + (x.material.sourceLabel || "Learning Material") + " | " + x.material.title + " | chunk " + (x.chunk.chunkIndex + 1) + "] " + x.chunk.content).join("\n\n");
   let answer = ranked.map((x) => x.chunk.content).join("\n\n");
   let mode = "grounded-retrieval";
   try {
@@ -200,8 +289,9 @@ router.post("/materials/:materialId/ask", requireAuth(), async (req: any, res) =
   } catch (error) {
     console.warn("AI provider unavailable; using grounded retrieval fallback", error);
   }
-  res.json({ grounded: true, mode, answer, sources });
+  res.json({ grounded: true, mode, answer, sources, sourceCount: sources.length, knowledgeBase: "all-materials-in-subject" });
 });
+
 
 router.post("/subjects/:subjectId/quizzes/generate", requireAuth(), async (req: any, res) => {
   const subject = await prisma.subject.findFirst({ where: { id: req.params.subjectId, userId: req.user.id }, include: { materials: { where: { status: "COMPLETED" }, orderBy: { createdAt: "desc" }, take: 1 } } });

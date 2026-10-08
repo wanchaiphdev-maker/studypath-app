@@ -1,4 +1,4 @@
-import * as SecureStore from "expo-secure-store";
+import { getToken, setToken } from "./storage";
 
 export const BASE = process.env.EXPO_PUBLIC_API_URL;
 export const BASE_URL = BASE?.replace(/\/$/, "");
@@ -9,7 +9,7 @@ function getUrl(path: string) {
 }
 
 export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
-  const token = await SecureStore.getItemAsync("token");
+  const token = await getToken();
   const response = await fetch(getUrl(path), {
     ...opts,
     headers: {
@@ -33,7 +33,7 @@ export async function login(email: string, password: string) {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || response.statusText);
-  await SecureStore.setItemAsync("token", body.token);
+  await setToken(body.token);
   return body.user;
 }
 
@@ -45,7 +45,7 @@ export async function register(name: string, email: string, password: string) {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || response.statusText);
-  await SecureStore.setItemAsync("token", body.token);
+  await setToken(body.token);
   return body.user;
 }
 export async function getCurriculum() { return api<any[]>("/studypath/curriculum"); }
@@ -57,7 +57,7 @@ export async function getSubject(id: string) { return api<any>("/studypath/subje
 export async function createMaterial(subjectId: string, title: string, textContent: string) { return api("/studypath/materials", { method: "POST", body: JSON.stringify({ subjectId, title, textContent }) }); }
 
 export async function uploadMaterial(subjectId: string, file: { uri: string; name: string; mimeType?: string }, title?: string) {
-  const token = await SecureStore.getItemAsync("token");
+  const token = await getToken();
   if (!BASE) throw new Error("ตั้งค่า EXPO_PUBLIC_API_URL ในไฟล์ .env ก่อน");
   const form = new FormData();
   form.append("subjectId", subjectId);
@@ -95,3 +95,6 @@ export async function createCommunityPost(title: string, content: string, subjec
 export async function getCommunityPost(id: string) { return api<any>("/studypath/community/" + id); }
 export async function commentCommunity(id: string, content: string) { return api("/studypath/community/" + id + "/comments", { method: "POST", body: JSON.stringify({ content }) }); }
 export async function getPortalOverview() { return api<any>("/studypath/portal/overview"); }
+export async function getClassroomStatus() { return api<any>("/studypath/classroom/status"); }
+export async function getClassroomCourses() { return api<any[]>("/studypath/classroom/courses"); }
+export async function syncClassroom(mappings: { courseId: string; subjectId: string }[]) { return api<any>("/studypath/classroom/sync", { method: "POST", body: JSON.stringify({ mappings }) }); }

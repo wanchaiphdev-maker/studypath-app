@@ -62,6 +62,7 @@ model User {
   communityPosts     CommunityPost[]
   communityComments  CommunityComment[]
   knowledgeNodes     KnowledgeNode[]
+  googleConnection  GoogleConnection?
 }
 
 model AcademicYear {
@@ -114,7 +115,16 @@ model Material {
   status       MaterialStatus     @default(PROCESSING)
   textContent  String             @db.Text
   pageCount    Int?
-  userId       String
+  filePath     String?
+  transcript   String?            @db.Text
+  durationSec  Int?
+  sourceLabel      String?
+  externalProvider String?
+  externalId       String?
+  externalUpdatedAt DateTime?
+  externalUrl      String?
+  driveFileId      String?
+  userId           String
   user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   subjectId    String
   subject      Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -122,6 +132,19 @@ model Material {
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
   @@index([userId, subjectId, createdAt])
+  @@unique([userId, externalProvider, externalId])
+}
+
+model GoogleConnection {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessTokenEncrypted  String   @db.Text
+  refreshTokenEncrypted String   @db.Text
+  expiresAt             DateTime?
+  scope                 String?  @db.Text
+  connectedAt           DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 model MaterialChunk {

@@ -1,8 +1,10 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { prisma, login, register, googleLogin, googleCallback, facebookLogin, facebookCallback, requireAuth } from "./auth";
+import { prisma, login, register, requireAuth } from "./auth";
 import studypath from "./routes/studypath";
+import googleAuth from "./routes/google";
+import classroom from "./routes/classroom";
 
 const app = express();
 const allowedOrigin = process.env.CORS_ORIGIN?.trim();
@@ -21,10 +23,7 @@ app.get("/health", (_req, res) => res.json({ ok: true, service: "StudyPath API",
 
 app.post("/auth/login", login);
 app.post("/auth/register", register);
-app.post("/auth/google", googleLogin);
-app.get("/auth/google/callback", googleCallback);
-app.post("/auth/facebook", facebookLogin);
-app.get("/auth/facebook/callback", facebookCallback);
+app.use("/auth", googleAuth);
 
 const legalPage = (title: string, body: string) => `<!doctype html>
 <html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -43,6 +42,7 @@ app.get("/terms", (_req, res) => res.type("html").send(legalPage("ข้อก�
 <h2>ชุมชน</h2><p>โพสต์และความคิดเห็นต้องเกี่ยวข้องกับการศึกษาและเคารพผู้ใช้อื่น</p>`)));
 
 app.use("/studypath", studypath);
+app.use("/studypath/classroom", classroom);
 
 app.get("/me", requireAuth(), async (req: any, res) => {
   const user = await prisma.user.findUnique({
