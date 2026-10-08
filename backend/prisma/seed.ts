@@ -1,168 +1,61 @@
 import "dotenv/config";
 import bcrypt from "bcrypt";
-import { PrismaClient, Role, RoomType } from "@prisma/client";
+import { PrismaClient, Role } from "@prisma/client";
 
 const prisma = new PrismaClient();
-
-// รหัสผ่านของบัญชีทดสอบ (แก้ได้ผ่าน env SEED_PASSWORD)
-export const DEMO_PASSWORD = process.env.SEED_PASSWORD || "AmwayDemo2026!";
-
-const PRODUCTS = [
-  { name: "Nutrilite Daily Multivitamin", price: 1200, pv: 90 },
-  { name: "Nutrilite Vitamin C 1000mg", price: 690, pv: 52 },
-  { name: "Artistry Ideal Radiance Essence", price: 2450, pv: 184 },
-  { name: "Artistry Hydra-V Gel Cream", price: 1150, pv: 86 },
-  { name: "LOC Multi-Purpose Cleaner", price: 320, pv: 24 },
-  { name: "SA8 Premium Liquid Detergent", price: 560, pv: 42 },
-  { name: "XS Energy Drink Citrus", price: 540, pv: 40 },
-];
-
-async function upsertUser(email: string, name: string, role: Role, uplineId: string | null, groupId: string | null, passwordHash: string) {
-  return prisma.user.upsert({
-    where: { email },
-    update: { name, role, uplineId, groupId },
-    create: { email, name, role, uplineId, groupId, passwordHash },
-  });
-}
 
 async function main() {
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD;
-  const name = process.env.ADMIN_NAME?.trim() || "Admin";
+  const name = process.env.ADMIN_NAME?.trim() || "StudyPath Admin";
 
   if (!email || !email.includes("@") || !password || password.length < 12) {
-    throw new Error("Set ADMIN_EMAIL and an ADMIN_PASSWORD of at least 12 characters in backend/.env");
+    throw new Error("Set ADMIN_EMAIL and ADMIN_PASSWORD (minimum 12 characters) in backend/.env");
   }
 
-  const adminHash = await bcrypt.hash(password, 12);
+  const passwordHash = await bcrypt.hash(password, 12);
   const admin = await prisma.user.upsert({
     where: { email },
-    update: { name, role: Role.ADMIN },
-    create: { email, name, passwordHash: adminHash, role: Role.ADMIN },
+    update: { name, role: Role.ADMIN, passwordHash },
+    create: { email, name, passwordHash, role: Role.ADMIN },
   });
 
-  // กลุ่มหลัก (มีแค่กลุ่มเดียวในเดโม)
-  const group = (await prisma.group.findFirst({ where: { name: "กลุ่มหลัก" } }))
-    ?? await prisma.group.create({ data: { name: "กลุ่มหลัก" } });
-  await prisma.group.update({ where: { id: group.id }, data: { members: { connect: { id: admin.id } } } });
-
-  // บัญชีทดสอบ: หัวหน้าทีม + สมาชิก 2 คน (ใช้ทดสอบหน้าทีม/แชท)
-  const demoHash = await bcrypt.hash(DEMO_PASSWORD, 12);
-  const leader = await upsertUser("leader@amway.local", "สมชาย หัวหน้าทีม", Role.LEADER, admin.id, group.id, demoHash);
-  const member1 = await upsertUser("member1@amway.local", "สมหญิง สมาชิก", Role.MEMBER, leader.id, group.id, demoHash);
-  const member2 = await upsertUser("member2@amway.local", "สมศักดิ์ สมาชิก", Role.MEMBER, leader.id, group.id, demoHash);
-  await prisma.group.update({
-    where: { id: group.id },
-    data: { members: { connect: [{ id: leader.id }, { id: member1.id }, { id: member2.id }] } },
+  const year = await prisma.academicYear.upsert({
+    where: { id: "seed-current-year" },
+    update: { name: "ปีการศึกษา 2569", order: 1, userId: admin.id },
+    create: { id: "seed-current-year", name: "ปีการศึกษา 2569", order: 1, userId: admin.id },
   });
 
-  // สินค้า
-  for (const product of PRODUCTS) {
-    const existing = await prisma.product.findFirst({ where: { name: product.name } });
-    if (existing) await prisma.product.update({ where: { id: existing.id }, data: product });
-    else await prisma.product.create({ data: product });
-  }
-
-  // ห้องแชทกลุ่ม
-  let groupRoom = await prisma.room.findFirst({ where: { type: RoomType.GROUP, groupId: group.id } });
-  if (!groupRoom) groupRoom = await prisma.room.create({ data: { type: RoomType.GROUP, groupId: group.id, members: [] } });
-
-  // ห้องคุยตรง แอดมิน <-> หัวหน้าทีม
-  let directRoom = await prisma.room.findFirst({
-    where: { type: RoomType.DIRECT, AND: [{ members: { has: admin.id } }, { members: { has: leader.id } }] },
+  const semester = await prisma.semester.upsert({
+    where: { id: "seed-semester-1" },
+    update: { name: "ภาคการศึกษาที่ 1", order: 1, userId: admin.id, academicYearId: year.id },
+    create: { id: "seed-semester-1", name: "ภาคการศึกษาที่ 1", order: 1, userId: admin.id, academicYearId: year.id },
   });
-  if (!directRoom) {
-    directRoom = await prisma.room.create({ data: { type: RoomType.DIRECT, members: [admin.id, leader.id] } });
-  }
 
-  // ข้อความตัวอย่าง (รันซ้ำได้โดยไม่ทับของเดิม)
-  const demoMessages: Array<{ roomId: string; senderId: string; text: string; minutesAgo: number }> = [
-    { roomId: groupRoom.id, senderId: admin.id, text: "สวัสดีทุกคน ยอดเดือนนี้ทำได้ดีมากครับ 👏", minutesAgo: 180 },
-    { roomId: groupRoom.id, senderId: leader.id, text: "ขอบคุณครับ สัปดาห์หน้าจะนัดประชุมทีม", minutesAgo: 120 },
-    { roomId: groupRoom.id, senderId: member1.id, text: "รับทราบค่ะ แล้วเจอกันในห้องประชุม", minutesAgo: 45 },
-    { roomId: directRoom.id, senderId: leader.id, text: "พี่ครับ ขอตัวเลขยอด PV ของทีมหน่อยครับ", minutesAgo: 60 },
-    { roomId: directRoom.id, senderId: admin.id, text: "ส่งให้ทางหน้าทีมแล้วนะครับ", minutesAgo: 30 },
+  const subjects = [
+    { id: "seed-subject-programming", code: "CS101", name: "การเขียนโปรแกรมเบื้องต้น", description: "พื้นฐานการคิดเชิงคำนวณและการเขียนโปรแกรม", credits: 3, instructor: "อาจารย์ผู้สอน" },
+    { id: "seed-subject-database", code: "CS202", name: "ระบบฐานข้อมูล", description: "โมเดลข้อมูล SQL และการออกแบบฐานข้อมูล", credits: 3, instructor: "อาจารย์ผู้สอน" },
   ];
-  for (const message of demoMessages) {
-    const duplicate = await prisma.message.findFirst({
-      where: { roomId: message.roomId, senderId: message.senderId, text: message.text },
-    });
-    if (duplicate) continue;
-    await prisma.message.create({
-      data: {
-        roomId: message.roomId,
-        senderId: message.senderId,
-        text: message.text,
-        createdAt: new Date(Date.now() - message.minutesAgo * 60_000),
-      },
+
+  for (const item of subjects) {
+    await prisma.subject.upsert({
+      where: { id: item.id },
+      update: { ...item, userId: admin.id, semesterId: semester.id },
+      create: { ...item, userId: admin.id, semesterId: semester.id },
     });
   }
 
-  // ข่าวสาร / โปรโมชั่น
-  const newsItems = [
-    { title: "โปรโมชั่นพิเศษประจำเดือน", body: "ซื้อ Nutrilite Daily Multivitamin 3 กล่อง แถม 1 กล่อง เฉพาะเดือนนี้เท่านั้น เริ่มต้นวันนี้ – สิ้นสุดสิ้นเดือน" },
-    { title: "เปิดตัวสินค้าใหม่ XS Energy", body: "XS Energy Drink รสซิตรัส เติมพลังสูตรใหม่ ลดน้ำตาล 0% พร้อมสั่งซื้อแล้ววันนี้" },
-    { title: "ฟรีค่าส่งทั่วประเทศ", body: "สั่งซื้อสินค้าครบ 2,000 บาท ฟรีค่าส่งทั่วประเทศ ไม่มีขั้นต่ำเพิ่มเติม" },
-  ];
-  for (const item of newsItems) {
-    const existing = await prisma.news.findFirst({ where: { title: item.title } });
-    if (!existing) await prisma.news.create({ data: item });
-  }
-
-  // กิจกรรม
-  const eventItems = [
-    { title: "ประชุมทีมประจำสัปดาห์", description: "ประชุมทีมออนไลน์ เพื่อทบทวนยอดขายและวางแผนสัปดาห์หน้า", location: "ห้องประชุมออนไลน์", startsAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) },
-    { title: "อบรมสินค้า Nutrilite", description: "อบรมเชิงปฏิบัติการเกี่ยวกับสินค้า Nutrilite สำหรับสมาชิกใหม่", location: "ศูนย์อบรม Amway", startsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
-  ];
-  for (const item of eventItems) {
-    const existing = await prisma.event.findFirst({ where: { title: item.title } });
-    if (!existing) await prisma.event.create({ data: item });
-  }
-
-  // เป้าหมายของหัวหน้าทีม
-  const goalItems = [
-    { title: "เป้าหมายยอดขายเดือนนี้", target: 50000, current: 12000, period: "monthly", userId: leader.id },
-    { title: "เป้าหมายสมาชิกใหม่", target: 10, current: 3, period: "monthly", userId: leader.id },
-  ];
-  for (const item of goalItems) {
-    const existing = await prisma.goal.findFirst({ where: { title: item.title, userId: item.userId } });
-    if (!existing) await prisma.goal.create({ data: item });
-  }
-
-  // ลูกค้าของหัวหน้าทีม
-  const customerItems = [
-    { name: "คุณแม่สมหญิง", phone: "081-234-5678", email: "", note: "ลูกค้าประจำ สั่ง Nutrilite ทุกเดือน", ownerId: leader.id },
-    { name: "คุณวิชัย", phone: "089-876-5432", email: "wichai@example.com", note: "สนใจสินค้าบำรุงผิว", ownerId: leader.id },
-  ];
-  for (const item of customerItems) {
-    const existing = await prisma.customer.findFirst({ where: { name: item.name, ownerId: item.ownerId } });
-    if (!existing) await prisma.customer.create({ data: item });
-  }
-
-  const counts = {
-    users: await prisma.user.count(),
-    products: await prisma.product.count(),
-    rooms: await prisma.room.count(),
-    messages: await prisma.message.count(),
-    groups: await prisma.group.count(),
-    news: await prisma.news.count(),
-    events: await prisma.event.count(),
-    goals: await prisma.goal.count(),
-    customers: await prisma.customer.count(),
-  };
-  console.log("seed complete:", JSON.stringify(counts));
-  console.log("บัญชีทดสอบ (รหัสเดียวกันทุกคน):", DEMO_PASSWORD);
-  console.log("  admin   ", email);
-  console.log("  leader  ", "leader@amway.local");
-  console.log("  member1 ", "member1@amway.local");
-  console.log("  member2 ", "member2@amway.local");
+  console.log("StudyPath seed complete:", JSON.stringify({
+    admin: admin.email,
+    academicYear: year.name,
+    semester: semester.name,
+    subjects: subjects.map((s) => s.code),
+  }));
 }
 
-main()
-  .catch(error => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+}).finally(async () => {
+  await prisma.$disconnect();
+});

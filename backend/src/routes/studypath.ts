@@ -398,7 +398,7 @@ router.post("/community/:postId/comments", requireAuth(), async (req: any, res) 
 });
 
 router.get("/portal/overview", requireAuth(), async (req: any, res) => {
-  if (!["ADMIN", "LEADER"].includes(req.user.role)) return res.status(403).json({ error: "ไม่มีสิทธิ์เข้าถึง Portal" });
+  if (!["ADMIN", "LECTURER"].includes(req.user.role)) return res.status(403).json({ error: "ไม่มีสิทธิ์เข้าถึง Portal" });
   const [users, subjects, materials, quizzes] = await Promise.all([
     prisma.user.count(), prisma.subject.count(), prisma.material.count(), prisma.quiz.count(),
   ]);

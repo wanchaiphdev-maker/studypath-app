@@ -1,8 +1,8 @@
-# Render Blueprint — สร้าง web service ให้อัตโนมัติเมื่อเชื่อม repo นี้ใน Render
-# ค่าความลับ (sync: false) ต้องกรอกเองในหน้า Environment ของ Render
+# Render Blueprint for StudyPath
+# Secret values marked sync:false must be configured in Render Environment.
 services:
   - type: web
-    name: amway-api
+    name: studypath-api
     runtime: node
     plan: free
     rootDir: backend
@@ -21,14 +21,6 @@ services:
       - key: ADMIN_PASSWORD
         sync: false
       - key: ADMIN_NAME
-        sync: false
-      - key: SEED_PASSWORD
-        sync: false
-      - key: LK_URL
-        sync: false
-      - key: LK_KEY
-        sync: false
-      - key: LK_SECRET
         sync: false
       - key: PUBLIC_BASE_URL
         sync: false

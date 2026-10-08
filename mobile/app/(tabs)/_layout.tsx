@@ -11,22 +11,13 @@ const tabs: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string
 };
 
 export default function TabsLayout() {
-  return (
-    <Tabs screenOptions={({ route }) => ({
-      headerShown: false,
-      tabBarActiveTintColor: colors.accent,
-      tabBarInactiveTintColor: colors.textMuted,
-      tabBarLabel: tabs[route.name]?.label || route.name,
-      tabBarIcon: ({ color, size }) => <Ionicons name={tabs[route.name]?.icon || "ellipse-outline"} size={size} color={color} />,
-    })}>
-      <Tabs.Screen name="index" />
-      <Tabs.Screen name="subjects" />
-      <Tabs.Screen name="tutor" />
-      <Tabs.Screen name="review" />
-      <Tabs.Screen name="more" />
-      <Tabs.Screen name="chat" options={{ href: null }} />
-      <Tabs.Screen name="products" options={{ href: null }} />
-      <Tabs.Screen name="team" options={{ href: null }} />
-    </Tabs>
-  );
+  return <Tabs screenOptions={({ route }) => ({
+    headerShown: false,
+    tabBarActiveTintColor: colors.accent,
+    tabBarInactiveTintColor: colors.textMuted,
+    tabBarLabel: tabs[route.name]?.label || route.name,
+    tabBarIcon: ({ color, size }) => <Ionicons name={tabs[route.name]?.icon || "ellipse-outline"} size={size} color={color} />,
+  })}>
+    <Tabs.Screen name="index" /><Tabs.Screen name="subjects" /><Tabs.Screen name="tutor" /><Tabs.Screen name="review" /><Tabs.Screen name="more" />
+  </Tabs>;
 }
