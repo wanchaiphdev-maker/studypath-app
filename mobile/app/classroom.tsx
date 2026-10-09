@@ -46,9 +46,14 @@ export default function ClassroomScreen() {
 
   async function connect() {
     try {
-      await Linking.openURL(buildGoogleAuthUrl("classroom"));
+      const url = buildGoogleAuthUrl("classroom");
+      if (typeof window !== "undefined") {
+        window.location.assign(url);
+        return;
+      }
+      await Linking.openURL(url);
     } catch (e) {
-      Alert.alert("เชื่อม Google Classroom", String(e));
+      Alert.alert("เชื่อม Google Classroom ไม่สำเร็จ", String(e));
     }
   }
 
