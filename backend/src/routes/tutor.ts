@@ -1024,6 +1024,14 @@ function extractProblems(materials: any[], limit = 8) {
     for (const seg of segs) {
       const b = seg.text.trim();
       if (b.length < 40 || b.length > 700) continue;
+      // ไม่ใช่โจทย์: คำอธิบายรายวิชา / วัตถุประสงค์ / ผลลัพธ์การเรียนรู้ — ข้ามทุกวิชา
+      if (/คำอธิบายรายวิชา|ผลลัพธ์การเรียนรู้|รายละเอียดรายวิชา|วัตถุประสงค์รายวิชา|ขอบเขตเนื้อหา|ชื่อวิชา\s*[:：]|การเรียนการสอน/.test(b)) continue;
+      // สารบัญแบบ "(หน้า 3)" ซ้ำ 2 รายการขึ้นไป = รายการบท ไม่ใช่โจทย์
+      if ((b.match(/\(หน้า\s*\d+\)/g) || []).length >= 2) continue;
+      // ขยะ OCR จากไดอะแกรม (สัญลักษณ์ | ~ @ = กระจายเกิน 12% นับเฉพาะส่วนที่ไม่ใช่บล็อกโค้ด)
+      const noFence = b.replace(/```[\s\S]*?```/g, "");
+      const sym = (noFence.match(/[|~@#$%^&*_=+<>[\]{}\\/]/g) || []).length;
+      if (noFence.length && sym / noFence.length > 0.12) continue;
       const low = b.toLowerCase();
       let score = 0;
       for (const h of PROBLEM_HINTS) if (low.includes(h)) score += 2;
@@ -1037,7 +1045,7 @@ function extractProblems(materials: any[], limit = 8) {
       if (score >= 3) {
         // ตัดหัวเรื่องซ้ำๆ ที่ติดมากับไฟล์ (วิชา/หัวข้อ/โจทย์) ทิ้ง เหลือแต่ตัวโจทย์จริง
         const clean = b
-          .replace(/^\s*(วิชา|หัวข้อ|โจทย์|แบบฝึกหัด|กำหนด)\s*[:：]\s*/gim, "")
+          .replace(/^\s*#{0,6}\s*\**\s*(วิชา|หัวข้อ|โจทย์|แบบฝึกหัด|กำหนด|ที่มา|หัวข้อเรียนรู้)\s*\**\s*[:：]\s*/gim, "")
           .replace(/\n{3,}/g, "\n\n")
           .trim();
         // ตัดบทวิเคราะห์ (Input/Output/Process/รหัสเทียม) ออก — โจทย์ต้องเป็นคำถามล้วน
