@@ -1772,7 +1772,7 @@ const SIGNAL_PATTERNS: { k: keyof SubjectSignals; re: RegExp }[] = [
 ];
 
 /** นับหลักฐานจาก title + textContent (คนละไฟล์ = นับทีละไฟล์ ไม่ต้องอ่านทั้งเล่ม) */
-function analyzeSubjectSignals(materials: { title?: string | null; textContent?: string | null }[]): SubjectSignals {
+export function analyzeSubjectSignals(materials: { title?: string | null; textContent?: string | null }[]): SubjectSignals {
   const sig: SubjectSignals = { code: 0, flow: 0, calc: 0, vocab: 0, caseN: 0, howto: 0, compare: 0 };
   for (const m of (materials || []).slice(0, 30)) {
     const text = String(m.title || "") + " " + String(m.textContent || "").slice(0, 6000);
@@ -1808,7 +1808,7 @@ const MODE_SIGNAL: Record<string, keyof SubjectSignals> = {
   case: "caseN", compare: "compare", howto: "howto",
 };
 
-function choicesForSubject(subjectName: string, topics: any[], sig: SubjectSignals) {
+export function choicesForSubject(subjectName: string, topics: any[], sig: SubjectSignals) {
   const tag = detectSubjectTag(subjectName);
   // ดูจาก "ชื่อหัวข้อ" ที่สแกนได้เท่านั้น ไม่ใช้คำอธิบายอิสระ
   // เพราะคำอธิบายจะทำให้จับผิดง่าย (เช่น "สเปรดชีต" ไปตรงกับ diagram, "ระบบดิจิทัล" ไปตรงกับ diagram)
