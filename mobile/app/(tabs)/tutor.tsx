@@ -22,6 +22,9 @@ const MODES: { k: Mode; label: string; icon: string; hint: string; color: string
   { k: "diagram", label: "ผังภาพ", icon: "git-branch-outline", hint: "วาด flowchart", color: "#f472b6" },
   { k: "code", label: "โค้ด", icon: "code-slash-outline", hint: "เขียนโค้ดใช้ได้จริง", color: "#34d399" },
 ];
+// รายการสำรองเมื่อ /open ยังไม่ตอบ — ห้ามมี "โค้ด" เพราะยังไม่มีหลักฐานว่าวิชานี้สอนเขียนโค้ด
+// (โหมดโค้ดต้องมาจาก server ที่อ่านเนื้อหาไฟล์จริงแล้วเท่านั้น)
+const FALLBACK_MODES = MODES.filter((m) => m.k !== "code");
 
 type Speed = "fast" | "balanced" | "thorough";
 const SPEEDS: { k: Speed; label: string; hint: string; icon: string }[] = [
@@ -891,6 +894,9 @@ export default function Tutor() {
 
   useEffect(() => { getSubjects().then(setSubjects).catch(() => undefined); }, []);
   useEffect(() => { if (!subjectId && subjects[0]?.id) setSubjectId(subjects[0].id); }, [subjects, subjectId]);
+  // เปลี่ยนวิชา = เริ่มโหมดใหม่เสมอ — กัน "โหมดโค้ด" ค้างจากวิชาก่อนหน้า
+  // ไปบังคับโจทย์ของวิชาที่เนื้อหาไม่มีเขียนโค้ด (เช่น 1204102)
+  useEffect(() => { setMode("explain"); }, [subjectId]);
 
   useEffect(() => {
     if (!subjectId) return;
@@ -1628,7 +1634,7 @@ export default function Tutor() {
           {/* โหมด */}
           <Text style={styles.popHead}>โหมด</Text>
           <View style={styles.popCol}>
-            {(subjectModes.length ? subjectModes : MODES).map((m) => {
+            {(subjectModes.length ? subjectModes : FALLBACK_MODES).map((m) => {
               const on = mode === m.k;
               return <Pressable key={m.k} onPress={() => {
                 const next = m.k as Mode;

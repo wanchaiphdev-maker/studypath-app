@@ -679,8 +679,10 @@ function pickFormat(v: any): AnswerFormat | "" {
 /* ------------------------------------------------------------------ */
 
 
-/** เลือกรูปแบบที่เหมาะกับวิชา + โจทย์ล่าสุด */
-function pickFormats(subjectName: string, problemText: string): { list: { format: AnswerFormat; why: string }[]; recommended: AnswerFormat } {
+/** เลือกรูปแบบที่เหมาะกับวิชา + โจทย์ล่าสุด
+ *  hasCode = วิชานี้มีเนื้อหาเขียนโปรแกรมจริงในไฟล์ (ด้วย analyzeSubjectSignals)
+ *            ถ้า false จะไม่ยกฟอร์แมต "โค้ด" มาให้เลือก แม้ชื่อวิชาจะดูเป็นสายคอมฯ */
+function pickFormats(subjectName: string, problemText: string, hasCode = true): { list: { format: AnswerFormat; why: string }[]; recommended: AnswerFormat } {
   const tag = detectSubjectTag(subjectName);
   // ตัดชื่อวิชาออกจากโจทย์ก่อน ไม่งั้นคำว่า "คอมพิวเตอร์/โปรแกรม" ในชื่อวิชาจะทำให้ทุกวิชากลายเป็นวิชาโค้ด
   let raw = String(problemText || "").toLowerCase();
@@ -697,7 +699,7 @@ function pickFormats(subjectName: string, problemText: string): { list: { format
   // ตามเนื้อหาโจทย์
   // "คำสั่ง" กำกวมมาก (คำสั่งโปรแกรม vs คำสั่งทางกฎหมาย) จึงต้องใช้คำที่ชี้เฉพาะโค้ดจริง ๆ
   const strongCode = hit("เขียนโปรแกรม", "เขียนโค้ด", "เขียนภาษาโปรแกรม", "โค้ด", "ฟังก์ชัน", "รหัสเทียม", "pseudocode", "อัลกอริทึม", "algorithm", "#include", "int main", "def ", "function ", "import ", "select * from");
-  const weakCode = tag === "programming" && hit("โปรแกรม", "code", "script");
+  const weakCode = tag === "programming" && hasCode && hit("โปรแกรม", "code", "script");
   const wantsCode = strongCode || weakCode;
   const wantsFlow = hit("ผังงาน", "flowchart", "flow chart", "ขั้นตอน", "กระบวนการ", "ลำดับการทำงาน", "อัลกอริทึม");
   const wantsDiagram = hit("แผนผัง", "โครงสร้าง", "แผนภาพ", "diagram", "แผนที่", "ผังโครงสร้าง", "entity", "ความสัมพันธ์");
@@ -711,7 +713,7 @@ function pickFormats(subjectName: string, problemText: string): { list: { format
           : tag === "language" ? { code: false, flow: false, table: true, diagram: false }
             : { code: false, flow: false, table: false, diagram: false };
 
-  if (wantsCode || byTag.code) out.push({ format: "code", why: wantsCode ? "โจทย์นี้ให้เขียนโค้ด" : tag === "programming" ? "วิชานี้เกี่ยวกับการเขียนโปรแกรม" : "ตอบเป็นโค้ด" });
+  if (wantsCode || (byTag.code && hasCode)) out.push({ format: "code", why: wantsCode ? "โจทย์นี้ให้เขียนโค้ด" : tag === "programming" ? "วิชานี้เกี่ยวกับการเขียนโปรแกรม" : "ตอบเป็นโค้ด" });
   if (wantsFlow || byTag.flow) out.push({ format: "flowchart", why: wantsFlow ? "โจทย์นี้มีขั้นตอน/ผังงาน" : "แสดงเป็นผังภาพ" });
   if (wantsDiagram || byTag.diagram) out.push({ format: "diagram", why: wantsDiagram ? "โจทย์นี้เป็นแผนผัง" : "แสดงเป็นแผนผัง" });
   if (wantsTable || byTag.table) out.push({ format: "table", why: wantsTable ? "โจทย์นี้มีตาราง/ข้อมูลเปรียบเทียบ" : "จัดเป็นตาราง" });
@@ -742,7 +744,8 @@ function detectDeliverables(text: string): string[] {
 /** ให้ AI จัดรูปแบบโจทย์ (คืน problem/formats/deliverables) */
 async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat | "", skip: string[]) {
   let format = wanted;
-  const picked = pickFormats(subject.name, rawText);
+  const hasCode = analyzeSubjectSignals(subject?.materials || []).code >= EXTRA_MIN.code;
+  const picked = pickFormats(subject.name, rawText, hasCode);
   let formats = picked.list;
   if (wanted && !formats.some((f) => f.format === wanted)) formats = [...formats, { format: wanted, why: "เลือกเอง" }];
   // ไม่ได้เลือกเอง -> ใช้รูปแบบที่ตรงกับโจทย์ที่สุด
@@ -1176,9 +1179,10 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     const fresh = all.filter((p) => !skip.includes(p.source.materialId + "|" + p.text.slice(0, 40)));
     const chosen = sameAsCurrent || pickRandom(fresh.length ? fresh : all)!;
 
-    // รูปแบบที่ใช้ได้จริงกับโจทย์นี้ — คำนวณจากโจทย์ดิบก่อน ให้ผู้ใช้เห็นตัวเลือกที่ตรงกับวิชา
     // รูปแบบที่ใช้ได้จริงกับโจทย์นี้ — คำนวณจากโจทย์ดิบ แล้วเลือกอันที่ตรงที่สุดให้เอง
-    const pickedF = pickFormats(subject.name, chosen.text);
+    // hasCode = ดูจากเนื้อหาไฟล์จริงของวิชา วิชาที่ไม่มีเขียนโค้ดจะไม่ถูกยกฟอร์แมต "โค้ด" มาให้เลือก
+    const hasCode = analyzeSubjectSignals(subject.materials || []).code >= EXTRA_MIN.code;
+    const pickedF = pickFormats(subject.name, chosen.text, hasCode);
     let formats = pickedF.list;
     if (wanted && !formats.some((f) => f.format === wanted)) {
       formats = [...formats, { format: wanted, why: "เลือกเอง" }];
@@ -1740,22 +1744,102 @@ const MODE_REQUIRES: Record<string, RegExp> = {
   compare: /เปรียบเทียบ|ข้อดี|ข้อเสีย|ดีเปรียบ|ความต่าง|pros|cons/i,
   howto: /การใช้งาน|วิธี(การ)?|ขั้นตอน|การทำ|การสร้าง|ตั้งค่า|การจัดการ|แบบฟอร์ม|เอกสาร|สไลด์|ชีต|วิธีใช้/i,
 };
-function choicesForSubject(subjectName: string, topics: any[]) {
+/**
+ * อ่าน "เนื้อหาจริงในไฟล์" ของวิชา — ใช้ตัดสินโหมดที่ขึ้นได้จริง
+ *
+ * ชื่อวิชาคนเดียวเชื่อถือไม่ได้: "การออกแบบระบบคอมพิวเตอร์และสถาปัตยกรรม"
+ * ถูกจับเป็น tag=programming แต่เนื้อหาไม่มีเขียนโค้ดเลย (วิชา 1204102)
+ * เลยนับ "หลักฐาน" จาก textContent ของไฟล์ที่ซิงก์มาจริงๆ
+ */
+type SubjectSignals = {
+  code: number;    // ซินแท็กซ์/คำสั่งภาษาโปรแกรมจริง (ไม่นับแค่คำว่า "โปรแกรม")
+  flow: number;    // ผังงาน / ขั้นตอน / ลำดับการทำงาน / ไดอะแกรม
+  calc: number;    // โจทย์คำนวณ / สูตร / แปลงค่า / ลอจิก
+  vocab: number;   // คำศัพท์ / ประโยค / แปลภาษา
+  caseN: number;   // กรณีศึกษา / กฎหมาย / จริยธรรม
+  howto: number;   // วิธีปฏิบัติ / ตั้งค่า / แบบฟอร์ม
+  compare: number; // เปรียบเทียบ / ข้อดีข้อเสีย
+};
+
+const SIGNAL_PATTERNS: { k: keyof SubjectSignals; re: RegExp }[] = [
+  { k: "code", re: /```|#include|\bint\s+main\b|\bprintf\s*\(|\bscanf\s*\(|\bcout\s*<<|\bcin\s*>>|\b(?:void|float|double|char|int)\s+\w+\s*\(|\bfor\s*\([^)]*\)\s*\{|\bwhile\s*\([^)]*\)\s*\{|\belse\s*\{|\bdef\s+\w+\s*\(|\bfunction\s+\w+\s*\(|\breturn\s+[\w.]+\s*;|\bimport\s+(?:os|sys|re|math|json|time|random|java|Scanner)\b|\bpublic\s+(?:static|class)\b|select\s+.+\s+from\s+\w+|insert\s+into\s+\w+|create\s+table\s+\w+|เขียนโปรแกรม|เขียนโค้ด|เขียนภาษาโปรแกรม|ภาษา\s*(?:C|C\+\+|Java|Python|JavaScript|C#)/i },
+  { k: "flow", re: /ผังงาน|flow\s?chart|แผนผัง|แผนภาพ|ขั้นตอน|ลำดับขั้น|ลำดับการทำงาน|กระบวนการ|ผังโครงสร้าง|block\s*diagram|ไดอะแกรม|สถาปัตยกรรม|ลำดับชั้น/i },
+  { k: "calc", re: /คำนวณ|สูตร|หาค่า|หาผล|แปลงเลข|เลขฐาน|ทศนิยม|เศษส่วน|ผลรวม|ค่าเฉลี่ย|สมการ|ลอจิก|truth\s*table|ตารางจริง|คาแนล|k-?map|ตรรกศาสตร์|พีชคณิต|แคลคูลัส|อนุกรม|เมทริกซ์|ฐานสอง|ฐานสิบ/i },
+  { k: "vocab", re: /คำศัพท์|ความหมาย|แปลคำ|แปลประโยค|บทสนทนา|ออกเสียง|ไวยากรณ์|grammar|วลี|สำนวน|ประโยคตัวอย่าง/i },
+  { k: "caseN", re: /กรณีศึกษา|กฎหมาย|จริยธรรม|ศีลธรรม|ผลกระทบ|สิทธิ|ข้อกฎหมาย|วินิจฉัย/ },
+  { k: "howto", re: /วิธี(?:การ)?ใช้งาน|ขั้นตอนการทำ|การตั้งค่า|ติดตั้ง|แบบฟอร์ม|วิธีใช้|คู่มือการใช้งาน|สาธิตการ/ },
+  { k: "compare", re: /เปรียบเทียบ|ข้อดี|ข้อเสีย|ความแตกต่าง|ความต่าง/ },
+];
+
+/** นับหลักฐานจาก title + textContent (คนละไฟล์ = นับทีละไฟล์ ไม่ต้องอ่านทั้งเล่ม) */
+function analyzeSubjectSignals(materials: { title?: string | null; textContent?: string | null }[]): SubjectSignals {
+  const sig: SubjectSignals = { code: 0, flow: 0, calc: 0, vocab: 0, caseN: 0, howto: 0, compare: 0 };
+  for (const m of (materials || []).slice(0, 30)) {
+    const text = String(m.title || "") + " " + String(m.textContent || "").slice(0, 6000);
+    if (!text.trim()) continue;
+    for (const p of SIGNAL_PATTERNS) {
+      const g = new RegExp(p.re.source, p.re.flags.includes("g") ? p.re.flags : p.re.flags + "g");
+      sig[p.k] += (text.match(g) || []).length;
+    }
+  }
+  return sig;
+}
+
+/**
+ * รายการโหมดแบบกลาง — ใช้เติมเมื่อ "เนื้อหาไฟล์" บอกว่าวิชานี้มีจริง
+ * แต่ชุดโหมดของสาขาวิชานั้นไม่มี (เช่น วิชาสถาปัตยกรรมที่โจทย์เป็นการคำนวณ)
+ */
+const GENERIC_CHOICES: Record<string, { key: string; icon: string; label: string; prompt: string; sub: string }> = {
+  code: { key: "code", icon: "code-slash", label: "โค้ด", prompt: "เขียนโค้ดที่ถูกต้องและใช้งานได้จริงจากเนื้อหาในวิชานี้ พร้อมอธิบายการทำงานทีละบรรทัด", sub: "เขียนเอง ตรวจได้" },
+  diagram: { key: "diagram", icon: "git-branch", label: "ดูผังภาพ / ขั้นตอน", prompt: "วาด flowchart ขั้นตอนสำคัญในวิชานี้ทีละหัวข้อ", sub: "ดูง่ายกว่าอ่านตัวหนังสือ" },
+  steps: { key: "steps", icon: "list", label: "ทำโจทย์ทีละขั้น", prompt: "เลือกโจทย์จากเนื้อหาในวิชานี้มา 1 ข้อ แล้วแสดงวิธีคิดเป็นขั้นตอนพร้อมเหตุผล", sub: "ดูวิธีคิด ไม่ใช่แค่คำตอบ" },
+  vocab: { key: "vocab", icon: "book", label: "คำศัพท์ / แปลคำ", prompt: "สรุปคำศัพท์สำคัญในวิชานี้ พร้อมความหมาย พาร์ทของคำ และประโยคตัวอย่าง", sub: "ท่องได้เลย" },
+  grammar: { key: "grammar", icon: "text", label: "ไวยากรณ์ / โครงสร้างประโยค", prompt: "อธิบายโครงสร้างไวยากรณ์ที่ใช้ในวิชานี้ พร้อมตารางเปรียบเทียบกฎและตัวอย่างที่ถูกต้อง", sub: "เห็นภาพชัดขึ้น" },
+  case: { key: "case", icon: "briefcase", label: "วิเคราะห์กรณีศึกษา", prompt: "เลือกประเด็นในเนื้อหาวิชานี้มา 1 เรื่อง แล้ววิเคราะห์เป็นกรณีศึกษาพร้อมเหตุผลและข้อสรุป", sub: "คิดเป็นระบบ" },
+  compare: { key: "compare", icon: "swap-horizontal", label: "เปรียบเทียบแนวคิด", prompt: "เปรียบเทียบแนวคิดสำคัญในวิชานี้เป็นตาราง พร้อมข้อดีข้อเสียและตัวอย่างประกอบ", sub: "เห็นความต่างชัด" },
+};
+
+/** หลักฐานขั้นต่ำสำหรับโหมดที่ "ไม่อยู่ในชุดของสาขาวิชา" — ต้องชัดกว่าปกติ ไม่งั้นเมนูบวม */
+const EXTRA_MIN: Record<string, number> = { code: 10, diagram: 15, steps: 20, vocab: 8, grammar: 8, case: 50, compare: 10 };
+
+/** ชื่อ signal ใน SubjectSignals ที่ตรงกับ key ของโหมด (steps ไม่ใช่ชื่อ signal — จริงๆ คือ calc) */
+const MODE_SIGNAL: Record<string, keyof SubjectSignals> = {
+  code: "code", diagram: "flow", steps: "calc", vocab: "vocab", grammar: "vocab",
+  case: "caseN", compare: "compare", howto: "howto",
+};
+
+function choicesForSubject(subjectName: string, topics: any[], sig: SubjectSignals) {
   const tag = detectSubjectTag(subjectName);
   // ดูจาก "ชื่อหัวข้อ" ที่สแกนได้เท่านั้น ไม่ใช้คำอธิบายอิสระ
   // เพราะคำอธิบายจะทำให้จับผิดง่าย (เช่น "สเปรดชีต" ไปตรงกับ diagram, "ระบบดิจิทัล" ไปตรงกับ diagram)
   const hay = topics.map((t: any) => String(t.label || t.title || "")).join(" | ");
 
-  const base = [
-    ...(SUBJECT_CHOICES[tag] || GENERAL_CHOICES),
-    ...HOWTO_CHOICE,
-  ];
-
+  const pool = [...(SUBJECT_CHOICES[tag] || GENERAL_CHOICES)];
+  const inPool = new Set(pool.map((c) => c.key));
   // วิชาเครื่องมือ (Office / ทักษะดิจิทัล) = สอนทำตามขั้นตอนเสมอ ไม่ต้องรอหัวข้อมาเป็นตัวกำหนด
   const alwaysHowto = tag === "office" || tag === "digital";
+  // โหมดโค้ด = ต้องมี "หลักฐานจริงในไฟล์" (ซินแท็กซ์/คำสั่ง) มากพอ
+  // หัวข้อที่ชื่อตรง "เขียนโปรแกรม/โค้ด" ใช้ยืนยันได้เฉพาะเมื่อไฟล์ก็มีหลักฐานค้างอยู่บ้าง
+  // (กันหัวข้อมาตรฐานของวิชาสาย CS อย่างคณิต ที่ชื่อวิชามี "คอมพิวเตอร์" แล้วไปดันโหมดโค้ดขึ้นมา)
+  const STRONG_CODE_RE = /เขียนโปรแกรม|เขียนโค้ด|เขียนภาษาโปรแกรม|ภาษาโปรแกรม|พัฒนาโปรแกรม|โค้ด/i;
+  const strongCode = sig.code >= EXTRA_MIN.code || (sig.code >= 3 && STRONG_CODE_RE.test(hay));
 
-  // "อธิบาย" ใช้ได้ทุกวิชา ส่วนที่เหลือต้องมีหัวข้อรองรับจริง
-  return base.filter((c) => c.key === "explain" || (c.key === "howto" && alwaysHowto) || !MODE_REQUIRES[c.key] || MODE_REQUIRES[c.key].test(hay));
+  const want = (k: string): boolean => {
+    if (k === "explain") return true; // "อธิบาย" ใช้ได้ทุกวิชา
+    if (k === "code") return strongCode;
+    if (k === "howto") return alwaysHowto || MODE_REQUIRES.howto.test(hay);
+    const byTopic = !!MODE_REQUIRES[k]?.test(hay);
+    const sigKey = MODE_SIGNAL[k];
+    const n = sigKey ? sig[sigKey] || 0 : 0;
+    // อยู่ในชุดของสาขาวิชา = คงของเดิมไว้ (หัวข้อรองรับ หรือเนื้อหาในไฟล์ยืนยัน) ไม่ให้หายจากการอัปเดตนี้
+    // ไม่อยู่ในชุด = เพิ่มใหม่ต้องมีหลักฐานแรงพอ (EXTRA_MIN) ไม่งั้นเมนูยาว
+    return inPool.has(k) ? byTopic || n >= 2 : n >= (EXTRA_MIN[k] ?? Number.MAX_SAFE_INTEGER);
+  };
+
+  const out = pool.filter((c) => want(c.key));
+  for (const k of Object.keys(EXTRA_MIN)) if (!inPool.has(k) && want(k)) out.push(GENERIC_CHOICES[k]);
+  if (want("howto")) out.push(HOWTO_CHOICE[0]);
+  return out;
 }
 
 router.post("/open", requireAuth(), async (req: any, res) => {
@@ -1848,10 +1932,11 @@ router.post("/open", requireAuth(), async (req: any, res) => {
       ? result.greeting.trim().slice(0, 400)
       : `ผมอ่านไฟล์ใน ${subject.name} มาแล้ว ${rows.length} รายการ วันนี้อยากให้ช่วยเรื่องไหนครับ?`;
 
+    const sig = analyzeSubjectSignals(all);
     res.json({
       greeting,
       topics,
-      choices: choicesForSubject(String(subject.name), topics),
+      choices: choicesForSubject(String(subject.name), topics, sig),
       totalMaterials: all.length,
       suggestions: topics.slice(0, 3).map((t: any) => `อธิบายหัวข้อ "${t.title}" ให้ละเอียด`),
       generatedByAi: !!(result && Array.isArray(result.topics)),
