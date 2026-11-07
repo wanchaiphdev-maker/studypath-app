@@ -1041,10 +1041,6 @@ export default function Tutor() {
         <View style={styles.nowTab}>
           <Text style={styles.nowTabText}>{tabMeta.label}</Text>
         </View>
-        <View style={{ flex: 1 }} />
-        <Pressable style={styles.aiOrb} onPress={(e: any) => { e?.stopPropagation?.(); setOptOpen(true); }}>
-          <Ionicons name="sparkles" size={19} color="#fff" />
-        </Pressable>
       </View>
 
       {/* แถบวิชา — ผูกกดเปิดตัวเลือกวิชาไว้เฉพาะส่วนซ้าย
@@ -1805,11 +1801,6 @@ const styles = StyleSheet.create({
   nowTabText: { fontSize: 10.5, fontWeight: "900", color: colors.accent },
   brand: { fontSize: 9.5, fontWeight: "900", letterSpacing: 1.6, color: "#a78bfa" },
   topTitle: { fontSize: 19, fontWeight: "900", color: colors.text },
-  aiOrb: {
-    width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accent,
-    alignItems: "center", justifyContent: "center",
-    shadowColor: colors.accent, shadowOpacity: 0.5, shadowRadius: 10, elevation: 6,
-  },
   subjectCard: {
     flexDirection: "row", alignItems: "center", gap: 10, padding: 10,
     borderRadius: 15, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border,
