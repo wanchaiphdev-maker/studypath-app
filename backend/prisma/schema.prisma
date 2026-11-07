@@ -63,6 +63,7 @@ model User {
   communityComments  CommunityComment[]
   knowledgeNodes     KnowledgeNode[]
   googleConnection  GoogleConnection?
+  submissions       Submission[]
 }
 
 model AcademicYear {
@@ -103,6 +104,7 @@ model Subject {
   materials   Material[]
   quizzes     Quiz[]
   progress    LearningProgress[]
+  submissions Submission[]
   @@index([userId, semesterId])
 }
 
@@ -119,6 +121,7 @@ model Material {
   transcript   String?            @db.Text
   durationSec  Int?
   sourceLabel      String?
+  category        String?            // หมวด: bonus/inclass/homework/checkin/vdo/slide
   externalProvider String?
   externalId       String?
   externalUpdatedAt DateTime?
@@ -131,6 +134,34 @@ model Material {
   chunks       MaterialChunk[]
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
+  @@index([userId, subjectId, createdAt])
+  @@unique([userId, externalProvider, externalId])
+}
+
+/// งานที่นักเรียน "ส่งเอง" ใน Google Classroom
+/// เก็บทั้งข้อความตอบ และไฟล์แนบที่แปลงเป็นข้อความแล้ว
+model Submission {
+  id                    String   @id @default(cuid())
+  title                 String
+  assignmentDescription String?  @db.Text
+  textContent           String   @db.Text
+  state                 String? // TURNED_IN / RETURNED / CREATED
+  grade                 String?
+  late                  Boolean  @default(false)
+  submittedAt           DateTime?
+  maxScore              Int?
+  attachmentsJson       Json?
+  sourceLabel           String?
+  externalProvider      String?
+  externalId            String?
+  externalUrl           String?
+  driveFileId           String?
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId             String
+  subject               Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
   @@index([userId, subjectId, createdAt])
   @@unique([userId, externalProvider, externalId])
 }
@@ -158,6 +189,19 @@ model MaterialChunk {
   createdAt  DateTime @default(now())
   @@unique([materialId, chunkIndex])
   @@index([materialId])
+}
+
+/// ไฟล์ที่ผู้ใช้ "สั่งลบ" แล้ว (ไม่ใช่เนื้อหาวิชา) — เก็บไว้กัน autosync ดึงกลับเข้ามาใหม่
+/// ตอนซิงก์จะข้าม externalId ที่อยู่ในตารางนี้ ไม่สร้าง Material ใหม่ให้กลับมา
+model ExcludedMaterial {
+  id         String   @id @default(cuid())
+  userId     String
+  externalId String
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, externalId])
+  @@index([userId])
 }
 
 model Quiz {

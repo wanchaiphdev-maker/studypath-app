@@ -1,23 +1,26 @@
-import {useEffect,useState} from "react";
-import {Alert,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from "react-native";
-import {router} from "expo-router";
+import {useCallback,useState} from "react";
+import {Pressable,ScrollView,StyleSheet,Text,TextInput,View} from "react-native";
+import { Alert } from "../../lib/alert";
+import {router,useFocusEffect} from "expo-router";
 import {Ionicons} from "@expo/vector-icons";
 import {colors,font,radius,spacing} from "../../lib/theme";
 import {Button,Card,IconTile,Pill,ProgressBar,SectionHeader} from "../../lib/ui";
 import {createSemester,createSubject,createYear,getCurriculum,getSubjects} from "../../lib/api";
 
 export default function SubjectsScreen(){
- const[years,setYears]=useState<any[]>([]),[subjects,setSubjects]=useState<any[]>([]),[yearName,setYearName]=useState(""),[subjectName,setSubjectName]=useState(""),[busy,setBusy]=useState(false);
+ const[years,setYears]=useState<any[]>([]),[subjects,setSubjects]=useState<any[]>([]),[yearName,setYearName]=useState(""),[subjectName,setSubjectName]=useState(""),[q,setQ]=useState(""),[busy,setBusy]=useState(false);
  async function load(){try{setYears(await getCurriculum());setSubjects(await getSubjects())}catch(e){Alert.alert("โหลดข้อมูลไม่สำเร็จ",String(e))}}
- useEffect(()=>{load()},[]);
+ useFocusEffect(useCallback(()=>{void load()},[]));
  async function addYear(){if(!yearName.trim())return;setBusy(true);try{const y=await createYear(yearName.trim());await createSemester(y.id,"ภาคเรียนที่ 1");setYearName("");await load()}catch(e){Alert.alert("เพิ่มปีการศึกษาไม่สำเร็จ",String(e))}finally{setBusy(false)}}
  async function addSubject(){const semesterId=years[0]?.semesters?.[0]?.id;if(!semesterId||!subjectName.trim()){Alert.alert("เพิ่มวิชา","สร้างปีการศึกษาและภาคเรียนก่อน");return}setBusy(true);try{await createSubject(semesterId,subjectName.trim());setSubjectName("");await load()}catch(e){Alert.alert("เพิ่มวิชาไม่สำเร็จ",String(e))}finally{setBusy(false)}}
+  const filtered=subjects.filter(s=>{const k=q.trim().toLowerCase();if(!k)return true;return(`${s.code||""} ${s.name}`).toLowerCase().includes(k);});
  return <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
   <View style={styles.header}><View><Text style={styles.mini}>MY LEARNING</Text><Text style={font.h1}>วิชาของฉัน</Text><Text style={font.body}>ทุกวิชาอยู่ใน Knowledge Base เดียว</Text></View><IconTile icon="library" color={colors.accent} size={50}/></View>
-  <Card style={styles.search}><Ionicons name="search" size={18} color={colors.textMuted}/><TextInput placeholder="ค้นหาวิชา..." placeholderTextColor={colors.textMuted} style={styles.searchInput}/></Card>
-  <SectionHeader title="กำลังเรียน" action={subjects.length+" วิชา"}/>
-  {subjects.map((s,i)=>{const mastery=Number(s.progress?.[0]?.mastery||0);return <Pressable key={s.id} onPress={()=>router.push(("/subject/"+s.id) as any)}><Card style={styles.course}><View style={styles.courseTop}><View style={styles.courseIcon}><Ionicons name={i%2?"code-slash":"server-outline"} size={23} color={i%2?"#38bdf8":"#a78bfa"}/></View><View style={styles.info}><View style={styles.titleRow}><Text style={font.title}>{s.code?s.code+" · ":""}{s.name}</Text><Ionicons name="chevron-forward" size={18} color={colors.textMuted}/></View><Text style={font.caption}>{s._count?.materials||0} เนื้อหา · {mastery<30?"เริ่มต้น":mastery<70?"กำลังเรียน":"ใกล้เชี่ยวชาญ"}</Text></View></View><View style={styles.progressRow}><ProgressBar value={mastery} color={i%2?"#38bdf8":"#a78bfa"}/><Text style={styles.pct}>{Math.round(mastery)}%</Text></View></Card></Pressable>})}
- {!subjects.length&&<Card><Text style={font.body}>ยังไม่มีวิชา เริ่มสร้างวิชาแรกด้านล่าง</Text></Card>}
+   <Card style={styles.search}><Ionicons name="search" size={18} color={colors.textMuted}/><TextInput value={q} onChangeText={setQ} placeholder="ค้นหาวิชา..." placeholderTextColor={colors.textMuted} style={styles.searchInput}/>{q.length>0?<Pressable onPress={()=>setQ("")} hitSlop={8}><Ionicons name="close-circle" size={17} color={colors.textMuted}/></Pressable>:null}</Card>
+   <SectionHeader title="กำลังเรียน" action={q.trim()?`พบ ${filtered.length} จาก ${subjects.length}`:subjects.length+" วิชา"}/>
+   {filtered.map((s,i)=>{const mastery=Number(s.progress?.[0]?.mastery||0);return <Pressable key={s.id} onPress={()=>router.push(("/subject/"+s.id) as any)}><Card style={styles.course}><View style={styles.courseTop}><View style={styles.courseIcon}><Ionicons name={i%2?"code-slash":"server-outline"} size={23} color={i%2?"#38bdf8":"#a78bfa"}/></View><View style={styles.info}><View style={styles.titleRow}><Text style={font.title}>{s.code?s.code+" · ":""}{s.name}</Text><Ionicons name="chevron-forward" size={18} color={colors.textMuted}/></View><Text style={font.caption}>{s._count?.materials||0} เนื้อหา · {mastery<30?"เริ่มต้น":mastery<70?"กำลังเรียน":"ใกล้เชี่ยวชาญ"}</Text></View></View><View style={styles.progressRow}><ProgressBar value={mastery} color={i%2?"#38bdf8":"#a78bfa"}/><Text style={styles.pct}>{Math.round(mastery)}%</Text></View></Card></Pressable>})}
+   {!subjects.length&&<Card><Text style={font.body}>ยังไม่มีวิชา เริ่มสร้างวิชาแรกด้านล่าง</Text></Card>}
+   {!!subjects.length&&!filtered.length&&<Card><Text style={font.body}>ไม่พบวิชาที่ตรงกับ &quot;{q.trim()}&quot;</Text><Button onPress={()=>setQ("")} variant="secondary" icon="close">ล้างคำค้น</Button></Card>}
  <SectionHeader title="สร้างเส้นทางการเรียน" />
  <Card style={styles.add}><Pill text="STEP 1"/><Text style={[font.title,{marginTop:8}]}>ปีการศึกษา + ภาคเรียน</Text><TextInput value={yearName} onChangeText={setYearName} placeholder="เช่น ปี 1" placeholderTextColor={colors.textMuted} style={styles.input}/><Button onPress={addYear} loading={busy} icon="add">เพิ่มปีการศึกษา</Button></Card>
  <Card style={styles.add}><Pill text="STEP 2" color="#38bdf8"/><Text style={[font.title,{marginTop:8}]}>วิชาใหม่</Text><TextInput value={subjectName} onChangeText={setSubjectName} placeholder="เช่น Database Systems" placeholderTextColor={colors.textMuted} style={styles.input}/><Button onPress={addSubject} loading={busy} icon="book-outline">สร้างวิชา</Button></Card>

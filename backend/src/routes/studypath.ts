@@ -5,6 +5,104 @@ import fs from "fs";
 import path from "path";
 import { PDFParse } from "pdf-parse";
 import { prisma, requireAuth } from "../auth";
+import { sortByTitle } from "../lib/natural-sort";
+import { letterCount, NON_TEXT_CHAR_RE, hasSubstantiveContent, contentQuality, isGenericTitle, ADMIN_NAME_RE, CASUAL_CHATTER_RE, CHATTER_FIRST_RE } from "../filters/classroom-filters";
+import { buildSubjectTopics } from "./tutor";
+
+/** แยกประโยคที่ยาวพอจะตั้งเป็นโจทย์เติมคำได้ */
+function splitSentences(text: string): string[] {
+  return String(text || "")
+    .split(/(?<=[.!?。！？])\s+|\n+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length >= 30);
+}
+
+/**
+ * ไฟล์ที่มีแต่ "เมตาดาที่ชี้ไปที่ Google Drive" ไม่มีเนื้อหาจริง
+ * เช่น textContent = "เปิดไฟล์ต้นฉบับเพื่อดูเนื้อหา: https://drive.google.com/file/d/..."
+ * ใช้เป็นแหล่งทำโจทย์ไม่ได้ เพราะจะได้คำถามออกมาเป็นลิงก์
+ */
+/**
+ * บรรทัดที่นำไปเป็น "แนวคิด" ได้จริงไหม
+ * ต้องเป็นชื่อเรื่อง/คำศัพท์ ไม่ใช่ข้อความจากนิสิตหรือข้อความประกาศ
+ */
+function isConceptLine(line: string) {
+  const t = line.replace(/\s+/g, " ").trim();
+  if (!t || t.length > 70) return false;
+  if (/[.!?;,]$/.test(t)) return false;
+  if (letterCount(t) < 6) return false;
+  if (/^https?:\/\//.test(t)) return false;
+  // page marker ของตัวดึงข้อความ PDF เช่น "-- 3 of 12 --"
+  if (/^-{1,2}\s*\d+\s*(of|จาก)\s*\d+\s*-{1,2}$/i.test(t)) return false;
+  if (/\d+\s*(of|จาก)\s*\d+\s*--/i.test(t)) return false;
+  if (/^(page|หน้า|chapter|บทที่|week|slide|ที่)\s*\d+/i.test(t)) return false;
+  // แชท/ประกาศ — ต้องไม่หลุดมาเป็นแนวคิด
+  if (/(ขออนุญาต|รหัสนิสิต|รหัส\s*\d{9,}|นะคะ|นะครับ|ค้าบ|ครับทราบ|รับทราบ|มั้ย|จ้า|ขอบคุณ)/.test(t)) return false;
+  if (ADMIN_NAME_RE.test(t) || CASUAL_CHATTER_RE.test(t) || CHATTER_FIRST_RE.test(t)) return false;
+  // ตัวเลขยาว ๆ = รหัสนักศึกษา ไม่ใช่ชื่อเรื่อง
+  if (/(^|\s)\d{6,}(\s|$)/.test(t)) return false;
+  return true;
+}
+
+export function isLinkOnly(text: string) {
+  const t = String(text || "").trim();
+  if (!t) return true;
+  const real = t
+    .split(/\n+/)
+    .filter((line) => !/https?:\/\/|เปิดไฟล์ต้นฉบับ|ไฟล์ต้นฉบับ|ไฟล์แนบจาก Google Classroom|หากเปิดไม่ได้/.test(line))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return letterCount(real) < 40;
+}
+
+/**
+ * ประโยคที่เอาไปตั้งเป็นโจทย์เติมคำได้จริง
+ * ตัด: ตารางตัวเลขล้วน, บรรทัดสั้น, ข้อความที่ไม่มีตัวอักษรพอ
+ * (เช่น "5 x 1001 x 1011 x 1023 x 1032 x 104 + + + +" ตัดเลขจากสไลด์)
+ */
+function usableSentence(s: string): boolean {
+  const letters = letterCount(s);
+  if (letters < 20) return false;
+  if (letters / s.length < 0.4) return false;              // ตัวเลขเยอะเกิน = ตาราง
+  if ((s.match(/[+×÷=]/g) || []).length >= 3) return false; // สมการยาวเกิน
+  if (/^[\d\s.,+\-*/=%_$#|]+$/.test(s)) return false;       // ไม่มีตัวอักษรเลย
+  return true;
+}
+
+/**
+ * หมุนเวียนไฟล์เป็นรอบ ๆ เพื่อให้ทุกไฟล์ที่ผู้ใช้เลือกได้โจทย์ครบ
+ * คืนชุดประโยครวมไม่เกิน wanted ข้อ
+ */
+function splitSentencesByFile(
+  sources: { id: string; title: string; textContent: string }[],
+  ok: (s: string) => boolean,
+  wanted: number,
+) {
+  const pool = sources.map((m) => ({
+    material: m,
+    list: splitSentences(String(m.textContent || "")).filter(ok),
+  })).filter((p) => p.list.length > 0);
+  if (!pool.length) return [];
+
+  const out: { text: string; material: any }[] = [];
+  const used = new Map<string, number>();
+  let round = 0;
+  while (out.length < wanted && round < 40) {
+    let added = false;
+    for (const p of pool) {
+      if (out.length >= wanted) break;
+      const at = used.get(p.material.id) ?? 0;
+      if (at >= p.list.length) continue;
+      used.set(p.material.id, at + 1);
+      out.push({ text: p.list[at], material: p.material });
+      added = true;
+    }
+    if (!added) break;   // ทุกไฟล์หมดแล้ว
+    round++;
+  }
+  return out;
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -155,10 +253,12 @@ router.post("/subjects", requireAuth(), async (req: any, res) => {
 router.get("/subjects/:subjectId", requireAuth(), async (req: any, res) => {
   const subject = await prisma.subject.findFirst({
     where: { id: req.params.subjectId, userId: req.user.id },
-    include: { semester: { include: { academicYear: true } }, materials: { orderBy: { createdAt: "desc" } }, progress: true },
+    include: { semester: { include: { academicYear: true } }, materials: true, progress: true },
   });
   if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
-  res.json(subject);
+  // เรียงตามลำดับบท/สัปดาห์ ไม่ใช่ตามลำดับที่ซิงก์เข้ามา
+  // (ไม่งั้น Chapter 8 จะโผล่ก่อน Chapter 1 และ WEEK#14 ก่อน WEEK#2)
+  res.json({ ...subject, materials: sortByTitle(subject.materials) });
 });
 
 router.post("/materials/upload", requireAuth(), upload.single("file"), async (req: any, res) => {
@@ -187,7 +287,7 @@ router.post("/materials/upload", requireAuth(), upload.single("file"), async (re
       sourceLabel = "Lecture Recording";
       const chunks = chunkText(textContent);
       const material = await prisma.material.create({
-        data: { title, fileName: req.file.originalname.slice(0,255), mimeType: req.file.mimetype, sourceType: "LECTURER", status: "COMPLETED", textContent, transcript, filePath: savedPath, sourceLabel, userId: req.user.id, subjectId, chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) } },
+        data: { category: "slide", title, fileName: req.file.originalname.slice(0,255), mimeType: req.file.mimetype, sourceType: "LECTURER", status: "COMPLETED", textContent, transcript, filePath: savedPath, sourceLabel, userId: req.user.id, subjectId, chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) } },
         include: { chunks: true },
       });
       await prisma.subject.update({ where: { id: subjectId }, data: { status: "IN_PROGRESS" } });
@@ -213,7 +313,7 @@ router.post("/materials/upload", requireAuth(), upload.single("file"), async (re
     const savedPath = path.join(MEDIA_DIR, savedName);
     fs.writeFileSync(savedPath, req.file.buffer);
     const material = await prisma.material.create({
-      data: { title, fileName: req.file.originalname.slice(0,255), mimeType: req.file.mimetype, sourceType: "LECTURER", status: "COMPLETED", textContent, pageCount, filePath: savedPath, sourceLabel, userId: req.user.id, subjectId, chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) } },
+      data: { category: "slide", title, fileName: req.file.originalname.slice(0,255), mimeType: req.file.mimetype, sourceType: "LECTURER", status: "COMPLETED", textContent, pageCount, filePath: savedPath, sourceLabel, userId: req.user.id, subjectId, chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) } },
       include: { chunks: true },
     });
     await prisma.subject.update({ where: { id: subjectId }, data: { status: "IN_PROGRESS" } });
@@ -242,7 +342,9 @@ router.post("/materials", requireAuth(), async (req: any, res) => {
   if (current) chunks.push(current);
   const material = await prisma.material.create({
     data: {
-      title, sourceType: "IMPORTED", status: "COMPLETED", textContent,
+      title, fileName: null, mimeType: "text/plain",
+      category: "slide",
+      sourceType: "IMPORTED", status: "COMPLETED", textContent,
       userId: req.user.id, subjectId,
       chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) },
     },
@@ -265,7 +367,7 @@ router.post("/materials/:materialId/ask", requireAuth(), async (req: any, res) =
   const q = new Set(question.toLowerCase().split(/\s+/).filter((x: string) => x.length > 1));
   const ranked = materials.flatMap((m) => m.chunks.map((chunk) => {
     const words = chunk.content.toLowerCase().split(/\s+/);
-    const score = words.reduce((n: number, word: string) => n + (q.has(word.replace(/[^\p{L}\p{N}]/gu, "")) ? 1 : 0), 0);
+    const score = words.reduce((n: number, word: string) => n + (q.has(word.replace(NON_TEXT_CHAR_RE, "")) ? 1 : 0), 0);
     return { material: m, chunk, score };
   })).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 8);
   if (!ranked.length) return res.json({
@@ -294,30 +396,165 @@ router.post("/materials/:materialId/ask", requireAuth(), async (req: any, res) =
 
 
 router.post("/subjects/:subjectId/quizzes/generate", requireAuth(), async (req: any, res) => {
-  const subject = await prisma.subject.findFirst({ where: { id: req.params.subjectId, userId: req.user.id }, include: { materials: { where: { status: "COMPLETED" }, orderBy: { createdAt: "desc" }, take: 1 } } });
+  const subjectId = String(req.params.subjectId || "");
+  const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id } });
   if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
-  if (!subject.materials.length) return res.status(422).json({ error: "กรุณาเพิ่มเอกสารก่อนสร้าง Quiz" });
-  const source = subject.materials[0];
-  const sentences = source.textContent.split(/(?<=[.!?。！？])\s+|\n+/).map((x: string) => x.trim()).filter((x: string) => x.length >= 30).slice(0, 10);
-  if (!sentences.length) return res.status(422).json({ error: "เนื้อหายังสั้นเกินไปสำหรับสร้าง Quiz" });
-  const count = Math.min(Math.max(Number(req.body?.count) || 5, 1), sentences.length);
-  const questions = sentences.slice(0, count).map((sentence: string, index: number) => {
-    const words = sentence.split(/\s+/).filter((w: string) => w.length >= 4);
-    const answer = (words[Math.floor(words.length / 2)] || words[0] || "คำตอบ").replace(/[.,!?;:()[\]{}]/g, "");
-    const prompt = sentence.replace(answer, "_____");
+
+  // ผู้ใช้เลือกเนื้อหามาเองก่อน -> ใช้เฉพาะที่เลือก ห้ามไปล้างวิชาอื่น
+  const picked: string[] = Array.isArray(req.body?.materialIds)
+    ? req.body.materialIds.map((x: any) => String(x)).filter(Boolean)
+    : [];
+
+  const all = await prisma.material.findMany({
+    where: { subjectId: subject.id, userId: req.user.id, status: "COMPLETED" },
+    orderBy: { createdAt: "desc" },
+  });
+  // ไฟล์ที่มีแต่ลิงก์ไปที่ Google Drive = ไม่มีเนื้อหา ใช้ทำโจทย์ไม่ได้
+  const usable = all.filter((m: any) => !isLinkOnly(m.textContent));
+  if (!all.length) return res.status(422).json({ error: "กรุณาเพิ่มเอกสารก่อนสร้าง Quiz" });
+  if (!usable.length) return res.status(422).json({
+    error: "ไฟล์ในวิชานี้เปิดอ่านข้อความไม่ได้ (เป็นสไลด์รูปภาพหรือไฟล์ลิงก์) — ต้องมีไฟล์ที่เป็นข้อความจริงก่อน",
+  });
+
+  let sources: typeof all;
+  if (picked.length) {
+    const allow = new Set(picked);
+    sources = usable.filter((m: any) => allow.has(m.id));
+    if (!sources.length) return res.status(422).json({ error: "ไฟล์ที่เลือกไม่มีเนื้อหาข้อความให้ทำโจทย์" });
+  } else {
+    // ไม่ได้เลือก = ใช้ทั้งวิชา แต่เรียงตามชื่อให้เป็นลำดับบท/สัปดาห์
+    sources = sortByTitle(usable);
+  }
+
+  // ดึงประโยคจากทุกไฟล์ที่เลือก โดยหมุนเวียนไฟล์เป็นรอบ
+  const wanted = Math.min(Math.max(Number(req.body?.count) || 8, 1), 30);
+
+  /**
+   * "เก็บโจทย์ที่ทำไว้เอาไปทำในโหมดข้อสอบ"
+   * ดึงประโยคจาก "งานที่นักศึกษาเคยส่ง" ของรายการประเภท การบ้าน/งานในห้อง/โบนัส
+   * เพื่อให้ข้อสอบอ้างอิงวิธีทำจริงของตัวเอง ไม่ใช่แค่เนื้อหาในสไลด์
+   *
+   * ต้องจองโควตาไว้ก่อน ไม่งั้นประโยคจากสไลด์จะเต็มและตัดงานของเราทิ้ง
+   */
+  const ASSIGNMENT_CATS = ["homework", "inclass", "bonus"];
+  // ใช้ all ไม่ใช่ usable เพราะไฟล์งานมักเป็น "คำสั่งงาน" สั้นๆ ที่ถูกตัดออกจาก usable
+  // แต่ชื่อของมันคือกุญแจที่จะจับคู่กับงานที่นักศึกษาส่งมา
+  const assignmentTitles = all
+    .filter((m: any) => ASSIGNMENT_CATS.includes(m.category))
+    .map((m: any) => String(m.title || "").replace(/\s+/g, " ").trim().toLowerCase())
+    .filter((t: string) => t.length >= 6);
+  const fromMyWork: { text: string; material: any }[] = [];
+  if (assignmentTitles.length) {
+    const subs = await prisma.submission.findMany({
+      where: { subjectId: subject.id, userId: req.user.id },
+      orderBy: { submittedAt: "desc" }, take: 60,
+    });
+    const quota = Math.min(4, Math.max(1, Math.round(wanted / 3)));
+    for (const sub of subs) {
+      if (fromMyWork.length >= quota) break;
+      const st = String(sub.title || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (!st || !assignmentTitles.some((t) => st.includes(t) || t.includes(st))) continue;
+      for (const s of splitSentences(sub.textContent).filter(usableSentence)) {
+        // บรรทัดที่เป็นแค่ชื่อไฟล์/ลิงก์ ไม่ใช่สิ่งที่นักศึกษาเขียน
+        if (/^\[?\s*(จากไฟล์|ไฟล์แนบ|ลิงก์ที่ส่ง|แนบลิงก์)/.test(s)) continue;
+        if (/https?:\/\//.test(s)) continue;
+        fromMyWork.push({ text: s, material: { id: "", title: String(sub.title || ""), __fromSubmission: true } });
+        if (fromMyWork.length >= quota) break;
+      }
+    }
+  }
+
+  // ดึงประโยคจากไฟล์ที่เลือก โดยหมุนเวียนไฟล์เป็นรอบ
+  // (ถ้าใช้ perFile ตายตัว ไฟล์ที่ไม่มีประโยคพอจะทำให้ไฟล์อื่นถูกล้มทิ้ง)
+  const perFile = splitSentencesByFile(sources, usableSentence, Math.max(1, wanted - fromMyWork.length));
+  if (!perFile.length && !fromMyWork.length) {
+    return res.status(422).json({ error: "เนื้อหาที่เลือกยังสั้นเกินไปสำหรับสร้าง Quiz" });
+  }
+  // งานที่ตัวเองทำไว้ขึ้นก่อน เพราะเป็นสิ่งที่ต้องทบทวนจริง
+  const pickedSentences: { text: string; material: any }[] = [...fromMyWork, ...perFile];
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const STOP = /^(และ|หรือ|แต่|ที่|ซึ่ง|ใน|ของ|โดย|ให้|จะ|เป็น|ได้|มี|คือ|ก็|ยัง|แล้ว|การ|นี้|ๆ|จาก|กับ|เมื่อ|ถ้า|โดย|วิธี|เพื่อ|ซึ่ง|อีก|ยัง|คือ|แต่ละ|ทุก|บาง|มาก|น้อย|โดยตรง|ต้อง|ควร|แล้วก็)$/i;
+  // ประโยคที่เหมาะกับโจทย์เติมคำ: ต้องมีตัวอักษร ไม่ใช่ตารางตัวเลขล้วน
+
+  const questions = pickedSentences.slice(0, wanted).map((item, index) => {
+    const sentence = item.text;
+    const material = item.material;
+
+    // เลือกคำที่จะทำเป็นช่องว่าง — ต้องเป็นคำนาม/คำสำคัญที่มีความหมาย
+    // เลี่ยงคำที่เป็น "คำตอบ" (จากข้อความ เช่น "กรอกคำตอบ") และคำทั่วไป
+    const raw = sentence.split(/\s+/);
+    const candidates: { word: string; index: number }[] = [];
+    raw.forEach((w, i) => {
+      const clean = w.replace(/[.,!?;:()[\]{}"']/g, "");
+      if (clean.length < 4) return;
+      if (STOP.test(clean)) return;
+      if (/^คำตอบ$|^คำถาม$|^blank$/i.test(clean)) return;
+      if (!/(?:\p{L}\p{M}*){3,}/u.test(clean)) return;
+      candidates.push({ word: clean, index: i });
+    });
+    if (!candidates.length) return null;
+
+    // เลือกคำกลางๆ ของประโยค (ไม่ใช่คำแรก/ท้าย) แล้วลองสลับไปคำที่ถัดไปถ้าคำแรกซ้ำกับตัวอื่น
+    const pick = candidates[Math.floor(candidates.length / 2)] || candidates[0];
+    const answer = pick.word;
+    const blanked = raw.slice();
+    blanked[pick.index] = "_____";
+    const prompt = blanked.join(" ").replace(/\s{2,}/g, " ").trim();
+
+    // ตัวเลือกหลอก: ดึงคำจริงจากแหล่งเดียวกัน ยกเว้นคำที่ปรากฏในประโยคนี้
+    const sentenceWords = new Set(raw.map((w) => norm(w.replace(/[.,!?;:()[\]{}"']/g, ""))));
+    // ข้อที่มาจากงานที่นักศึกษาทำเอง ให้ดึงคำหลอกจากประโยคอื่นของงานเดียวกัน
+    const distractorSource = material.__fromSubmission
+      ? pickedSentences.filter((x) => x.material.__fromSubmission).map((x) => x.text).join(" ")
+      : String(material.textContent || "");
+    const pool = distractorSource.split(/\s+/)
+      .map((w: string) => w.replace(/[.,!?;:()[\]{}"']/g, ""))
+      .filter((w: string) => w.length >= 4 && !STOP.test(w) && /(?:\p{L}\p{M}*){3,}/u.test(w));
+    const distractors: string[] = [];
+    const seen = new Set([norm(answer)]);
+    for (const w of pool) {
+      if (distractors.length >= 3) break;
+      const k = norm(w);
+      if (seen.has(k) || sentenceWords.has(k)) continue;   // ต้องไม่อยู่ในประโยค ไม่งั้นเดาง่ายเกิน
+      seen.add(k);
+      distractors.push(w);
+    }
+    for (const f of ["ไม่มีข้อมูล", "ไม่เกี่ยวข้อง", "ข้อมูลไม่เพียงพอ"]) {
+      if (distractors.length >= 3) break;
+      if (seen.has(norm(f))) continue;
+      seen.add(norm(f));
+      distractors.push(f);
+    }
+    // หมุนตำแหน่งคำตอบ ไม่ให้อยู่ที่เดิมทุกข้อ
+    const options = [answer, ...distractors];
+    const shift = index % options.length;
+    const rotated = [...options.slice(shift), ...options.slice(0, shift)];
+
+    const fromMyWork = !!material.__fromSubmission;
     return {
       type: "MULTIPLE_CHOICE" as const,
-      prompt: "เติมข้อความจากเอกสาร: " + prompt,
-      options: [answer, "ไม่มีข้อมูล", "ไม่เกี่ยวข้อง", "ข้อมูลไม่เพียงพอ"],
-      answer, explanation: "อ้างอิงจาก " + source.title,
-      source: { materialId: source.id, materialTitle: source.title, chunk: index + 1 }, order: index,
+      prompt: (fromMyWork ? "จากสิ่งที่คุณทำ: " : "เติมข้อความจากเอกสาร: ") + prompt,
+      options: rotated,
+      answer,
+      explanation: (fromMyWork ? "อ้างอิงจากงานที่คุณส่ง: " : "อ้างอิงจาก ") + material.title.replace(/^สิ่งที่คุณทำ:\s*/, ""),
+      source: { materialId: material.id || null, materialTitle: material.title, chunk: index + 1, fromMyWork },
+      order: index,
     };
-  });
+  }).filter(Boolean) as any[];
+
+  const label = picked.length
+    ? (sources.length === 1 ? sources[0].title : sources.length + " ไฟล์ที่เลือก")
+    : "ทั้งวิชา";
   const quiz = await prisma.quiz.create({
-    data: { title: "ฝึกทำความเข้าใจ: " + subject.name, subjectId: subject.id, userId: req.user.id, questions: { create: questions } },
+    data: {
+      title: "ฝึกทำความเข้าใจ: " + subject.name + " (" + label + ")",
+      subjectId: subject.id,
+      userId: req.user.id,
+      questions: { create: questions },
+    },
     include: { questions: { orderBy: { order: "asc" } } },
   });
-  res.status(201).json(quiz);
+  res.status(201).json({ ...quiz, usedMaterialIds: sources.map((s: any) => s.id), usedMaterialCount: sources.length });
 });
 
 router.get("/quizzes/:quizId", requireAuth(), async (req: any, res) => {
@@ -372,25 +609,64 @@ router.get("/review", requireAuth(), async (req: any, res) => {
 
 router.post("/review/generate", requireAuth(), async (req: any, res) => {
   const subjectId = String(req.body?.subjectId || "").trim();
-  const material = await prisma.material.findFirst({
+  const wanted = Math.min(Math.max(Number(req.body?.count) || 12, 1), 40);
+  // เดิมดึงแค่ไฟล์ล่าสุดไฟล์เดียว ซึ่งมักเป็นประกาศ -> ได้ 0 ใบเสมอ
+  const pool = await prisma.material.findMany({
     where: { userId: req.user.id, ...(subjectId ? { subjectId } : {}) },
-    orderBy: { createdAt: "desc" }, include: { chunks: { take: 20, orderBy: { chunkIndex: "asc" } } },
+    include: { chunks: { take: 30, orderBy: { chunkIndex: "asc" } } },
   });
-  if (!material) return res.status(404).json({ error: "ยังไม่มีเอกสารสำหรับสร้างบัตรทบทวน" });
-  const cards = [];
-  for (const chunk of material.chunks.slice(0, 10)) {
-    const first = chunk.content.split(/[.!?。！？\n]/).map((x: string) => x.trim()).filter(Boolean)[0];
-    if (!first || first.length < 20) continue;
-    const words = first.split(/\s+/).filter((x: string) => x.length >= 4);
-    const key = words[Math.floor(words.length / 2)] || words[0];
-    cards.push({
-      userId: req.user.id, subjectId: material.subjectId,
-      prompt: "อธิบายหรือเติมคำจากแนวคิดนี้: " + first.replace(key, "_____"),
-      answer: key, source: { materialId: material.id, chunk: chunk.chunkIndex + 1 },
-    });
+  // ใช้เฉพาะไฟล์ที่มีเนื้อหาจริง แล้วเรียงตามชื่อให้เป็นลำดับบท
+  const materials = sortByTitle(
+    pool.filter((m: any) => hasSubstantiveContent(m) && !isLinkOnly(m.textContent) && m.chunks.length),
+  );
+  if (!materials.length) return res.status(422).json({ error: "ยังไม่มีเอกสารที่มีเนื้อหาพอสร้างบัตรทบทวน" });
+
+  const cards: any[] = [];
+  const usedPrompts = new Set<string>();
+  // หมุนเวียนไฟล์เป็นรอบ ให้ได้กระจายทุกไฟล์ ไม่กระจุกไฟล์เดียว
+  const perFile: { sentence: string; words: string[]; material: any; chunk: number }[][] = materials.map((m: any) => {
+    const out: any[] = [];
+    for (const chunk of m.chunks) {
+      for (const sentence of splitSentences(chunk.content).filter(usableSentence)) {
+        const words = sentence.split(/\s+/)
+          .map((w) => w.replace(/[.,!?;:()[\]{}"']/g, ""))
+          .filter((w) => w.length >= 4 && /(?:\p{L}\p{M}*){3,}/u.test(w));
+        if (!words.length) continue;
+        out.push({ sentence, words, material: m, chunk: chunk.chunkIndex + 1 });
+        if (out.length >= 4) break;
+      }
+      if (out.length >= 4) break;
+    }
+    return out;
+  }).filter((x) => x.length);
+
+  if (!perFile.length) return res.status(422).json({ error: "เนื้อหาในไฟล์สั้นเกินไปสำหรับสร้างบัตรทบทวน" });
+
+  const used = new Array(perFile.length).fill(0);
+  let guard = 0;
+  while (cards.length < wanted && guard < perFile.length * 8) {
+    let added = false;
+    for (let i = 0; i < perFile.length && cards.length < wanted; i++) {
+      const at = used[i];
+      if (at >= perFile[i].length) continue;
+      used[i] = at + 1;
+      added = true;
+      const item = perFile[i][at];
+      const key = item.words[Math.floor(item.words.length / 2)];
+      const prompt = "เติมคำ: " + item.sentence.replace(key, "_____");
+      if (usedPrompts.has(prompt)) continue;
+      usedPrompts.add(prompt);
+      cards.push({
+        userId: req.user.id, subjectId: item.material.subjectId,
+        prompt, answer: key,
+        source: { materialId: item.material.id, materialTitle: item.material.title, chunk: item.chunk },
+      });
+    }
+    if (!added) break;
+    guard++;
   }
   if (cards.length) await prisma.reviewCard.createMany({ data: cards });
-  res.status(201).json({ created: cards.length });
+  res.status(201).json({ created: cards.length, cards });
 });
 
 router.post("/review/:cardId/review", requireAuth(), async (req: any, res) => {
@@ -445,14 +721,45 @@ router.patch("/planner/:taskId", requireAuth(), async (req: any, res) => {
 router.get("/knowledge/:subjectId", requireAuth(), async (req: any, res) => {
   const subject = await prisma.subject.findFirst({ where: { id: req.params.subjectId, userId: req.user.id } });
   if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
-  const materials = await prisma.material.findMany({ where: { subjectId: subject.id, userId: req.user.id }, include: { chunks: { orderBy: { chunkIndex: "asc" }, take: 50 } } });
+  const allMaterials = await prisma.material.findMany({ where: { subjectId: subject.id, userId: req.user.id }, include: { chunks: { orderBy: { chunkIndex: "asc" }, take: 50 } } });
+  // ใช้เฉพาะไฟล์ที่มีเนื้อหาจริง ไม่งั้นหัวข้อจะกลายเป็นประกาศนักศึกษาทั้งกระดาน
+  const materials = sortByTitle(allMaterials.filter((m: any) => hasSubstantiveContent(m) && !isLinkOnly(m.textContent)));
   const nodes = await prisma.knowledgeNode.findMany({ where: { userId: req.user.id, subjectId: subject.id } });
   if (!nodes.length) {
-    const labels = new Set<string>();
-    for (const material of materials) for (const chunk of material.chunks) {
-      for (const word of chunk.content.split(/\s+/).filter((x: string) => x.length >= 5).slice(0, 60)) labels.add(word.replace(/[^\p{L}\p{N}-]/gu, ""));
+    // แนวคิดหลักของวิชา = หัวข้อที่ระบบหาจากเนื้อหาจริงได้ (topics.ts)
+    // ดึงจากบรรทัดสั้นใน PDF ดีกว่าแต่ได้ผลแค่บางวิชา เพราะสไลด์มักเป็นย่อหน้ายาว
+    const seenConcept = new Set<string>();
+    const concepts: string[] = [];
+    const push = (label: string) => {
+      const t = String(label || "").replace(/\s+/g, " ").trim();
+      if (t.length < 3 || t.length > 70) return;
+      const k = t.toLowerCase();
+      if (seenConcept.has(k)) return;
+      seenConcept.add(k);
+      concepts.push(t);
+    };
+    // 1) หัวข้อย่อยที่เป็นบรรทัดสั้นในไฟล์ (กรอง page marker ออก)
+    for (const material of materials) {
+      for (const chunk of material.chunks) {
+        for (const raw of chunk.content.split(/\n+/)) {
+          if (isConceptLine(raw)) push(raw);
+        }
+      }
     }
-    const generated = Array.from(labels).filter(Boolean).slice(0, 40).map(label => ({ userId: req.user.id, subjectId: subject.id, label, kind: "concept" }));
+    // 2) หัวข้อวิชาที่คำนวณได้ — คุณภาพดีที่สุด ใส่ตามหลัง
+    try {
+      const scanned = await buildSubjectTopics(req.user.id, subject.id, subject.name, false);
+      for (const t of (scanned.topics || []) as any[]) push(t.label || t.title);
+    } catch { /* AI ไม่ว่างก็ใช้แค่หัวข้อย่อย */ }
+    // 3) ชื่อไฟล์ที่บอกเนื้อหาได้จริง
+    for (const material of materials) {
+      if (!contentQuality(material).enoughForQuiz) continue;
+      const name = String(material.title || "");
+      if (isGenericTitle(name)) continue;
+      if (!isConceptLine(name)) continue;   // ชื่อที่เป็นประกาศ/แชท ไม่ใช่แนวคิด
+      push(name);
+    }
+    const generated = concepts.slice(0, 40).map((label) => ({ userId: req.user.id, subjectId: subject.id, label, kind: "concept" }));
     if (generated.length) await prisma.knowledgeNode.createMany({ data: generated });
   }
   const finalNodes = await prisma.knowledgeNode.findMany({ where: { userId: req.user.id, subjectId: subject.id }, orderBy: { label: "asc" }, take: 80 });

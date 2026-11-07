@@ -1,5 +1,6 @@
 import {useEffect,useState} from "react";
 import {ActivityIndicator,KeyboardAvoidingView,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from "react-native";
+import { Alert } from "../../lib/alert";
 import {LinearGradient} from "expo-linear-gradient";
 import {router} from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -7,14 +8,14 @@ import {Ionicons} from "@expo/vector-icons";
 import {getToken,setToken} from "../../lib/storage";
 import {login} from "../../lib/api";
 import {appReturnUrl,buildGoogleAuthUrl,parseAuthCallback} from "../../lib/googleAuth";
-import {colors,radius,spacing} from "../../lib/theme";
+import {colors,spacing} from "../../lib/theme";
 export default function LoginScreen(){
  const[email,setEmail]=useState(""),[password,setPassword]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[googleBusy,setGoogleBusy]=useState(false);
  useEffect(()=>{getToken().then(t=>t&&router.replace("/(tabs)")).catch(()=>undefined)},[]);
  async function submit(){setBusy(true);setError("");try{await login(email.trim(),password);router.replace("/(tabs)")}catch(e){setError(e instanceof Error?e.message:"เข้าสู่ระบบไม่สำเร็จ")}finally{setBusy(false)}}
  async function google(){setGoogleBusy(true);setError("");try{if(Platform.OS==="web"){window.location.assign(buildGoogleAuthUrl());return;}const r=await WebBrowser.openAuthSessionAsync(buildGoogleAuthUrl(),appReturnUrl());if(r.type==="success"){const c=parseAuthCallback(r.url);if(c?.token){await setToken(c.token);router.replace("/(tabs)")}else if(c?.error)setError(c.error)}}catch(e){setError(e instanceof Error?e.message:"Google login ไม่สำเร็จ")}finally{setGoogleBusy(false)}}
  return <KeyboardAvoidingView behavior={Platform.OS==="ios"?"padding":undefined} style={styles.screen}><ScrollView contentContainerStyle={styles.wrap} keyboardShouldPersistTaps="handled">
-  <LinearGradient colors={["#7c3aed","#4f46e5","#2563eb"]} style={styles.brand}><View style={styles.logo}><Ionicons name="school" size={30} color="#fff"/></View><Text style={styles.brandName}>StudyPath</Text><Text style={styles.tag}>Personal Learning OS</Text><Text style={styles.brandSub}>เรียนรู้จากเนื้อหาของคุณ ด้วยพลังของ AI</Text></LinearGradient>
+  <LinearGradient colors={colors.gradient as any} style={styles.brand}><View style={styles.logo}><Ionicons name="school" size={30} color="#fff"/></View><Text style={styles.brandName}>StudyPath</Text><Text style={styles.tag}>Personal Learning OS</Text><Text style={styles.brandSub}>เรียนรู้จากเนื้อหาของคุณ ด้วยพลังของ AI</Text></LinearGradient>
   <View style={styles.form}><Text style={styles.kicker}>WELCOME BACK</Text><Text style={styles.title}>เข้าสู่ระบบ</Text><Text style={styles.sub}>กลับไปเรียนต่อจากจุดที่คุณหยุดไว้</Text>
    <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="อีเมล" placeholderTextColor="#8a8da5" style={styles.input}/>
    <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="รหัสผ่าน" placeholderTextColor="#8a8da5" style={styles.input} onSubmitEditing={submit}/>

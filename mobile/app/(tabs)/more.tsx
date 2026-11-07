@@ -1,5 +1,6 @@
 import {useCallback,useEffect,useState} from "react";
-import {ActivityIndicator,Alert,Pressable,ScrollView,StyleSheet,Text,View} from "react-native";
+import {ActivityIndicator,Pressable,ScrollView,StyleSheet,Text,View} from "react-native";
+import { Alert } from "../../lib/alert";
 import {Ionicons} from "@expo/vector-icons";
 import {router} from "expo-router";
 import {api} from "../../lib/api";
@@ -9,7 +10,7 @@ import {removeToken} from "../../lib/storage";
 
 type Me={id:string;name:string;email:string;role:"ADMIN"|"LECTURER"|"MEMBER";themeColor:string};
 export default function MoreScreen(){
- const{color,setColor}=useTheme();const[me,setMe]=useState<Me|null>(null);const[learning,setLearning]=useState<any>(null);const[loading,setLoading]=useState(true);
+ const{setColor}=useTheme();const[me,setMe]=useState<Me|null>(null);const[learning,setLearning]=useState<any>(null);const[loading,setLoading]=useState(true);
  const load=useCallback(async()=>{try{const[p,s]=await Promise.all([api<Me>("/me"),api("/me/learning")]);setMe(p);setLearning(s)}catch(e){Alert.alert("โหลดโปรไฟล์ไม่สำเร็จ",String(e))}finally{setLoading(false)}},[]);
  useEffect(()=>{load()},[load]);
  if(loading)return <View style={styles.center}><ActivityIndicator color={colors.accent}/></View>;
@@ -19,7 +20,6 @@ export default function MoreScreen(){
   {me&&<Card style={styles.profile}><Avatar name={me.name} size={58}/><View style={{flex:1}}><Text style={font.h2}>{me.name}</Text><Text style={font.caption}>{me.email}</Text><View style={styles.role}><Ionicons name="shield-checkmark" size={13} color={colors.accent}/><Text style={styles.roleText}>{me.role==="LECTURER"?"อาจารย์":me.role==="ADMIN"?"ผู้ดูแลระบบ":"นักศึกษา"}</Text></View></View></Card>}
   <SectionHeader title="Learning overview"/>
   <View style={styles.grid}><Card style={styles.metric}><IconTile icon="library-outline" color="#a855f7" size={38}/><Text style={styles.metricNum}>{learning?.subjects||0}</Text><Text style={font.caption}>วิชา</Text></Card><Card style={styles.metric}><IconTile icon="repeat" color="#34d399" size={38}/><Text style={styles.metricNum}>{learning?.dueReviews||0}</Text><Text style={font.caption}>Review due</Text></Card><Card style={styles.metric}><IconTile icon="calendar-outline" color="#38bdf8" size={38}/><Text style={styles.metricNum}>{learning?.planner||0}</Text><Text style={font.caption}>งานค้าง</Text></Card></View>
-  <Pressable style={styles.menu} onPress={()=>router.push("/classroom")}><IconTile icon="logo-google" color="#4285F4" size={42}/><View style={{flex:1}}><Text style={font.title}>Google Classroom</Text><Text style={font.caption}>เชื่อมสไลด์และเอกสารเข้าวิชาอัตโนมัติ</Text></View><Ionicons name="chevron-forward" size={18} color={colors.textMuted}/></Pressable>
   {me?.role!=="MEMBER"&&<Pressable style={styles.menu} onPress={async()=>{try{const x=await api<any>("/studypath/portal/overview");Alert.alert("University Portal","ผู้ใช้ "+x.users+" · วิชา "+x.subjects+" · เอกสาร "+x.materials+" · Quiz "+x.quizzes)}catch(e){Alert.alert("Portal",String(e))}}}><IconTile icon="school-outline" color="#38bdf8" size={42}/><View style={{flex:1}}><Text style={font.title}>University / Lecturer Portal</Text><Text style={font.caption}>จัดการภาพรวมระบบการเรียน</Text></View><Ionicons name="chevron-forward" size={18} color={colors.textMuted}/></Pressable>}
   <SectionHeader title="สีประจำตัว"/>
   <Card><View style={styles.colors}>{["#7c3aed","#2563eb","#0891b2","#147d64","#db2777","#ea580c"].map(c=><Pressable key={c} onPress={()=>{setColor(c);void api("/me",{method:"PATCH",body:JSON.stringify({themeColor:c})}).catch(()=>undefined)}} style={[styles.swatch,{backgroundColor:c,borderColor:me?.themeColor===c?"#fff":"transparent"}]}/>)}</View></Card>

@@ -32,7 +32,9 @@
     "livekit-server-sdk": "^2.19.1",
     "multer": "^2.4.0",
     "pdf-parse": "^2.4.5",
-    "socket.io": "^4.8.4"
+    "pdf-to-img": "^7.0.2",
+    "socket.io": "^4.8.4",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

@@ -4,10 +4,12 @@ export const DEFAULT_COLOR="#7c3aed";
 export const ThemeProvider=({children}:any)=>{const [color,setColor]=useState(DEFAULT_COLOR);return <Ctx.Provider value={{color,setColor}}>{children}</Ctx.Provider>};
 export const useTheme=()=>useContext(Ctx);
 export const colors={
- accent:"#7c3aed",accent2:"#4f46e5",background:"#0a0b16",surface:"#121426",surfaceAlt:"#1b1e33",
- border:"#292d49",track:"#292d49",text:"#f7f7ff",textSecondary:"#b8bbd2",textMuted:"#7e829d",
- danger:"#ef5b6f",success:"#34d399",warning:"#f59e0b",
- gradient:["#7c3aed","#4f46e5","#2563eb"],gradientWarm:["#a855f7","#7c3aed","#4f46e5"]
+ accent:"#6d28d9",accent2:"#4338ca",background:"#ffffff",surface:"#ffffff",surfaceAlt:"#f4f5f9",
+ border:"#e2e5ef",track:"#e2e5ef",text:"#111827",textSecondary:"#4b5563",textMuted:"#6b7280",
+ danger:"#dc2626",success:"#059669",warning:"#b45309",
+ gradient:["#6d28d9","#4338ca","#1d4ed8"],gradientWarm:["#9333ea","#6d28d9","#4338ca"],
+ // กล่องโค้ดคงโทนเข้มไว้เหมือนโปรแกรมแก้โค้ดจริง ตัดกับพื้นขาวได้ชัด
+ codeBg:"#0d1117",codeBar:"#161b22",codeBorder:"#d0d7de",codeText:"#e6edf3",codeMuted:"#8b949e"
 };
 export const spacing={xs:4,sm:8,md:12,lg:16,xl:20,xxl:24,xxxl:32};
 export const radius={sm:8,md:12,lg:16,xl:22,full:999};

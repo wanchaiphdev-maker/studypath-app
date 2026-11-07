@@ -6,3 +6,20 @@ backend/dist/
 mobile/.expo/
 mobile/android/
 mobile/ios/
+
+# logs / debug output
+*.log
+*.err
+*.err.log
+backend/dump.txt
+
+# ความลับ/ข้อมูลดิบ — ห้ามเข้า git
+**/client_secret*.json
+backend/storage/
+**/tha.traineddata
+**/eng.traineddata
+
+# สคริปต์/สำรองชั่วคราว (ขึ้นต้น _ = ของใช้ทิ้ง)
+backend/_debug/
+backend/_*.json
+backend/tools/_*

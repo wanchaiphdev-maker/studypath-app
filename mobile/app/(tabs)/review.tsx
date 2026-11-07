@@ -1,7 +1,8 @@
 import {useEffect,useState} from "react";
-import {Alert,Pressable,ScrollView,StyleSheet,Text,View} from "react-native";
-import {colors,font,radius,spacing} from "../../lib/theme";
-import {Button,Card,IconTile,ProgressBar,SectionHeader} from "../../lib/ui";
+import {Pressable,ScrollView,StyleSheet,Text,View} from "react-native";
+import { Alert } from "../../lib/alert";
+import {colors,font,spacing} from "../../lib/theme";
+import {Button,Card,IconTile,SectionHeader} from "../../lib/ui";
 import {getReviewCards,generateReviewCards,reviewCard,getPlanner,createPlannerTask,completePlannerTask} from "../../lib/api";
 
 export default function Review(){

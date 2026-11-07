@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
-import { Alert } from "react-native";
+import { } from "react-native";
+import { Alert } from "../lib/alert";
 import * as Linking from "expo-linking";
 import { setToken } from "../lib/storage";
 import { Stack, router, useRootNavigationState } from "expo-router";
 import { ThemeProvider } from "../lib/theme";
+import { AlertHost } from "../lib/alert";
 import { parseAuthCallback } from "../lib/googleAuth";
 
 function useGoogleCallback() {
@@ -18,18 +20,33 @@ function useGoogleCallback() {
       if (cb.error) { Alert.alert("เข้าสู่ระบบด้วย Google ไม่สำเร็จ", cb.error); return; }
       handledUrl.current = url;
       await setToken(cb.token!);
-      if (active) router.replace((url || "").includes("/classroom") ? "/classroom" : "/(tabs)");
+      if (!active) return;
+      // On web, OAuth returns to the same route with ?token=...; reload only after
+      // persisting the token so protected status requests run with the new session.
+      if (typeof window !== "undefined") {
+        const callbackUrl = new URL(url || window.location.href);
+        const cleanPath = callbackUrl.pathname + callbackUrl.hash;
+        window.location.replace(cleanPath || "/login");
+        return;
+      }
+      router.replace("/(tabs)");
     };
-    Linking.getInitialURL().then(handle).catch(() => undefined);
+    // Expo Router web OAuth returns to the current browser URL; Linking.getInitialURL()
+    // may be null on web, so inspect window.location.href directly.
+    if (typeof window !== "undefined") {
+      void handle(window.location.href);
+    } else {
+      Linking.getInitialURL().then(handle).catch(() => undefined);
+    }
     const sub = Linking.addEventListener("url", ({ url }) => void handle(url));
     return () => { active = false; sub.remove(); };
   }, [navigationState?.key]);
 }
 export default function RootLayout() {
   useGoogleCallback();
-  return <ThemeProvider><Stack initialRouteName="(auth)/login" screenOptions={{ headerShown: false }}>
+  return <ThemeProvider><AlertHost /><Stack initialRouteName="(auth)/login" screenOptions={{ headerShown: false }}>
     <Stack.Screen name="(auth)/login" /><Stack.Screen name="(auth)/register" />
     <Stack.Screen name="(tabs)" /><Stack.Screen name="community" /><Stack.Screen name="community/[id]" />
-    <Stack.Screen name="subject/[id]" /><Stack.Screen name="quiz/[id]" /><Stack.Screen name="classroom" />
+    <Stack.Screen name="subject/[id]" /><Stack.Screen name="quiz/[id]" />
   </Stack></ThemeProvider>;
 }

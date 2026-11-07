@@ -1,0 +1,1 @@
+const fs=require('fs');const p='C:/Users/Acer/Desktop/studypath-app/mobile/app/classroom.tsx';let s=fs.readFileSync(p,'utf8');s=s.replace('replace(/[\\\\\\\\s\\\\\\\\p{P}\\\\\\\\p{S}]+/gu, "")','replace(/[^\\\\p{L}\\\\p{N}]+/gu, "")');fs.writeFileSync(p,s,'utf8');console.log('Fixed course-name normalization');

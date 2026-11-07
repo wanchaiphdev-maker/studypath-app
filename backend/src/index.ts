@@ -5,6 +5,8 @@ import { prisma, login, register, requireAuth } from "./auth";
 import studypath from "./routes/studypath";
 import googleAuth from "./routes/google";
 import classroom from "./routes/classroom";
+import tutor from "./routes/tutor";
+import { startAutosync } from "./autosync";
 
 const app = express();
 const allowedOrigin = process.env.CORS_ORIGIN?.trim();
@@ -43,6 +45,7 @@ app.get("/terms", (_req, res) => res.type("html").send(legalPage("ข้อก�
 
 app.use("/studypath", studypath);
 app.use("/studypath/classroom", classroom);
+app.use("/studypath/tutor", tutor);
 
 app.get("/me", requireAuth(), async (req: any, res) => {
   const user = await prisma.user.findUnique({
@@ -78,3 +81,8 @@ app.get("/me/learning", requireAuth(), async (req: any, res) => {
 });
 
 app.listen(process.env.PORT || 3000);
+
+// ซิงก์ Google Classroom อัตโนมัติ (ดึงเป็นระยะ เพราะ Classroom ไม่มี webhook)
+if (process.env.AUTOSYNC_ENABLED !== "false") {
+  startAutosync();
+}

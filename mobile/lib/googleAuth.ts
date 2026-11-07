@@ -1,14 +1,19 @@
 import * as Linking from "expo-linking";
 import { BASE_URL } from "./api";
 
+
 /** Client ID สาธารณะ (ปลอดภัยที่จะอยู่ในแอป) เก็บในไฟล์ .env */
 export const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
 /** จุดที่ Google จะ redirect มาหลังผู้ใช้กดยินยอม — ชี้ไป backend ของเรา (แลก code ฝั่ง server) */
-const REDIRECT_URI = `${BASE_URL?.replace(/\/$/, "")}/auth/google/callback`;
 
 /** ที่อยู่ให้ backend ส่ง token กลับมาที่แอป (mobile:///login ตอนใช้ APK / exp://…/--/login ตอนใช้ Expo Go) */
 export function appReturnUrl(path = "login") {
+  // On web, return to the actual Expo Router route (for example /classroom),
+  // not a native deep-link URL that the browser router may not recognize.
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/${path.replace(/^\/+/, "")}`;
+  }
   return Linking.createURL(path);
 }
 

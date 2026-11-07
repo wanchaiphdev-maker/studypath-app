@@ -38,7 +38,7 @@ function CallTracks() {
     <FlatList
       contentContainerStyle={styles.list}
       data={tracks}
-      keyExtractor={(track, trackIndex) => `${trackIndex}`}
+      keyExtractor={(_, trackIndex) => `${trackIndex}`}
       renderItem={({ item }) => isTrackReference(item)
         ? <VideoTrack trackRef={item} style={styles.video} />
         : <View style={styles.video} />}

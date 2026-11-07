@@ -1,4 +1,4 @@
-import { getToken, setToken } from "./storage";
+import { getToken, removeToken, setToken } from "./storage";
 
 export const BASE = process.env.EXPO_PUBLIC_API_URL;
 export const BASE_URL = BASE?.replace(/\/$/, "");
@@ -19,10 +19,28 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
     },
   });
   if (!response.ok) {
+    // token หมดอายุ/ใช้ไม่ได้ — ล้างทิ้งให้หน้าจอรู้ว่าต้องล็อกอินใหม่ ไม่ใช่เงียบ ๆ แล้วค้าง
+    if (response.status === 401 || response.status === 403) {
+      await removeToken().catch(() => undefined);
+    }
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error || response.statusText);
   }
   return response.json();
+}
+
+/** ตัวช่วยเช็คว่า token ยังใช้ได้อยู่ไหม */
+export async function isLoggedIn(): Promise<boolean> {
+  const token = await getToken();
+  if (!token) return false;
+  try {
+    const response = await fetch(getUrl("/studypath/progress"), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function login(email: string, password: string) {
@@ -79,7 +97,13 @@ export async function uploadMaterial(subjectId: string, file: { uri: string; nam
   return body;
 }
 export async function askMaterial(materialId: string, question: string) { return api("/studypath/materials/" + materialId + "/ask", { method: "POST", body: JSON.stringify({ question }) }); }
-export async function generateQuiz(subjectId: string, count = 5) { return api<any>("/studypath/subjects/" + subjectId + "/quizzes/generate", { method: "POST", body: JSON.stringify({ count }) }); }
+export async function generateQuiz(subjectId: string, count = 5, materialIds?: string[]) {
+  return api<any>("/studypath/subjects/" + subjectId + "/quizzes/generate", {
+    method: "POST",
+    // ไม่ส่ง materialIds = ใช้ทั้งวิชา · ส่งมา = ใช้เฉพาะที่ผู้ใช้เลือก
+    body: JSON.stringify(materialIds ? { count, materialIds } : { count }),
+  });
+}
 export async function submitQuiz(quizId: string, answers: any[]) { return api<any>("/studypath/quizzes/" + quizId + "/attempt", { method: "POST", body: JSON.stringify({ answers }) }); }
 export async function getProgress() { return api<any>("/studypath/progress"); }
 export async function logStudySession(minutes: number, subjectId?: string, goal?: string) { return api("/studypath/study-sessions", { method: "POST", body: JSON.stringify({ minutes, subjectId, goal }) }); }
@@ -95,6 +119,94 @@ export async function createCommunityPost(title: string, content: string, subjec
 export async function getCommunityPost(id: string) { return api<any>("/studypath/community/" + id); }
 export async function commentCommunity(id: string, content: string) { return api("/studypath/community/" + id + "/comments", { method: "POST", body: JSON.stringify({ content }) }); }
 export async function getPortalOverview() { return api<any>("/studypath/portal/overview"); }
+export async function getGoogleAuthUrl(returnUrl: string) { return api<{url:string}>("/auth/google/url", { method: "POST", body: JSON.stringify({ returnUrl }) }); }
 export async function getClassroomStatus() { return api<any>("/studypath/classroom/status"); }
 export async function getClassroomCourses() { return api<any[]>("/studypath/classroom/courses"); }
 export async function syncClassroom(mappings: { courseId: string; subjectId: string }[]) { return api<any>("/studypath/classroom/sync", { method: "POST", body: JSON.stringify({ mappings }) }); }
+
+// --- AI Tutor: สอนแบบอิงเนื้อหาจริงในวิชา ---
+export async function tutorTts(text: string) {
+  return api<any>("/studypath/tutor/tts", { method: "POST", body: JSON.stringify({ text }) });
+}
+
+/** ถาม–ตอบแบบสตรีม: ข้อความทยอยกลับมา ผู้ใช้เห็นผลทันที */
+export async function tutorAskStream(
+  subjectId: string, question: string, difficulty: string, mode: string, speed: string,
+  handlers: { onSources?: (s: any[]) => void; onDelta?: (t: string) => void; onDone?: (d: any) => void; onError?: (e: string) => void }
+) {
+  const token = await getToken();
+  const res = await fetch(getUrl("/studypath/tutor/ask/stream"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ subjectId, question, difficulty, mode, speed }),
+  });
+  if (!res.ok || !res.body) { handlers.onError?.("เชื่อมต่อ AI ไม่สำเร็จ"); return; }
+
+  const reader = (res.body as any).getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const blocks = buf.split("\n\n");
+    buf = blocks.pop() || "";
+    for (const block of blocks) {
+      const ev = block.match(/event:\s*(\S+)/)?.[1];
+      const raw = block.match(/data:\s*(.+)/)?.[1];
+      if (!ev || !raw) continue;
+      let payload: any = {};
+      try { payload = JSON.parse(raw); } catch { continue; }
+      if (ev === "sources") handlers.onSources?.(payload.sources || []);
+      else if (ev === "delta") handlers.onDelta?.(payload.text || "");
+      else if (ev === "done") handlers.onDone?.(payload);
+      else if (ev === "error") handlers.onError?.(payload.error || "ผิดพลาด");
+    }
+  }
+}
+export async function tutorOpen(subjectId: string, difficulty: string) {
+  return api<any>("/studypath/tutor/open", { method: "POST", body: JSON.stringify({ subjectId, difficulty }) });
+}
+export async function tutorAsk(subjectId: string, question: string, difficulty: string, mode?: string) {
+  return api<any>("/studypath/tutor/ask", { method: "POST", body: JSON.stringify({ subjectId, question, difficulty, mode }) });
+}
+export async function tutorPlan(subjectId: string) {
+  return api<any>("/studypath/tutor/plan", { method: "POST", body: JSON.stringify({ subjectId }) });
+}
+/** นักเรียนเลือกจุดอ่อน + เลือกว่าหัวข้อไหน "เริ่มต้น"/"ข้าม" แล้วให้ AI วางแผนตามนั้น */
+export async function tutorStudyPlan(subjectId: string, choices: { title: string; choice: "start" | "skip" }[], weakTopic: string) {
+  return api<any>("/studypath/tutor/study-plan", { method: "POST", body: JSON.stringify({ subjectId, choices, weakTopic }) });
+}
+export async function tutorDiagnose(subjectId: string, difficulty: string, topics?: string[]) {
+  return api<any>("/studypath/tutor/diagnose", { method: "POST", body: JSON.stringify({ subjectId, difficulty, topics: topics || [] }) });
+}
+export async function tutorEvaluate(subjectId: string, questions: any[], answers: number[], quizId?: string) {
+  return api<any>("/studypath/tutor/diagnose/evaluate", { method: "POST", body: JSON.stringify({ subjectId, questions, answers, quizId }) });
+}
+
+/** ดึงโจทย์จริงจากในวิชา พร้อมจัดรูปแบบตามที่เลือก */
+export async function tutorProblem(subjectId: string, format: string, seen: string[] = [], src?: string) {
+  return api<any>("/studypath/tutor/diagnose/problem", { method: "POST", body: JSON.stringify({ subjectId, format, seen, source: src || "" }) });
+}
+
+/** โจทย์ซ้อน: สร้างโจทย์ใหม่จากไฟล์เดียวกัน ให้ลองทำเอง ไม่มีเฉลย */
+export async function tutorProblemVariant(subjectId: string, format: string, baseMaterialId: string) {
+  return api<any>("/studypath/tutor/diagnose/problem", {
+    method: "POST",
+    body: JSON.stringify({ subjectId, format, variant: true, baseMaterialId }),
+  });
+}
+
+/** ส่งคำตอบโจทย์ไปให้อาจารย์ตรวจ */
+export async function tutorCheckAnswer(subjectId: string, problem: string, answer: string, deliverables: string[] = [], done: string[] = []) {
+  return api<any>("/studypath/tutor/diagnose/answer", { method: "POST", body: JSON.stringify({ subjectId, problem, answer, deliverables, done }) });
+}
+
+/** วิเคราะห์โจทย์ (Input/Output/Process/ตัวแปร/ค่าเริ่มต้น/รหัสเทียม) — ผู้เรียนกดดูเอง แยกจากตัวโจทย์ */
+export async function tutorAnalyze(subjectId: string, problem: string) {
+  return api<any>("/studypath/tutor/diagnose/analyze", { method: "POST", body: JSON.stringify({ subjectId, problem }) });
+}
+/** หัวข้อสอบของวิชา — สแกนจากเอกสาร + งานที่ส่ง แล้วให้ AI คัดเหลือเฉพาะที่เกี่ยว */
+export async function tutorTopics(subjectId: string, refresh = false) {
+  return api<any>("/studypath/tutor/topics?subjectId=" + encodeURIComponent(subjectId) + (refresh ? "&refresh=1" : ""), { method: "GET" });
+}

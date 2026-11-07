@@ -1,14 +1,20 @@
-import {useEffect,useState} from "react";
-import {Alert,Pressable,ScrollView,StyleSheet,Text,View} from "react-native";
-import {router} from "expo-router";
+import {useCallback,useState} from "react";
+import {Pressable,ScrollView,StyleSheet,Text,View} from "react-native";
+import { Alert } from "../../lib/alert";
+import {router, useFocusEffect} from "expo-router";
 import {Ionicons} from "@expo/vector-icons";
 import {colors,font,radius,shadow,spacing} from "../../lib/theme";
 import {Avatar,Card,GlowCard,IconTile,ProgressBar,SectionHeader,StatCard} from "../../lib/ui";
-import {getProgress,getSubjects,api} from "../../lib/api";
+import {getClassroomStatus,getProgress,getSubjects,api} from "../../lib/api";
 
 export default function Dashboard(){
  const[name,setName]=useState("นักศึกษา"); const[subjects,setSubjects]=useState<any[]>([]); const[progress,setProgress]=useState<any[]>([]);
- useEffect(()=>{Promise.all([getSubjects().then(setSubjects),getProgress().then(x=>setProgress(x.progress||[])),api<any>("/me").then(x=>setName(x.name||"นักศึกษา"))]).catch(e=>Alert.alert("โหลดข้อมูลไม่สำเร็จ",String(e)))},[]);
+ const[classroomReady,setClassroomReady]=useState(false);
+ useFocusEffect(useCallback(()=>{let active=true;Promise.all([getSubjects(),getProgress(),api<any>("/me"),getClassroomStatus().catch(()=>({connected:false}))]).then(([s,p,u,cr])=>{if(!active)return;setSubjects(s);setProgress(p.progress||[]);setName(u.name||"นักศึกษา");
+  // ซ่อนการ์ด Classroom เมื่อเชื่อมต่อแล้วและมีเนื้อหาเข้ามาแล้ว
+  const materialCount=s.reduce((sum:number,x:any)=>sum+Number(x?._count?.materials||0),0);
+  setClassroomReady(!!cr.connected&&materialCount>0);
+ }).catch(e=>Alert.alert("โหลดข้อมูลไม่สำเร็จ",String(e)));return()=>{active=false}},[]));
  const avg=progress.length?Math.round(progress.reduce((a,x)=>a+Number(x.mastery||0),0)/progress.length):0;
  const first=subjects[0]; const firstProgress=progress.find(x=>x.subjectId===first?.id)?.mastery||0;
  return <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -20,16 +26,17 @@ export default function Dashboard(){
   <SectionHeader title="ทำอะไรต่อดี?" />
   <View style={styles.actions}>{[
    ["sparkles-outline","ถาม AI","/(tabs)/tutor","#a855f7"],["cloud-upload-outline","เพิ่มเนื้อหา",first?("/subject/"+first.id):"/(tabs)/subjects","#38bdf8"],
-   ["refresh-outline","ทบทวน","/(tabs)/review","#34d399"],["people-outline","Community","/community","#f59e0b"],["logo-google","Classroom","/classroom","#4285F4"]
+   ["refresh-outline","ทบทวน","/(tabs)/review","#34d399"],["people-outline","Community","/community","#f59e0b"],
+   ...(classroomReady?[]:[["logo-google","Classroom","/classroom","#4285F4"] as [string,string,string,string]])
   ].map(([icon,label,path,c],i)=><Pressable key={i} onPress={()=>router.push(path as any)} style={styles.action}><IconTile icon={icon as any} color={c}/><Text style={styles.actionText}>{label}</Text></Pressable>)}</View>
   <SectionHeader title="ภาพรวมการเรียน" />
-  {progress.slice(0,3).map(item=><Card key={item.id} style={styles.progress}><View style={styles.progressRow}><Text style={font.title}>{item.subject?.name||"วิชา"}</Text><Text style={styles.pct}>{Math.round(item.mastery||0)}%</Text></View><ProgressBar value={Number(item.mastery||0)}/></Card>)}
+  {progress.slice(0,3).map(item=><Pressable key={item.id} onPress={()=>item.subjectId?router.push(("/subject/"+item.subjectId) as any):undefined}><Card style={styles.progress}><View style={styles.progressRow}><Text style={font.title}>{item.subject?.name||"วิชา"}</Text><View style={{flexDirection:"row",alignItems:"center",gap:6}}><Text style={styles.pct}>{Math.round(item.mastery||0)}%</Text>{item.subjectId?<Ionicons name="chevron-forward" size={14} color={colors.textMuted}/>:null}</View></View><ProgressBar value={Number(item.mastery||0)}/></Card></Pressable>)}
  </ScrollView>
 }
 const styles=StyleSheet.create({
  screen:{flex:1,backgroundColor:colors.background},content:{padding:spacing.lg,paddingBottom:110,maxWidth:900,alignSelf:"center",width:"100%"},
  top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginBottom:spacing.xl},mini:{fontSize:10,fontWeight:"900",letterSpacing:1.6,color:"#a78bfa",marginBottom:5},
- hero:{marginBottom:spacing.lg,...shadow.raised},heroTop:{flexDirection:"row",justifyContent:"space-between",alignItems:"flex-start"},heroEyebrow:{fontSize:10,fontWeight:"900",letterSpacing:1.8,color:"#ddd6fe"},heroTitle:{fontSize:27,fontWeight:"900",lineHeight:31,color:"#fff",marginTop:6},heroText:{color:"#e8e7ff",fontSize:13,lineHeight:20,marginTop:15,maxWidth:420},heroButton:{alignSelf:"flex-start",marginTop:18,paddingHorizontal:16,paddingVertical:10,borderRadius:99,backgroundColor:"#fff",flexDirection:"row",alignItems:"center",gap:8},heroButtonText:{color:colors.accent,fontWeight:"900",fontSize:13},
+ hero:{marginBottom:spacing.lg,...shadow.raised},heroTop:{flexDirection:"row",justifyContent:"space-between",alignItems:"flex-start"},heroEyebrow:{fontSize:10,fontWeight:"900",letterSpacing:1.8,color:"#ede9fe"},heroTitle:{fontSize:27,fontWeight:"900",lineHeight:31,color:"#fff",marginTop:6},heroText:{color:"#f5f3ff",fontSize:13,lineHeight:20,marginTop:15,maxWidth:420},heroButton:{alignSelf:"flex-start",marginTop:18,paddingHorizontal:16,paddingVertical:10,borderRadius:99,backgroundColor:"#fff",flexDirection:"row",alignItems:"center",gap:8},heroButtonText:{color:colors.accent,fontWeight:"900",fontSize:13},
  stats:{flexDirection:"row",gap:8,marginBottom:spacing.xl},course:{marginBottom:spacing.xl},courseRow:{flexDirection:"row",alignItems:"center",gap:12},courseInfo:{flex:1},coursePct:{fontSize:18,fontWeight:"900",color:colors.accent},courseLink:{color:"#a78bfa",fontWeight:"800",fontSize:12,marginTop:10},
  actions:{flexDirection:"row",flexWrap:"wrap",gap:10,marginBottom:spacing.xl},action:{width:"23%",minWidth:120,backgroundColor:colors.surface,borderRadius:radius.lg,borderWidth:1,borderColor:colors.border,padding:14,gap:9,...shadow.card},actionText:{fontSize:12,fontWeight:"800",color:colors.text},progress:{marginBottom:8,padding:14},progressRow:{flexDirection:"row",justifyContent:"space-between",marginBottom:8},pct:{color:colors.accent,fontWeight:"900",fontSize:13}
 });

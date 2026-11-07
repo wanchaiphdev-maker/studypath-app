@@ -1,0 +1,1 @@
+const fs=require('fs');const p='C:/Users/Acer/Desktop/studypath-app/mobile/app/classroom.tsx';let s=fs.readFileSync(p,'utf8');s=s.replace('const url = buildGoogleAuthUrl("classroom");','const { url } = await getGoogleAuthUrl(appReturnUrl("classroom"));');fs.writeFileSync(p,s,'utf8');console.log('Updated authenticated Google linking flow');

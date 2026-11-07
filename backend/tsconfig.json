@@ -9,5 +9,6 @@
     "types": ["node"],
     "rootDir": ".",
     "outDir": "dist"
-  }
+  },
+  "exclude": ["_debug", "node_modules", "dist"]
 }

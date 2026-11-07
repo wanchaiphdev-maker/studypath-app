@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import { prisma } from "../auth";
+import { prisma, requireAuth } from "../auth";
 
 const router = Router();
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -16,6 +16,8 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/classroom.courses.readonly",
   "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
   "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
+  "https://www.googleapis.com/auth/classroom.coursework.students.readonly",
+  "https://www.googleapis.com/auth/classroom.announcements.readonly",
   "https://www.googleapis.com/auth/drive.readonly",
 ];
 
@@ -34,14 +36,14 @@ function safeReturnUrl(value: string) {
   }
 }
 
-function verifyStateReturn(state: string | undefined) {
+function verifyState(state: string | undefined): { returnUrl: string; userId?: string } {
   const fallback = process.env.EXPO_PUBLIC_APP_RETURN_URL || "http://localhost:8081/login";
-  if (!state) return fallback;
+  if (!state) return { returnUrl: fallback };
   try {
-    const payload = jwt.verify(state, process.env.JWT_SECRET!) as { returnUrl?: string };
-    return payload.returnUrl && safeReturnUrl(payload.returnUrl) ? payload.returnUrl : fallback;
+    const payload = jwt.verify(state, process.env.JWT_SECRET!) as { returnUrl?: string; userId?: string };
+    return { returnUrl: payload.returnUrl && safeReturnUrl(payload.returnUrl) ? payload.returnUrl : fallback, userId: payload.userId };
   } catch {
-    return fallback;
+    return { returnUrl: fallback };
   }
 }
 
@@ -90,6 +92,18 @@ function makeAppToken(user: { id: string; role: string }) {
   return jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, { expiresIn: "7d" });
 }
 
+router.post("/google/url", requireAuth(), (req: any, res) => {
+  try {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) return res.status(500).json({ error: "Google OAuth ยังไม่ได้ตั้งค่า" });
+    const requestedReturn = typeof req.body?.returnUrl === "string" ? req.body.returnUrl : "";
+    const returnUrl = requestedReturn && safeReturnUrl(requestedReturn) ? requestedReturn : (process.env.EXPO_PUBLIC_APP_RETURN_URL || "http://localhost:8081/login");
+    const state = jwt.sign({ returnUrl, userId: req.user.id, nonce: crypto.randomBytes(16).toString("hex") }, process.env.JWT_SECRET!, { expiresIn: "10m" });
+    const params = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri(), response_type: "code", scope: GOOGLE_SCOPES.join(" "), state, access_type: "offline", include_granted_scopes: "true", prompt: "consent" });
+    res.json({ url: GOOGLE_AUTH + "?" + params.toString() });
+  } catch (error) { res.status(500).json({ error: String(error instanceof Error ? error.message : error) }); }
+});
+
 router.get("/google/start", (req, res) => {
   try {
     const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -114,7 +128,8 @@ router.get("/google/start", (req, res) => {
 });
 
 router.get("/google/callback", async (req, res) => {
-  const returnUrl = verifyStateReturn(typeof req.query.state === "string" ? req.query.state : undefined);
+  const oauthState = verifyState(typeof req.query.state === "string" ? req.query.state : undefined);
+  const returnUrl = oauthState.returnUrl;
   const fail = (message: string) => res.redirect(returnUrl + (returnUrl.includes("?") ? "&" : "?") + "error=" + encodeURIComponent(message));
 
   try {
@@ -139,8 +154,10 @@ router.get("/google/callback", async (req, res) => {
     });
     const tokens: any = await tokenResponse.json();
     if (!tokenResponse.ok || !tokens.access_token) {
-      console.error("Google token exchange failed", tokens?.error);
-      return fail("แลกสิทธิ์ Google ไม่สำเร็จ");
+      // Log Google's error code (never log the authorization code or client secret).
+      console.error("Google token exchange failed", tokens?.error, tokens?.error_description);
+      const reason = String(tokens?.error || "unknown_error");
+      return fail("แลกสิทธิ์ Google ไม่สำเร็จ (" + reason + ")");
     }
 
     const userResponse = await fetch(GOOGLE_USERINFO, {
@@ -151,7 +168,9 @@ router.get("/google/callback", async (req, res) => {
 
     const email = String(profile.email).trim().toLowerCase();
     const name = String(profile.name || profile.email.split("@")[0]).trim().slice(0, 80);
-    let user = await prisma.user.findUnique({ where: { email } });
+    // If the user initiated linking from an authenticated StudyPath session, attach Google to that account.
+    let user = oauthState.userId ? await prisma.user.findUnique({ where: { id: oauthState.userId } }) : await prisma.user.findUnique({ where: { email } });
+    if (oauthState.userId && !user) return fail("บัญชี StudyPath ที่เริ่มเชื่อมต่อไม่พบ กรุณาเข้าสู่ระบบใหม่");
     if (!user) {
       const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
       user = await prisma.user.create({ data: { name, email, passwordHash, role: "MEMBER", avatarUrl: profile.picture || null } });

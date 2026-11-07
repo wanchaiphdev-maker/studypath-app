@@ -1,0 +1,172 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
+import { router } from "expo-router";
+import { appReturnUrl } from "../lib/googleAuth";
+import { getGoogleAuthUrl, getClassroomCourses, getClassroomStatus, getSubjects, syncClassroom } from "../lib/api";
+import { colors, font, radius, spacing } from "../lib/theme";
+import { Card } from "../lib/ui";
+
+type Course = { id: string; name: string; section?: string; description?: string };
+type Subject = { id: string; name: string; code?: string | null };
+
+export default function ClassroomScreen() {
+  const [connected, setConnected] = useState(false);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
+  const autoSyncAttempted = useRef(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const status = await getClassroomStatus();
+      setConnected(!!status.connected);
+      let subjectList = await getSubjects();
+      setSubjects(subjectList);
+      if (status.connected) {
+        const list = await getClassroomCourses();
+        setCourses(list);
+
+        // Automatically create StudyPath subjects and import course materials after connection.
+        if (list.length > 0 && !autoSyncAttempted.current) {
+          autoSyncAttempted.current = true;
+          setSyncing(true);
+          try {
+            const result = await syncClassroom([]);
+            subjectList = await getSubjects();
+            setSubjects(subjectList);
+            setSyncMessage(`ซิงก์อัตโนมัติ: เพิ่ม ${result.imported || 0} · อัปเดต ${result.updated || 0} · ข้าม ${result.skipped || 0} · ไม่รองรับ ${result.unsupported || 0} · ล้มเหลว ${result.failed || 0}`);
+          } catch (syncError) {
+            setSyncMessage("ซิงก์อัตโนมัติไม่สำเร็จ: " + String(syncError));
+          } finally {
+            setSyncing(false);
+          }
+        }
+
+        const normalize = (value: unknown) => String(value || "").normalize("NFKC").trim().toLocaleLowerCase().replace(/^[0-9]{5,10}\s*[-–—:]?\s*/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
+        const next: Record<string, string> = {};
+        for (const course of list) {
+          const exact = subjectList.find((s: Subject) => normalize(s.name) === normalize(course.name));
+          if (exact) next[course.id] = exact.id;
+        }
+        setMapping(next);
+      }
+    } catch (e) {
+      Alert.alert("Google Classroom", String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function connect() {
+    try {
+      const { url } = await getGoogleAuthUrl(appReturnUrl("classroom"));
+      if (typeof window !== "undefined") {
+        window.location.assign(url);
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (e) {
+      Alert.alert("เชื่อม Google Classroom ไม่สำเร็จ", String(e));
+    }
+  }
+
+  function cycleSubject(courseId: string) {
+    if (!subjects.length) {
+      Alert.alert("ยังไม่มีวิชา StudyPath", "สร้างวิชาในหน้า วิชาเรียน ก่อน แล้วกลับมาเลือกใหม่");
+      return;
+    }
+    const current = mapping[courseId];
+    const currentIndex = subjects.findIndex((s) => s.id === current);
+    const next = subjects[(currentIndex + 1) % subjects.length];
+    setMapping((old) => ({ ...old, [courseId]: next.id }));
+  }
+
+  async function sync() {
+    setSyncing(true);
+    try {
+      const result = await syncClassroom([]);
+      const perCourse = (result.courses || []).map((c: any) => `${c.courseName}: ${c.imported} รายการ`).join(" | ");
+      setSyncMessage(`Sync เสร็จ: เพิ่ม ${result.imported || 0} · อัปเดต ${result.updated || 0} · ข้าม ${result.skipped || 0} · ไม่รองรับ ${result.unsupported || 0} · ล้มเหลว ${result.failed || 0}${perCourse ? " — " + perCourse : ""}`);
+      await load();
+    } catch (e) {
+      setSyncMessage("Sync ไม่สำเร็จ: " + String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  function goBack() {
+    try {
+      if (typeof window !== "undefined" && window.history.length <= 1) {
+        router.replace("/(tabs)" as any);
+        return;
+      }
+      if (router.canGoBack()) router.back();
+      else router.replace("/(tabs)" as any);
+    } catch {
+      router.replace("/(tabs)" as any);
+    }
+  }
+
+  if (loading) return <View style={styles.screen}>
+    <Pressable style={[styles.back, { margin: spacing.lg }]} onPress={goBack}><Ionicons name="chevron-back" size={20} color={colors.text} /><Text style={font.caption}>กลับ</Text></Pressable>
+    <View style={styles.center}><ActivityIndicator color={colors.accent} /><Text style={[font.caption, { marginTop: 10 }]}>กำลังโหลด Google Classroom...</Text></View>
+  </View>;
+
+  return <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <Pressable style={styles.back} onPress={goBack}><Ionicons name="chevron-back" size={20} color={colors.text} /><Text style={font.caption}>กลับ</Text></Pressable>
+    <Text style={styles.eyebrow}>GOOGLE WORKSPACE</Text>
+    <Text style={font.h1}>Google Classroom</Text>
+    <Text style={font.caption}>ดึงสไลด์และเอกสารของแต่ละวิชาเข้า Knowledge Base ของ StudyPath แล้วให้ AI Tutor เรียนจากเนื้อหาจริง</Text>
+
+    {!connected ? <Card style={styles.connectCard}>
+      <View style={styles.googleIcon}><Ionicons name="logo-google" size={24} color="#fff" /></View>
+      <Text style={font.h2}>เชื่อมบัญชี Google</Text>
+      <Text style={font.caption}>StudyPath จะขอสิทธิ์อ่าน Classroom และไฟล์ Drive ที่ใช้กับการเรียน เพื่อซิงก์เนื้อหาเข้าวิชาของคุณ</Text>
+      <Pressable style={styles.primary} onPress={connect}><Ionicons name="link-outline" size={18} color="#fff" /><Text style={styles.primaryText}>เชื่อม Google Classroom</Text></Pressable>
+    </Card> : <>
+      <Card style={styles.connected}>
+        <Ionicons name="checkmark-circle" size={22} color="#34d399" />
+        <View style={{ flex: 1 }}><Text style={font.title}>เชื่อมต่อแล้ว</Text><Text style={font.caption}>พร้อมซิงก์สื่อการเรียนจาก Classroom</Text></View>
+      </Card>
+
+      <View style={styles.sectionHead}><Text style={font.h2}>รายวิชาของคุณ</Text><Text style={font.caption}>{courses.length} วิชา</Text></View>
+      <Text style={font.caption}>แตะรายวิชาเพื่อเปิดหน้าเรียนและดูเอกสารที่นำเข้าได้ ระบบจะจับคู่กับวิชา StudyPath ที่ชื่อเดียวกันโดยอัตโนมัติ</Text>
+      {courses.length === 0 ? <Card><Text style={font.caption}>ไม่พบ Classroom ที่ใช้งานอยู่ หรือบัญชีนี้ยังไม่มีวิชาที่เข้าถึงได้</Text></Card> :
+        courses.map((course) => {
+          const normalize = (value: unknown) => String(value || "").normalize("NFKC").trim().toLocaleLowerCase().replace(/^[0-9]{5,10}\s*[-–—:]?\s*/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
+          const subject = subjects.find((s) => normalize(s.name) === normalize(course.name));
+          return <Pressable key={course.id} accessibilityRole="button" onPress={() => subject ? router.push(("/subject/" + subject.id) as any) : Alert.alert("ยังไม่พบวิชาที่ชื่อเดียวกัน", "สร้าง/เปลี่ยนชื่อวิชา StudyPath ให้ตรงกับชื่อใน Classroom แล้วลองใหม่") }>
+            <Card style={styles.course}>
+              <View style={styles.courseIcon}><Ionicons name="school-outline" size={21} color="#a78bfa" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={font.title}>{course.name}</Text>
+                {!!course.section && <Text style={font.caption}>{course.section}</Text>}
+                <Text style={styles.mapLabel}>{subject ? "✓ เชื่อมกับวิชา StudyPath แล้ว" : "ยังไม่พบวิชา StudyPath ชื่อเดียวกัน"}</Text>
+                <Text style={styles.chooseLabel}>แตะเพื่อเปิดเนื้อหาวิชาและ AI Tutor</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary}/>
+            </Card>
+          </Pressable>;
+        })}
+      <Pressable style={[styles.primary, syncing && { opacity: .6 }]} disabled={syncing} onPress={sync}>
+        {syncing ? <ActivityIndicator color="#fff" /> : <Ionicons name="cloud-download-outline" size={19} color="#fff" />}
+        <Text style={styles.primaryText}>{syncing ? "กำลังนำเข้าเนื้อหา..." : "Sync เนื้อหาทุกวิชาอัตโนมัติ"}</Text>
+      </Pressable>
+      {!!syncMessage && <Card><Text style={font.caption}>{syncMessage}</Text></Card>}
+      <Card style={styles.note}><Ionicons name="sparkles-outline" size={19} color="#a78bfa" /><Text style={[font.caption,{flex:1}]}>ระบบจะนำเข้า PDF, Google Docs และสไลด์ที่รองรับเข้า Knowledge Base ของวิชาชื่อเดียวกัน เพื่อให้ AI Tutor และ Quiz ใช้เนื้อหาจริงได้ ลิงก์วิดีโอภายนอกจะแสดงใน Classroom แต่ยังไม่ถอดเสียงวิดีโอให้อัตโนมัติ</Text></Card>
+    </>}
+  </ScrollView>;
+}
+
+const styles = StyleSheet.create({
+  screen:{flex:1,backgroundColor:colors.background},content:{padding:spacing.lg,paddingBottom:80,maxWidth:760,alignSelf:"center",width:"100%",gap:12},center:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:colors.background},back:{flexDirection:"row",alignItems:"center",gap:4,marginBottom:6},eyebrow:{fontSize:10,fontWeight:"900",letterSpacing:1.6,color:"#a78bfa"},connectCard:{padding:22,marginTop:8},googleIcon:{width:48,height:48,borderRadius:15,backgroundColor:"#4285F4",alignItems:"center",justifyContent:"center",marginBottom:14},primary:{marginTop:16,minHeight:50,borderRadius:radius.md,backgroundColor:"#7c3aed",flexDirection:"row",alignItems:"center",justifyContent:"center",gap:9,paddingHorizontal:16},primaryText:{color:"#fff",fontWeight:"900"},connected:{flexDirection:"row",alignItems:"center",gap:11},reconnect:{fontSize:12,fontWeight:"900",color:"#a78bfa"},sectionHead:{marginTop:14,flexDirection:"row",alignItems:"flex-end",justifyContent:"space-between"},course:{flexDirection:"row",alignItems:"center",gap:11},courseIcon:{width:42,height:42,borderRadius:13,backgroundColor:"#7c3aed22",alignItems:"center",justifyContent:"center"},mapLabel:{fontSize:11,fontWeight:"800",color:"#a78bfa",marginTop:6},mapButton:{alignSelf:"stretch",paddingVertical:5},chooseLabel:{fontSize:11,fontWeight:"700",color:colors.text,marginTop:3},cycle:{minWidth:64,height:44,borderRadius:13,backgroundColor:colors.surfaceAlt,alignItems:"center",justifyContent:"center",paddingHorizontal:8,gap:2},chooseShort:{fontSize:10,fontWeight:"900",color:colors.text},note:{marginTop:2,flexDirection:"row",gap:9,alignItems:"flex-start"}
+});

@@ -22,9 +22,10 @@ export function SectionHeader({title,action,onAction}:{title:string;action?:stri
 export function Pill({text,color=colors.accent}:{text:string;color?:string}) {
   return <View style={[styles.pill,{backgroundColor:color+"20"}]}><Text style={[styles.pillText,{color}]}>{text}</Text></View>;
 }
-export function Button({children,onPress,icon,variant="primary",loading=false}:{children:ReactNode;onPress?:()=>void;icon?:keyof typeof Ionicons.glyphMap;variant?:"primary"|"secondary"|"ghost"|"danger";loading?:boolean}) {
+export function Button({children,onPress,icon,variant="primary",loading=false,disabled=false}:{children:ReactNode;onPress?:()=>void;icon?:keyof typeof Ionicons.glyphMap;variant?:"primary"|"secondary"|"ghost"|"danger";loading?:boolean;disabled?:boolean}) {
   const primary=variant==="primary"; const danger=variant==="danger"; const ghost=variant==="ghost";
-  return <Pressable onPress={onPress} disabled={loading} style={({pressed})=>[styles.button,primary?styles.primary:danger?styles.danger:ghost?styles.ghost:styles.secondary,pressed&&{opacity:.82}]}>{icon?<Ionicons name={icon} size={18} color={primary?"#fff":colors.text}/>:null}<Text style={[styles.buttonText,{color:primary?"#fff":colors.text}]}>{loading?"กำลังโหลด...":children}</Text></Pressable>;
+  const off=!!disabled&&!loading;
+  return <Pressable onPress={onPress} disabled={loading||disabled} style={({pressed})=>[styles.button,primary?styles.primary:danger?styles.danger:ghost?styles.ghost:styles.secondary,(pressed||off)&&{opacity:off?.45:.82}]}>{icon?<Ionicons name={icon} size={18} color={primary?"#fff":colors.text}/>:null}<Text style={[styles.buttonText,{color:primary?"#fff":colors.text}]}>{loading?"กำลังโหลด...":children}</Text></Pressable>;
 }
 export function StatCard({value,label,icon,color=colors.accent}:{value:string;label:string;icon:keyof typeof Ionicons.glyphMap;color?:string}) {
   return <Card style={styles.stat}><IconTile icon={icon} color={color} size={38}/><Text style={styles.statValue}>{value}</Text><Text style={styles.statLabel}>{label}</Text></Card>;
