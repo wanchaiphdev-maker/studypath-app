@@ -1085,6 +1085,50 @@ function pickRandom<T>(arr: T[]): T | null {
 }
 
 /**
+ * คำสำคัญจาก label หัวข้อที่ผู้ใช้เลือก — ใช้จับโจทย์ว่า "ตรงหัวข้อ" ไหม
+ * "ผังงาน / Flowchart" -> ["ผังงาน", "flowchart"]
+ * "Input-Process-Output" -> ["input", "process", "output"]
+ * ไทยตั้งแต่ 3 ตัวอักษร / อังกฤษตั้งแต่ 4 ตัวอักษร (กันคำสั้น ๆ อย่าง "map" จับผิด)
+ */
+function topicTokens(label: string): string[] {
+  return String(label || "")
+    .split(/[/\-–—,()（）\[\]{}|·・\s]+/)
+    .map((w) => w.trim().toLowerCase())
+    .filter((w) => (w.length >= 3 && /[\u0E00-\u0E7F]/.test(w)) || (w.length >= 4 && /^[a-z0-9+#.]+$/.test(w)));
+}
+
+/** โจทย์ข้อนี้ตรงกับหัวข้อที่ผู้ใช้เลือกไหม (มีคำสำคัญคำใดคำหนึ่งของหัวข้อโผล่ในโจทย์) */
+function topicMatches(lowText: string, token: string): boolean {
+  if (!token) return false;
+  if (lowText.includes(token)) return true;
+  // ภาษาไทยไม่มีเว้นวรรค — label ยาวอย่าง "ลอจิกเกตและวงจรลอจิก" ไม่เคยโผล่ตรง ๆ ในโจทย์
+  // เลยลองชิ้นส่วน 4 ตัวอักษรทีละ 2 ขั้นด้วย (เช่น "ลอจิก", "ความ", "มจำ") — ผิดบ้างไม่เป็นไร
+  // เพราะผลลัพธ์เกินจริงแค่ทำให้ pool กว้างขึ้น ไม่ทำให้โจทย์หาย
+  if (/[\u0E00-\u0E7F]/.test(token) && token.length >= 6) {
+    for (let i = 0; i + 4 <= token.length && i < 14; i += 2) {
+      if (lowText.includes(token.slice(i, i + 4))) return true;
+    }
+  }
+  return false;
+}
+
+function matchTopics(text: string, topics: string[]): boolean {
+  const low = String(text || "").toLowerCase();
+  return topics.some((t) => topicTokens(t).some((tok) => topicMatches(low, tok)));
+}
+
+/**
+ * ตัดโจทย์ตามหัวข้อที่ผู้ใช้เลือกตอนกด "ดึงโจทย์"
+ * ไม่เลือก = ผ่านทั้งหมด / เลือกแล้วไม่มีโจทย์ตรง = ดึงจากทั้งวิชาแทน (กันค้างหน้าว่าง)
+ */
+function filterByTopics<T extends { text: string; source?: { title?: string } }>(list: T[], topics: string[]): T[] {
+  if (!topics.length) return list;
+  // จับทั้งเนื้อหาโจทย์และ "ชื่อไฟล์ต้นทาง" — ไฟล์ชื่อชัด (เช่น lab-logic.pdf) ช่วยให้เจอโจทย์ที่เนื้อหา OCR เพี้ยน
+  const hit = list.filter((p) => matchTopics(p.text, topics) || matchTopics(p.source?.title || "", topics));
+  return hit.length ? hit : list;
+}
+
+/**
  * ตัดโค้ดออกจากโจทย์ แต่ "ต้องเก็บข้อความโจทย์ที่ถูกปนอยู่ในบล็อกโค้ดไว้"
  *
  * ไฟล์งานหลายชิ้นเขียนแบบนี้:
@@ -1120,6 +1164,10 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     const wanted = pickFormat(req.body?.format);
     let format = wanted;
     const skip = Array.isArray(req.body?.seen) ? req.body.seen.map(String) : [];
+    // หัวข้อที่ผู้ใช้เลือกตอนกด "ดึงโจทย์" — กรองเฉพาะโจทย์ที่ตรงหัวข้อ
+    const onlyTopics: string[] = Array.isArray(req.body?.topics)
+      ? req.body.topics.map((t: any) => String(t || "").trim()).filter(Boolean)
+      : [];
     const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id }, include: { materials: true } });
     if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
 
@@ -1151,7 +1199,7 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
           hint: 'ระบบอ่านได้จากงานที่ส่งใน Google Classroom เท่านั้น — กลับไปหน้า Classroom แล้วกด "ซิงก์" เพื่อนำเข้างานที่ส่ง',
         });
       }
-      const pool = extractProblems(items as any[], 8);
+      const pool = filterByTopics(extractProblems(items as any[], 8), onlyTopics);
       const usable = pool.length ? pool : items.slice(0, 6);
       const picked = pickRandom(usable) || usable[0];
       const rendered = await renderProblem(subject, picked.text, wanted, skip);
@@ -1163,7 +1211,7 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       });
     }
 
-    const all = extractProblems(subject.materials);
+    const all = filterByTopics(extractProblems(subject.materials), onlyTopics);
     if (!all.length) {
       return res.status(404).json({
         error: "ยังไม่พบโจทย์ในไฟล์ของวิชานี้",

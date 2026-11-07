@@ -184,9 +184,9 @@ export async function tutorEvaluate(subjectId: string, questions: any[], answers
   return api<any>("/studypath/tutor/diagnose/evaluate", { method: "POST", body: JSON.stringify({ subjectId, questions, answers, quizId }) });
 }
 
-/** ดึงโจทย์จริงจากในวิชา พร้อมจัดรูปแบบตามที่เลือก */
-export async function tutorProblem(subjectId: string, format: string, seen: string[] = [], src?: string) {
-  return api<any>("/studypath/tutor/diagnose/problem", { method: "POST", body: JSON.stringify({ subjectId, format, seen, source: src || "" }) });
+/** ดึงโจทย์จริงจากในวิชา พร้อมจัดรูปแบบตามที่เลือก (topics = หัวข้อที่ผู้ใช้เลือกตอนกดดึง) */
+export async function tutorProblem(subjectId: string, format: string, seen: string[] = [], src?: string, topics?: string[]) {
+  return api<any>("/studypath/tutor/diagnose/problem", { method: "POST", body: JSON.stringify({ subjectId, format, seen, source: src || "", topics: topics || [] }) });
 }
 
 /** โจทย์ซ้อน: สร้างโจทย์ใหม่จากไฟล์เดียวกัน ให้ลองทำเอง ไม่มีเฉลย */

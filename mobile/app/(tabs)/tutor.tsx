@@ -657,6 +657,8 @@ export default function Tutor() {
   const [missing, setMissing] = useState<string[]>([]);
   const [zoom, setZoom] = useState(false);
   const [src, setSrc] = useState<"class" | "submission">("class");
+  // หน้าเลือกก่อนดึงโจทย์ — กด "ดึงโจทย์" แล้วขึ้นมาให้เลือก "แนวไหน + หัวข้อไหน" ก่อนสุ่มจริง
+  const [pickStage, setPickStage] = useState(false);
 
   const fmt: Fmt = ((problem?.format as Fmt) || "text") as Fmt;
   const fmtMeta = FORMATS.find((f) => f.k === fmt) || FORMATS[0];
@@ -818,7 +820,8 @@ export default function Tutor() {
     try {
       // โหมดโค้ด = บังคับโจทย์แนวเขียน/อ่านโค้ด, โหมดอื่นให้เซิร์ฟเวอร์เลือกรูปแบบเอง
       const useFmt = forceFmt !== undefined ? forceFmt : (mode === "code" ? "code" : "");
-      const r = await tutorProblem(subjectId, useFmt, seen, src);
+      // focusTopics = หัวข้อที่เลือกไว้ในหน้าเลือกก่อนดึง (ไม่เลือก = ทั้งวิชา)
+      const r = await tutorProblem(subjectId, useFmt, seen, src, focusTopics);
       setProblem(r);
       if (r?.source) setSeen((s) => [...s, r.source.materialId + "|" + String(r.problem).slice(0, 40)].slice(-20));
       // สุ่มโจทย์ใหม่ = ต้องเห็นผลลัพธ์ทันที ไม่ใช่ถูกเลื่อนไปเอาท้ายจอ
@@ -1343,10 +1346,63 @@ export default function Tutor() {
             })}
           </View>
 
-          <Button onPress={() => loadProblem()} loading={probBusy} icon="shuffle-outline">
+          <Button onPress={() => setPickStage((p) => !p)} loading={probBusy} icon="shuffle-outline">
             {problem ? "สุ่มโจทย์ใหม่" : "ดึงโจทย์จากวิชานี้"}
           </Button>
         </Card>
+
+        {/* ===== หน้าเลือกก่อนดึง — กด "ดึงโจทย์" แล้วขึ้นตรงนี้:
+             เลือกว่าจะเอาโจทย์ "แนวไหนบ้าง" + "หัวข้อไหนบ้าง" ค่อยกดดึงจริง ===== */}
+        {pickStage ? <Card style={styles.panel}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Ionicons name="options-outline" size={19} color="#a78bfa" />
+            <Text style={font.h2}>เลือกโจทย์ที่ต้องการ</Text>
+          </View>
+          <Text style={font.caption}>เลือกแนวโจทย์และหัวข้อที่อยากได้ แล้วกดดึง — ไม่เลือก = สุ่มจากทั้งวิชา</Text>
+
+          {/* แนวโจทย์ — โหมดที่วิชานี้มีจริง (ตามเนื้อหาไฟล์) */}
+          <Text style={styles.segLabel}>แนวโจทย์</Text>
+          <View style={styles.srcRow}>
+            {(subjectModes.length ? subjectModes : FALLBACK_MODES).map((m) => {
+              const on = mode === m.k;
+              return <Pressable key={m.k} style={[styles.srcChip, on && styles.srcChipOn]} onPress={() => setMode(m.k as Mode)}>
+                <Ionicons name={m.icon as any} size={13} color={on ? "#a78bfa" : colors.textMuted} />
+                <Text style={[styles.srcChipText, on && { color: "#a78bfa" }]}>{m.label}</Text>
+              </Pressable>;
+            })}
+          </View>
+
+          {/* หัวข้อที่วิชานี้มีจริง — อ่านจากไฟล์ที่ซิงก์มา (ใช้ชิปเดิมที่ย้ายมาจากบัตรวินิจฉัย) */}
+          {sylBusy ? <Text style={font.caption}>กำลังอ่านหัวข้อในเนื้อหาวิชา...</Text> : null}
+          {(syllabus?.topics || []).length ? <>
+            <Text style={styles.segLabel}>หัวข้อที่วิชานี้มีจริง</Text>
+            <Text style={font.caption}>ไม่เลือกไว้ = สุ่มโจทย์ทั้งวิชา</Text>
+            {["พื้นฐาน", "โครงสร้าง", "ทดสอบ", "ทั่วไป"].map((g) => {
+              const group = (syllabus.topics || []).filter((t: any) => t.group === g);
+              if (!group.length) return null;
+              return <View key={g} style={{ marginTop: 10 }}>
+                <Text style={styles.sylGroup}>{g}</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 6 }}>
+                  {group.map((t: any) => {
+                    const on = focusTopics.includes(t.label);
+                    return <Pressable key={t.k + t.label} style={[styles.chip, on && styles.chipOn]} onPress={() => {
+                      setFocusTopics((f) => on ? f.filter((x) => x !== t.label) : [...f, t.label]);
+                    }}>
+                      <Text style={[styles.chipText, on && { color: "#ffffff" }]}>{t.label}</Text>
+                    </Pressable>;
+                  })}
+                </View>
+              </View>;
+            })}
+          </> : !sylBusy ? <Text style={font.caption}>ยังไม่มีหัวข้อให้เลือก — จะดึงจากทั้งวิชาแทน</Text> : null}
+
+          <View style={{ gap: 8, marginTop: 14 }}>
+            <Button onPress={async () => { await loadProblem(); setPickStage(false); }} loading={probBusy} icon="shuffle-outline">
+              ดึงโจทย์ ({focusTopics.length ? focusTopics.length + " หัวข้อ" : "ทั้งวิชา"})
+            </Button>
+            <Button onPress={() => setPickStage(false)} variant="secondary" icon="close-outline">ไว้ทีหลัง</Button>
+          </View>
+        </Card> : null}
 
         {probErr ? <Card style={styles.panel}>
           <Text style={[font.h2, { color: "#f59e0b" }]}>ยังดึงโจทย์ไม่ได้</Text>
@@ -1504,29 +1560,13 @@ export default function Tutor() {
           <Text style={font.h2}>วินิจฉัยอัตโนมัติ</Text>
           <Text style={font.caption}>ระบบสุ่มคำถาม 5 ข้อจากเนื้อหาในวิชา แล้วบอกว่าอะไรต้องเน้น อะไรข้ามได้</Text>
 
-          {sylBusy ? <Text style={font.caption}>กำลังอ่านหัวข้อในเนื้อหาวิชา...</Text> : null}
-
-          {(syllabus?.topics || []).length ? <>
-            <Text style={[styles.segLabel, { marginTop: 14 }]}>หัวข้อที่วิชานี้มีจริง</Text>
-            <Text style={font.caption}>อ่านจากไฟล์ที่ซิงก์มาและงานที่ส่ง แล้วตัดหัวข้อที่ไม่เกี่ยวออกให้แล้ว{'\n'}ไม่เลือกไว้ = สอบทั้งวิชา</Text>
-            {["พื้นฐาน", "โครงสร้าง", "ทดสอบ", "ทั่วไป"].map((g) => {
-              const group = (syllabus.topics || []).filter((t: any) => t.group === g);
-              if (!group.length) return null;
-              return <View key={g} style={{ marginTop: 10 }}>
-                <Text style={styles.sylGroup}>{g}</Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 6 }}>
-                  {group.map((t: any) => {
-                    const on = focusTopics.includes(t.label);
-                    return <Pressable key={t.k + t.label} style={[styles.chip, on && styles.chipOn]} onPress={() => {
-                      setFocusTopics((f) => on ? f.filter((x) => x !== t.label) : [...f, t.label]);
-                    }}>
-                      <Text style={[styles.chipText, on && { color: "#ffffff" }]}>{t.label}</Text>
-                    </Pressable>;
-                  })}
-                </View>
-              </View>;
-            })}
-          </> : null}
+          {/* ชิปเลือกหัวข้อย้ายขึ้นไปหน้าเลือกก่อนดึงโจทย์แล้ว (เลือกที่เดียว ใช้ร่วมกัน) */}
+          <Text style={[styles.segLabel, { marginTop: 14 }]}>หัวข้อที่จะสอบ</Text>
+          <Text style={font.caption}>
+            {focusTopics.length
+              ? `เน้น ${focusTopics.length} หัวข้อ — เลือกไว้ตอนกด "ดึงโจทย์"`
+              : `ไม่ได้เลือก = สอบทั้งวิชา — อยากเน้นหัวข้อให้เลือกตอนกด "ดึงโจทย์"`}
+          </Text>
 
           <Button onPress={() => startQuizFocused()} loading={quizBusy} icon="checkmark-circle-outline">
             เริ่มข้อสอบ ({focusTopics.length ? focusTopics.length + " หัวข้อ" : "ทั้งวิชา"})
@@ -1766,7 +1806,7 @@ export default function Tutor() {
           {filtered.map((s: any) => {
             const on = s.id === subjectId;
             return <Pressable key={s.id} style={[styles.row, on && styles.rowOn]}
-              onPress={() => { setSubjectId(s.id); resetOnboarding(); setFocusTopics([]); setPlan(null); setPickerOpen(false); }}>
+              onPress={() => { setSubjectId(s.id); resetOnboarding(); setFocusTopics([]); setPlan(null); setPickerOpen(false); setPickStage(false); }}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowName, on && { color: "#fff" }]} numberOfLines={2}>{s.name}</Text>
                 <Text style={[styles.rowMeta, on && { color: "#ede9fe" }]}>{s._count?.materials || 0} ไฟล์</Text>
