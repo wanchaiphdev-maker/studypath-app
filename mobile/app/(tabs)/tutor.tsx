@@ -662,6 +662,10 @@ export default function Tutor() {
   const [src, setSrc] = useState<"class" | "submission">("class");
   // หน้าเลือกก่อนดึงโจทย์ — กด "ดึงโจทย์" แล้วขึ้นมาให้เลือก "แนวไหน + หัวข้อไหน" ก่อนสุ่มจริง
   const [pickStage, setPickStage] = useState(false);
+  // โหมดย่อยของหน้าข้อสอบ — "pull" = ดึงโจทย์ (หน้าปกติ), "quiz" = วินิจฉัยอัตโนมัติ
+  // แยกออกจากกันตามที่สั่ง: หน้าข้อสอบใหญ่เหลือแค่ดึงโจทย์ล้วน
+  // วินิจฉัยอัตโนมัติเข้าจากเมนู ☰ → "โหมดย่อย" เท่านั้น
+  const [diagStage, setDiagStage] = useState<"pull" | "quiz">("pull");
   // แนวโจทย์ที่เลือกในหน้าเลือก — "เก็บไว้เฉพาะรอบดึงนี้" ห้ามผูกกับโหมดหลัก (mode)
   // เพราะเปลี่ยนโหมดหลัก = เปลี่ยนทั้งหน้าจอ (แชต/เมนู/โจทย์อัตโนมัติ) ตามที่ผู้ใช้สั่งห้าม
   // "" = ทั่วไป (ระบบเลือกฟอร์แมตเอง), "code" = โค้ด, "options" = หลายตัวเลือก
@@ -1022,6 +1026,9 @@ export default function Tutor() {
 
   async function startQuizFocused(list?: string[]) {
     if (needSubject()) return;
+    // เริ่มข้อสอบ = ไปหน้า "วินิจฉัยอัตโนมัติ" เสมอ (ไม่ว่าจะกดมาจากแท็บไหน)
+    setTab("diag");
+    setDiagStage("quiz");
     const focus = list?.length ? list : focusTopics;
     setQuizBusy(true); setResult(null); setQuiz(null); setPicks([]);
     try {
@@ -1334,6 +1341,8 @@ export default function Tutor() {
       </> : null}
 
       {tab === "diag" ? <>
+        {/* ===== โหมดย่อย "ดึงโจทย์" — หน้าข้อสอบใหญ่เหลือแค่อันนี้ล้วน ===== */}
+        {diagStage === "pull" ? <>
         {/* ===== ดึงโจทย์จริงจากในวิชา ===== */}
         <Card style={styles.panel}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -1586,9 +1595,13 @@ export default function Tutor() {
             </View>
           </View> : null}
         </Card> : null}
+        </> : null}
 
-        <View style={styles.hr} />
-        <Text style={styles.hrLabel}>หรือทำแบบวินิจฉัยอัตโนมัติ</Text>
+        {/* ===== โหมดย่อย "วินิจฉัยอัตโนมัติ" — เข้าจากเมนู ☰ → โหมดย่อย เท่านั้น ===== */}
+        {diagStage === "quiz" ? <>
+        <Pressable style={styles.ghostBtn} onPress={() => setDiagStage("pull")}>
+          <Text style={styles.ghostText}>← กลับไปดึงโจทย์</Text>
+        </Pressable>
 
         <Card style={styles.panel}>
           <Text style={font.h2}>วินิจฉัยอัตโนมัติ</Text>
@@ -1672,6 +1685,7 @@ export default function Tutor() {
             <Text style={styles.ghostText}>ทำข้อสอบอีกครั้ง</Text>
           </Pressable>
         </Card> : null}
+        </> : null}
         <View style={{ height: 8 }} />
       </> : null}
     </ScrollView>
@@ -1711,13 +1725,33 @@ export default function Tutor() {
                 const toCode = next === "code" && mode !== "code";
                 setMode(next); setOptOpen(false);
                 // โหมดโค้ด = ไปหน้าโจทย์แล้วดึงโจทย์เขียน/อ่านโค้ดให้ทันที
-                if (toCode) { setTab("diag"); if (!probBusy) loadProblem("code"); }
+                if (toCode) { setTab("diag"); setDiagStage("pull"); if (!probBusy) loadProblem("code"); }
               }}
                 style={[styles.popItem, on && { borderColor: m.color, backgroundColor: m.color + "26" }]}>
                 <Ionicons name={m.icon as any} size={15} color={on ? m.color : colors.textSecondary} />
                 <Text style={[styles.popItemText, on && { color: "#fff" }]}>{m.label}</Text>
                 <Text style={styles.popItemHint} numberOfLines={1}>{m.hint}</Text>
                 {on ? <Ionicons name="checkmark" size={15} color={m.color} /> : null}
+              </Pressable>;
+            })}
+          </View>
+
+          <View style={styles.popDivider} />
+
+          {/* โหมดย่อยของหน้าข้อสอบ — วินิจฉัยอัตโนมัติแยกออกมาจากหน้าข้อสอบใหญ่ */}
+          <Text style={styles.popHead}>โหมดย่อย</Text>
+          <View style={styles.popCol}>
+            {([
+              { k: "pull", label: "ดึงโจทย์", hint: "สุ่มโจทย์จากไฟล์ในวิชา", icon: "document-text-outline", color: "#4ade80" },
+              { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "สอบ 5 ข้อ แล้วบอกว่าต้องเน้นอะไร", icon: "checkmark-done-outline", color: "#a78bfa" },
+            ] as const).map((s) => {
+              const on = tab === "diag" && diagStage === s.k;
+              return <Pressable key={s.k} onPress={() => { setTab("diag"); setDiagStage(s.k); setOptOpen(false); }}
+                style={[styles.popItem, on && { borderColor: s.color, backgroundColor: s.color + "26" }]}>
+                <Ionicons name={s.icon as any} size={15} color={on ? s.color : colors.textSecondary} />
+                <Text style={[styles.popItemText, on && { color: "#fff" }]}>{s.label}</Text>
+                <Text style={styles.popItemHint} numberOfLines={1}>{s.hint}</Text>
+                {on ? <Ionicons name="checkmark" size={15} color={s.color} /> : null}
               </Pressable>;
             })}
           </View>
@@ -2089,8 +2123,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#a78bfa12", borderWidth: 1, borderColor: "#a78bfa55",
   },
   markTitle: { fontSize: 13.5, fontWeight: "900", color: "#fff", marginBottom: 2 },
-  hr: { height: 1, backgroundColor: colors.border, marginVertical: 16 },
-  hrLabel: { fontSize: 11, fontWeight: "900", color: colors.textMuted, textAlign: "center", marginBottom: 12 },
   sylGroup: { fontSize: 10.5, fontWeight: "900", color: colors.textMuted, letterSpacing: 0.6 },
   chipOn: { backgroundColor: "#38bdf8", borderColor: "#38bdf8" },
   chipText: { fontSize: 11, fontWeight: "800", color: colors.textSecondary },
