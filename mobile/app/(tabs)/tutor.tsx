@@ -664,8 +664,10 @@ export default function Tutor() {
   const [pickStage, setPickStage] = useState(false);
   // โหมดย่อยของหน้าข้อสอบ — "pull" = ดึงโจทย์ (หน้าปกติ), "quiz" = วินิจฉัยอัตโนมัติ
   // แยกออกจากกันตามที่สั่ง: หน้าข้อสอบใหญ่เหลือแค่ดึงโจทย์ล้วน
-  // วินิจฉัยอัตโนมัติเข้าจากเมนู ☰ → "โหมดย่อย" เท่านั้น
+  // วินิจฉัยอัตโนมัติเข้าจาก popup เลือก做完อะไร ตอนกดเข้าแท็บข้อสอบ (ไม่อยู่ในเมนูแล้ว)
   const [diagStage, setDiagStage] = useState<"pull" | "quiz">("pull");
+  // popup เลือกว่าจะเข้าทำอะไรในโหมดข้อสอบ — เด้งตอนกดเข้าแท็บ "ข้อสอบ" จากเมนู
+  const [examPick, setExamPick] = useState(false);
   // แนวโจทย์ที่เลือกในหน้าเลือก — "เก็บไว้เฉพาะรอบดึงนี้" ห้ามผูกกับโหมดหลัก (mode)
   // เพราะเปลี่ยนโหมดหลัก = เปลี่ยนทั้งหน้าจอ (แชต/เมนู/โจทย์อัตโนมัติ) ตามที่ผู้ใช้สั่งห้าม
   // "" = ทั่วไป (ระบบเลือกฟอร์แมตเอง), "code" = โค้ด, "options" = หลายตัวเลือก
@@ -1191,7 +1193,6 @@ export default function Tutor() {
               </View>)}
             </View>
             <View style={{ gap: 8, marginTop: 14 }}>
-              <Button onPress={() => startQuizFocused(topics.filter((t: any) => (choices[t.title] || "start") === "start").map((t: any) => t.title))} icon="checkmark-circle-outline">เริ่มแบบทดสอบ</Button>
               <Button onPress={() => { setOnboardOff(true); setTab("chat"); }} variant="secondary" icon="chatbubbles-outline">ถามอาจารย์ AI ต่อ</Button>
               <Pressable style={styles.ghostBtn} onPress={resetOnboarding}><Text style={styles.ghostText}>เริ่มใหม่</Text></Pressable>
             </View>
@@ -1306,7 +1307,6 @@ export default function Tutor() {
           </View>
           {myPlan.skipped?.length ? <Text style={[font.caption, { marginTop: 10 }]}>ข้ามไป: {myPlan.skipped.join(" · ")}</Text> : null}
           <View style={{ gap: 8, marginTop: 14 }}>
-            <Button onPress={() => { setTab("diag"); startQuizFocused((myPlan.steps || []).map((s: any) => s.title)); }} icon="checkmark-circle-outline">ทำข้อสอบตามแผนนี้</Button>
             <Pressable style={styles.ghostBtn} onPress={resetOnboarding}><Text style={styles.ghostText}>ปรับแผนใหม่</Text></Pressable>
           </View>
         </Card> : null}
@@ -1597,7 +1597,7 @@ export default function Tutor() {
         </Card> : null}
         </> : null}
 
-        {/* ===== โหมดย่อย "วินิจฉัยอัตโนมัติ" — เข้าจากเมนู ☰ → โหมดย่อย เท่านั้น ===== */}
+        {/* ===== โหมดย่อย "วินิจฉัยอัตโนมัติ" — เลือกจาก popupตอนเข้าแท็บข้อสอบ ===== */}
         {diagStage === "quiz" ? <>
         <Pressable style={styles.ghostBtn} onPress={() => setDiagStage("pull")}>
           <Text style={styles.ghostText}>← กลับไปดึงโจทย์</Text>
@@ -1704,7 +1704,7 @@ export default function Tutor() {
           <View style={styles.popCol}>
             {TABS.map((t) => {
               const on = tab === t.k;
-              return <Pressable key={t.k} onPress={() => { setTab(t.k); setOptOpen(false); }}
+              return <Pressable key={t.k} onPress={() => { setTab(t.k); setOptOpen(false); if (t.k === "diag") setExamPick(true); }}
                 style={[styles.popItem, on && { borderColor: colors.accent, backgroundColor: colors.accent + "26" }]}>
                 <Ionicons name={t.icon as any} size={15} color={on ? colors.accent : colors.textSecondary} />
                 <Text style={[styles.popItemText, on && { color: "#fff" }]}>{t.label}</Text>
@@ -1732,26 +1732,6 @@ export default function Tutor() {
                 <Text style={[styles.popItemText, on && { color: "#fff" }]}>{m.label}</Text>
                 <Text style={styles.popItemHint} numberOfLines={1}>{m.hint}</Text>
                 {on ? <Ionicons name="checkmark" size={15} color={m.color} /> : null}
-              </Pressable>;
-            })}
-          </View>
-
-          <View style={styles.popDivider} />
-
-          {/* โหมดย่อยของหน้าข้อสอบ — วินิจฉัยอัตโนมัติแยกออกมาจากหน้าข้อสอบใหญ่ */}
-          <Text style={styles.popHead}>โหมดย่อย</Text>
-          <View style={styles.popCol}>
-            {([
-              { k: "pull", label: "ดึงโจทย์", hint: "สุ่มโจทย์จากไฟล์ในวิชา", icon: "document-text-outline", color: "#4ade80" },
-              { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "สอบ 5 ข้อ แล้วบอกว่าต้องเน้นอะไร", icon: "checkmark-done-outline", color: "#a78bfa" },
-            ] as const).map((s) => {
-              const on = tab === "diag" && diagStage === s.k;
-              return <Pressable key={s.k} onPress={() => { setTab("diag"); setDiagStage(s.k); setOptOpen(false); }}
-                style={[styles.popItem, on && { borderColor: s.color, backgroundColor: s.color + "26" }]}>
-                <Ionicons name={s.icon as any} size={15} color={on ? s.color : colors.textSecondary} />
-                <Text style={[styles.popItemText, on && { color: "#fff" }]}>{s.label}</Text>
-                <Text style={styles.popItemHint} numberOfLines={1}>{s.hint}</Text>
-                {on ? <Ionicons name="checkmark" size={15} color={s.color} /> : null}
               </Pressable>;
             })}
           </View>
@@ -1858,6 +1838,40 @@ export default function Tutor() {
             </View>
           </ScrollView>
           <Button onPress={() => { setZoom(false); setTab("chat"); }} variant="secondary" icon="chatbubbles-outline">ถามอาจารย์ AI</Button>
+        </View>
+      </Modal>
+
+      {/* popup เลือกว่าจะเข้าทำอะไรในโหมดข้อสอบ — เด้งตอนเข้าแท็บ "ข้อสอบ" */}
+      <Modal visible={examPick} animationType="fade" transparent onRequestClose={() => setExamPick(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setExamPick(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHead}>
+            <Text style={styles.sheetTitle}>จะเลือกทำอะไร?</Text>
+            <Pressable onPress={() => setExamPick(false)}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
+          </View>
+          <Text style={font.caption}>เลือกแนวทางทำข้อสอบในรอบนี้ — เปลี่ยนได้ทุกเมื่อจากหน้าข้อสอบ</Text>
+
+          {([
+            { k: "pull" as const, label: "ดึงโจทย์", hint: "สุ่มโจทย์จากไฟล์ในวิชา แล้วเลือกแนวทั้ง ทั่วไป / โค้ด / หลายตัวเลือก", icon: "document-text-outline", color: "#4ade80" },
+            { k: "quiz" as const, label: "วินิจฉัยอัตโนมัติ", hint: "สอบ 5 ข้อ แล้วระบบบอกว่าหัวข้อไหนต้องเน้น หัวข้อไหนข้ามได้", icon: "checkmark-done-outline", color: "#a78bfa" },
+          ]).map((s) => {
+            const on = diagStage === s.k;
+            return <Pressable key={s.k} onPress={() => { setDiagStage(s.k); setExamPick(false); }}
+              style={[styles.row, on && { backgroundColor: s.color + "26", borderWidth: 1, borderColor: s.color }]}>
+              <View style={[styles.wantIcon, { backgroundColor: s.color + "22", marginBottom: 0 }]}>
+                <Ionicons name={s.icon as any} size={19} color={s.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowName, on && { color: "#fff" }]}>{s.label}</Text>
+                <Text style={[styles.rowMeta, on && { color: "#e9d5ff" }]}>{s.hint}</Text>
+              </View>
+              {on ? <Ionicons name="checkmark-circle" size={20} color={s.color} /> : <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />}
+            </Pressable>;
+          })}
+
+          <Pressable style={styles.ghostBtn} onPress={() => setExamPick(false)}>
+            <Text style={styles.ghostText}>ไว้ทีหลัง</Text>
+          </Pressable>
         </View>
       </Modal>
 
