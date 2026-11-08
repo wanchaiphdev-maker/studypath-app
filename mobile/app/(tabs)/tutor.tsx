@@ -49,16 +49,19 @@ const LEVELS: { k: Level; label: string; hint: string; color: string }[] = [
  * รวมตัวเลือกที่ซ้ำกันให้เหลือตัวเดียว (ชั้นกันพลาดบน client)
  * เทียบแบบไม่สนตัวพิมพ์ ช่องว่าง และเครื่องหมายท้าย
  */
-function uniqueOptions(options: any[]): string[] {
+/** ตัดตัวเลือกซ้ำ — ใช้ได้ทั้ง "ข้อสอบ" (options เป็น string) และ "โจทย์" (options เป็น {text, correct})
+ *  เดิมทำ String(raw) กับ object จนข้อความหาย (เหลือ "A. " เปล่า ๆ) เลยคง item ตั้งต้นไว้
+ *  แล้วใช้แค่ค่า text ในการเทียบซ้ำ */
+function uniqueOptions<T>(options: T[]): T[] {
   const seen = new Set<string>();
-  const out: string[] = [];
+  const out: T[] = [];
   for (const raw of options) {
-    const text = String(raw ?? "").trim();
+    const text = String((typeof raw === "string" ? raw : (raw as any)?.text) ?? "").trim();
     if (!text) continue;
     const key = text.toLowerCase().replace(/\s+/g, " ").replace(/\s*([,;:])\s*/g, "$1").replace(/[.,;:!?)\]]+$/g, "").trim();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(text);
+    out.push(raw);
   }
   return out;
 }
@@ -659,6 +662,10 @@ export default function Tutor() {
   const [src, setSrc] = useState<"class" | "submission">("class");
   // หน้าเลือกก่อนดึงโจทย์ — กด "ดึงโจทย์" แล้วขึ้นมาให้เลือก "แนวไหน + หัวข้อไหน" ก่อนสุ่มจริง
   const [pickStage, setPickStage] = useState(false);
+  // แนวโจทย์ที่เลือกในหน้าเลือก — "เก็บไว้เฉพาะรอบดึงนี้" ห้ามผูกกับโหมดหลัก (mode)
+  // เพราะเปลี่ยนโหมดหลัก = เปลี่ยนทั้งหน้าจอ (แชต/เมนู/โจทย์อัตโนมัติ) ตามที่ผู้ใช้สั่งห้าม
+  // "" = ทั่วไป (ระบบเลือกฟอร์แมตเอง), "code" = โค้ด, "options" = หลายตัวเลือก
+  const [pullStyle, setPullStyle] = useState<string>("");
 
   const fmt: Fmt = ((problem?.format as Fmt) || "text") as Fmt;
   const fmtMeta = FORMATS.find((f) => f.k === fmt) || FORMATS[0];
@@ -818,8 +825,9 @@ export default function Tutor() {
     if (needSubject()) return;
     setProbBusy(true); setProbErr(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis();
     try {
-      // โหมดโค้ด = บังคับโจทย์แนวเขียน/อ่านโค้ด, โหมดอื่นให้เซิร์ฟเวอร์เลือกรูปแบบเอง
-      const useFmt = forceFmt !== undefined ? forceFmt : (mode === "code" ? "code" : "");
+      // แนวโจทย์จากหน้าเลือก (pullStyle) มาก่อน — เลือกที่นี่มีผลเฉพาะรอบดึงนี้ ไม่เปลี่ยนโหมดหลัก
+      // ไม่ได้เลือก = ค่อยดูโหมดหลัก (โหมดโค้ดยังดึงโจทย์โค้ดเหมือนเดิม) หรือให้เซิร์ฟเวอร์เลือกเอง
+      const useFmt = forceFmt !== undefined ? forceFmt : (pullStyle || (mode === "code" ? "code" : ""));
       // focusTopics = หัวข้อที่เลือกไว้ในหน้าเลือกก่อนดึง (ไม่เลือก = ทั้งวิชา)
       const r = await tutorProblem(subjectId, useFmt, seen, src, focusTopics);
       setProblem(r);
@@ -851,8 +859,10 @@ export default function Tutor() {
     if (!problem) return;
     if (fmt === "options") {
       if (picked < 0) { Alert2("ยังไม่ได้เลือก", "แตะตัวเลือกที่คิดว่าถูกก่อน"); return; }
-      const chosen = problem.options?.[picked];
-      const right = problem.options?.find((o: any) => o.correct);
+      // ตรวจกับ "รายการเดียวกับที่แสดง" (uniqueOptions) — กัน index เพี้ยนเมื่อมีตัวเลือกซ้ำถูกตัดออก
+      const list = uniqueOptions<any>(problem.options || []);
+      const chosen = list[picked];
+      const right = list.find((o: any) => (typeof o === "object" ? o?.correct : false));
       setMark({ correct: chosen?.correct === true, feedback: chosen?.correct ? "ถูกต้อง" : `ยังไม่ใช่ — เฉลยคือ "${right?.text || "-"}"`, points: [], next: "" });
       if (chosen?.explain) speak(spokenText(chosen.explain));
       return;
@@ -1330,7 +1340,7 @@ export default function Tutor() {
             <Ionicons name="document-attach-outline" size={19} color="#4ade80" />
             <Text style={font.h2}>โจทย์จากในวิชา</Text>
           </View>
-          <Text style={font.caption}>{mode === "code" ? "โหมดโค้ด — สุ่มโจทย์แนวเขียน/อ่านโค้ด มีช่องโค้ดให้ตอบ พร้อมใบ้ทีละบรรทัด" : "ดึงโจทย์จริงจากไฟล์ที่ซิงก์มา ระบบจะเลือกรูปแบบคำตอบให้เองตามโจทย์"}</Text>
+          <Text style={font.caption}>{pullStyle === "code" ? "หมวดโค้ด — สุ่มโจทย์แนวเขียน/อ่านโค้ด มีช่องโค้ดให้ตอบ พร้อมใบ้ทีละบรรทัด" : pullStyle === "options" ? "หมวดตัวเลือก — โจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง)" : "ดึงโจทย์จริงจากไฟล์ที่ซิงก์มา ระบบจะเลือกรูปแบบคำตอบให้เองตามโจทย์"}</Text>
 
           <Text style={styles.segLabel}>โจทย์มาจาก</Text>
           <View style={styles.srcRow}>
@@ -1360,16 +1370,40 @@ export default function Tutor() {
           </View>
           <Text style={font.caption}>เลือกแนวโจทย์และหัวข้อที่อยากได้ แล้วกดดึง — ไม่เลือก = สุ่มจากทั้งวิชา</Text>
 
-          {/* แนวโจทย์ — โหมดที่วิชานี้มีจริง (ตามเนื้อหาไฟล์) */}
-          <Text style={styles.segLabel}>แนวโจทย์</Text>
-          <View style={styles.srcRow}>
-            {(subjectModes.length ? subjectModes : FALLBACK_MODES).map((m) => {
-              const on = mode === m.k;
-              return <Pressable key={m.k} style={[styles.srcChip, on && styles.srcChipOn]} onPress={() => setMode(m.k as Mode)}>
-                <Ionicons name={m.icon as any} size={13} color={on ? "#a78bfa" : colors.textMuted} />
-                <Text style={[styles.srcChipText, on && { color: "#a78bfa" }]}>{m.label}</Text>
-              </Pressable>;
-            })}
+          {/* แนวโจทย์ — แยกเป็น "หมวดย่อย" คนละอัน ห้ามปนกัน:
+               ทั่วไป / โค้ด / หลายตัวเลือก (แต่ละอันมีผลเฉพาะรอบดึงนี้ ไม่ไปเปลี่ยนโหมดหลัก) */}
+          <View style={{ marginTop: 14 }}>
+            <Text style={styles.segLabel}>แนวโจทย์</Text>
+            <Text style={font.caption}>เลือกได้อย่างเดียว — มีผลเฉพาะการดึงรอบนี้ ไม่เปลี่ยนโหมดหลัก</Text>
+
+            {/* หมวดทั่วไป — ระบบดูโจทย์แล้วเลือกรูปแบบคำตอบให้เอง */}
+            <Text style={styles.sylGroup}>ทั่วไป</Text>
+            <View style={styles.srcRow}>
+              <Pressable style={[styles.srcChip, pullStyle === "" && styles.srcChipOn]} onPress={() => setPullStyle("")}>
+                <Ionicons name="grid-outline" size={13} color={pullStyle === "" ? "#a78bfa" : colors.textMuted} />
+                <Text style={[styles.srcChipText, pullStyle === "" && { color: "#a78bfa" }]}>ระบบเลือกรูปแบบให้เอง</Text>
+              </Pressable>
+            </View>
+
+            {/* หมวดโค้ด — ยืนตั้งตัวหาก เฉพาะวิชาที่ไฟล์มีเนื้อหาเขียนโค้ดจริงเท่านั้น */}
+            {(subjectModes.length ? subjectModes : FALLBACK_MODES).some((m) => m.k === "code") ? <>
+              <Text style={styles.sylGroup}>โค้ด</Text>
+              <View style={styles.srcRow}>
+                <Pressable style={[styles.srcChip, pullStyle === "code" && styles.srcChipOn]} onPress={() => setPullStyle(pullStyle === "code" ? "" : "code")}>
+                  <Ionicons name="code-slash-outline" size={13} color={pullStyle === "code" ? "#34d399" : colors.textMuted} />
+                  <Text style={[styles.srcChipText, pullStyle === "code" && { color: "#34d399" }]}>เขียน / อ่านโค้ด</Text>
+                </Pressable>
+              </View>
+            </> : null}
+
+            {/* หมวดหลายตัวเลือก — แยกต่างหากจากโค้ดและทั่วไป ห้ามอยู่แถวเดียวกัน */}
+            <Text style={styles.sylGroup}>ตัวเลือก</Text>
+            <View style={styles.srcRow}>
+              <Pressable style={[styles.srcChip, pullStyle === "options" && styles.srcChipOn]} onPress={() => setPullStyle(pullStyle === "options" ? "" : "options")}>
+                <Ionicons name="list-outline" size={13} color={pullStyle === "options" ? "#fbbf24" : colors.textMuted} />
+                <Text style={[styles.srcChipText, pullStyle === "options" && { color: "#fbbf24" }]}>โจทย์หลายตัวเลือก (ก ข ค ง)</Text>
+              </Pressable>
+            </View>
           </View>
 
           {/* หัวข้อที่วิชานี้มีจริง — อ่านจากไฟล์ที่ซิงก์มา (ใช้ชิปเดิมที่ย้ายมาจากบัตรวินิจฉัย) */}
@@ -1582,7 +1616,7 @@ export default function Tutor() {
           {quiz.questions.map((qq: any, qi: number) => <Card key={qi} style={styles.qCard}>
             <Text style={styles.qNum}>ข้อที่ {qi + 1}{qq.topic ? ` · ${qq.topic}` : ""}</Text>
             <Text style={font.title}>{qq.question}</Text>
-            {uniqueOptions(qq.options).map((o: string, oi: number) => {
+            {uniqueOptions<string>(qq.options).map((o: string, oi: number) => {
               const on = picks[qi] === oi;
               return <Pressable key={oi} onPress={() => { const n = [...picks]; n[qi] = oi; setPicks(n); }}
                 style={[styles.opt, on && styles.optOn]}>
@@ -1806,7 +1840,7 @@ export default function Tutor() {
           {filtered.map((s: any) => {
             const on = s.id === subjectId;
             return <Pressable key={s.id} style={[styles.row, on && styles.rowOn]}
-              onPress={() => { setSubjectId(s.id); resetOnboarding(); setFocusTopics([]); setPlan(null); setPickerOpen(false); setPickStage(false); }}>
+              onPress={() => { setSubjectId(s.id); resetOnboarding(); setFocusTopics([]); setPlan(null); setPickerOpen(false); setPickStage(false); setPullStyle(""); }}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowName, on && { color: "#fff" }]} numberOfLines={2}>{s.name}</Text>
                 <Text style={[styles.rowMeta, on && { color: "#ede9fe" }]}>{s._count?.materials || 0} ไฟล์</Text>
