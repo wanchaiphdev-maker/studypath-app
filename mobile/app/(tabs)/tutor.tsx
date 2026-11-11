@@ -218,7 +218,7 @@ function guessLang(code: string): string {
 }
 
 /* รูปแบบคำตอบของระบบข้อสอบ — เลือกได้ทุกข้อ */
-type Fmt = "text" | "options" | "code" | "flowchart" | "diagram" | "table";
+type Fmt = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode";
 const FORMATS: { k: Fmt; label: string; icon: string; hint: string }[] = [
   { k: "text", label: "ข้อความ", icon: "document-text-outline", hint: "ตอบเป็นข้อความ" },
   { k: "options", label: "ตัวเลือก", icon: "list-outline", hint: "A B C ง" },
@@ -226,7 +226,25 @@ const FORMATS: { k: Fmt; label: string; icon: string; hint: string }[] = [
   { k: "flowchart", label: "ผังภาพ", icon: "git-branch-outline", hint: "flowchart" },
   { k: "diagram", label: "แผนผัง", icon: "grid-outline", hint: "ผังงาน/โครงสร้าง" },
   { k: "table", label: "ตาราง", icon: "grid-outline", hint: "เทียบข้อมูล" },
+  { k: "pseudocode", label: "รหัสเทียม", icon: "terminal-outline", hint: "pseudocode" },
 ];
+
+/** คำอธิบายใต้หัว "โจทย์จากในวิชา" ตามแนวที่เลือกไว้ (รวมสไตล์ที่เลือกได้เฉพาะใน popup) */
+const PULL_CAPTIONS: Record<string, string> = {
+  "": "ดึงโจทย์จริงจากไฟล์ที่ซิงก์มา ระบบจะเลือกรูปแบบคำตอบให้เองตามโจทย์",
+  code: "หมวดโค้ด — สุ่มโจทย์แนวเขียน/อ่านโค้ด มีช่องโค้ดให้ตอบ พร้อมใบ้ทีละบรรทัด",
+  options: "หมวดตัวเลือก — โจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง)",
+  flowchart: "หมวดผังภาพ — ตอบเป็นผังงาน flowchart เรียงลูกศรให้อ่านง่าย",
+  pseudocode: "หมวดรหัสเทียม — ตอบเป็นขั้นตอน pseudocode ไม่ต้องเป็นภาษาโปรแกรมจริง",
+  table: "หมวดตารางเทียบ — จัดคำตอบเป็นตารางเทียบข้อมูล",
+  random: "สุ่มทุกอย่าง — ระบบสุ่มรูปแบบใหม่ทุกครั้งที่ดึง (โค้ด/รหัสเทียมสุ่มเฉพาะวิชาที่เขียนโปรแกรม)",
+};
+
+/** ชื่อแนวที่เลือกไว้ — ใช้แสดงในหน้าเลือกก่อนดึงเมื่อเลือกสไตล์ที่มีเฉพาะใน popup */
+function pullStyleLabel(s: string) {
+  if (s === "random") return "สุ่มทุกอย่าง";
+  return FORMATS.find((f) => f.k === s)?.label || "ระบบเลือกให้เอง";
+}
 
 type Tab = "chat" | "plan" | "diag";
 const TABS: { k: Tab; label: string; icon: string }[] = [
@@ -670,7 +688,8 @@ export default function Tutor() {
   const [examPick, setExamPick] = useState(false);
   // แนวโจทย์ที่เลือกในหน้าเลือก — "เก็บไว้เฉพาะรอบดึงนี้" ห้ามผูกกับโหมดหลัก (mode)
   // เพราะเปลี่ยนโหมดหลัก = เปลี่ยนทั้งหน้าจอ (แชต/เมนู/โจทย์อัตโนมัติ) ตามที่ผู้ใช้สั่งห้าม
-  // "" = ทั่วไป (ระบบเลือกฟอร์แมตเอง), "code" = โค้ด, "options" = หลายตัวเลือก
+  // "" = ทั่วไป (ระบบเลือกฟอร์แมตเอง), "code"/"options" = เลือกจากหน้าเลือก
+  // "flowchart"/"pseudocode"/"table"/"random" = ตั้งจาก popup เลือกตอนเข้าแท็บข้อสอบ (สุ่มทุกอย่าง)
   const [pullStyle, setPullStyle] = useState<string>("");
 
   const fmt: Fmt = ((problem?.format as Fmt) || "text") as Fmt;
@@ -827,13 +846,23 @@ export default function Tutor() {
     );
   }
 
+  /** "สุ่มทุกอย่าง" — สุ่มฟอร์แมตใหม่ทุกครั้งที่ดึง โค้ด/รหัสเทียมสุ่มได้เฉพาะวิชาที่มีสัญญาณเขียนโปรแกรมจริง */
+  function pickRandomFmt(): Fmt {
+    const pool: Fmt[] = ["text", "options", "flowchart", "diagram", "table"];
+    if (hasCodeMode) pool.push("code", "pseudocode");
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
   async function loadProblem(forceFmt?: string) {
     if (needSubject()) return;
     setProbBusy(true); setProbErr(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis();
     try {
       // แนวโจทย์จากหน้าเลือก (pullStyle) มาก่อน — เลือกที่นี่มีผลเฉพาะรอบดึงนี้ ไม่เปลี่ยนโหมดหลัก
+      // "random" (สุ่มทุกอย่าง) = สุ่มฟอร์แมตใหม่เองทุกครั้งที่ดึง โค้ด/รหัสเทียมสุ่มได้เฉพาะวิชาที่มีสัญญาณโค้ด
       // ไม่ได้เลือก = ค่อยดูโหมดหลัก (โหมดโค้ดยังดึงโจทย์โค้ดเหมือนเดิม) หรือให้เซิร์ฟเวอร์เลือกเอง
-      const useFmt = forceFmt !== undefined ? forceFmt : (pullStyle || (mode === "code" ? "code" : ""));
+      const useFmt = forceFmt !== undefined ? forceFmt
+        : pullStyle === "random" ? pickRandomFmt()
+          : (pullStyle || (mode === "code" ? "code" : ""));
       // focusTopics = หัวข้อที่เลือกไว้ในหน้าเลือกก่อนดึง (ไม่เลือก = ทั้งวิชา)
       const r = await tutorProblem(subjectId, useFmt, seen, src, focusTopics);
       setProblem(r);
@@ -942,6 +971,9 @@ export default function Tutor() {
       };
     });
   }, [opening]);
+  // วิชานี้มีเนื้อหาเขียนโปรแกรมจริงในไฟล์ไหม — ใช้สัญญาณเดียวกับที่ซ่อนหมวด "โค้ด" ในหน้าเลือก
+  // (ไม่เดาจากชื่อวิชา) ใช้ซ่อนแถวโค้ด/รหัสเทียมใน popup และกันการสุ่มฟอร์แมตโค้ดของวิชาทั่วไป
+  const hasCodeMode = (subjectModes.length ? subjectModes : FALLBACK_MODES).some((m) => m.k === "code");
   // ถ้าโหมดที่เลือกไว้ไม่อยู่ในรายการของวิชานี้ ให้เด้งกลับเป็นอันแรก
   useEffect(() => {
     if (!subjectModes.length) return;
@@ -1349,7 +1381,7 @@ export default function Tutor() {
             <Ionicons name="document-attach-outline" size={19} color="#4ade80" />
             <Text style={font.h2}>โจทย์จากในวิชา</Text>
           </View>
-          <Text style={font.caption}>{pullStyle === "code" ? "หมวดโค้ด — สุ่มโจทย์แนวเขียน/อ่านโค้ด มีช่องโค้ดให้ตอบ พร้อมใบ้ทีละบรรทัด" : pullStyle === "options" ? "หมวดตัวเลือก — โจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง)" : "ดึงโจทย์จริงจากไฟล์ที่ซิงก์มา ระบบจะเลือกรูปแบบคำตอบให้เองตามโจทย์"}</Text>
+          <Text style={font.caption}>{PULL_CAPTIONS[pullStyle] ?? PULL_CAPTIONS[""]}</Text>
 
           <Text style={styles.segLabel}>โจทย์มาจาก</Text>
           <View style={styles.srcRow}>
@@ -1384,6 +1416,13 @@ export default function Tutor() {
           <View style={{ marginTop: 14 }}>
             <Text style={styles.segLabel}>แนวโจทย์</Text>
             <Text style={font.caption}>เลือกได้อย่างเดียว — มีผลเฉพาะการดึงรอบนี้ ไม่เปลี่ยนโหมดหลัก</Text>
+            {/* แนวที่ตั้งไว้จาก popup (ผังภาพ/รหัสเทียม/ตารางเทียบ/สุ่มทุกอย่าง) ไม่มีปุ่มในหน้านี้
+                 แสดงไว้ให้รู้ว่ารอบดึงนี้ใช้แนวไหน และเปลี่ยนกลับได้จาก 3 หมวดด้านล่าง */}
+            {pullStyle !== "" && pullStyle !== "code" && pullStyle !== "options" ? (
+              <Text style={[font.caption, { color: "#38bdf8", marginTop: 4 }]}>
+                แนวที่เลือกไว้จาก popup: {pullStyleLabel(pullStyle)} — เปลี่ยนได้จาก 3 หมวดนี้ หรือเข้า popup ใหม่จากเมนู → ข้อสอบ
+              </Text>
+            ) : null}
 
             {/* หมวดทั่วไป — ระบบดูโจทย์แล้วเลือกรูปแบบคำตอบให้เอง */}
             <Text style={styles.sylGroup}>ทั่วไป</Text>
@@ -1395,7 +1434,7 @@ export default function Tutor() {
             </View>
 
             {/* หมวดโค้ด — ยืนตั้งตัวหาก เฉพาะวิชาที่ไฟล์มีเนื้อหาเขียนโค้ดจริงเท่านั้น */}
-            {(subjectModes.length ? subjectModes : FALLBACK_MODES).some((m) => m.k === "code") ? <>
+            {hasCodeMode ? <>
               <Text style={styles.sylGroup}>โค้ด</Text>
               <View style={styles.srcRow}>
                 <Pressable style={[styles.srcChip, pullStyle === "code" && styles.srcChipOn]} onPress={() => setPullStyle(pullStyle === "code" ? "" : "code")}>
@@ -1849,25 +1888,44 @@ export default function Tutor() {
             <Text style={styles.sheetTitle}>จะเลือกทำอะไร?</Text>
             <Pressable onPress={() => setExamPick(false)}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
           </View>
-          <Text style={font.caption}>เลือกแนวทางทำข้อสอบในรอบนี้ — เปลี่ยนได้ทุกเมื่อจากหน้าข้อสอบ</Text>
+          <Text style={font.caption}>เลือกแนวข้อสอบรอบนี้ — เลือกแล้วไปหน้าดึงโจทย์พร้อมแนวที่ตั้งไว้ คุณกดดึงเองเมื่อพร้อม เปลี่ยนได้ทุกเมื่อ</Text>
 
-          {([
-            { k: "pull" as const, label: "ดึงโจทย์", hint: "สุ่มโจทย์จากไฟล์ในวิชา แล้วเลือกแนวทั้ง ทั่วไป / โค้ด / หลายตัวเลือก", icon: "document-text-outline", color: "#4ade80" },
-            { k: "quiz" as const, label: "วินิจฉัยอัตโนมัติ", hint: "สอบ 5 ข้อ แล้วระบบบอกว่าหัวข้อไหนต้องเน้น หัวข้อไหนข้ามได้", icon: "checkmark-done-outline", color: "#a78bfa" },
-          ]).map((s) => {
-            const on = diagStage === s.k;
-            return <Pressable key={s.k} onPress={() => { setDiagStage(s.k); setExamPick(false); }}
-              style={[styles.row, on && { backgroundColor: s.color + "26", borderWidth: 1, borderColor: s.color }]}>
-              <View style={[styles.wantIcon, { backgroundColor: s.color + "22", marginBottom: 0 }]}>
-                <Ionicons name={s.icon as any} size={19} color={s.color} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowName, on && { color: "#fff" }]}>{s.label}</Text>
-                <Text style={[styles.rowMeta, on && { color: "#e9d5ff" }]}>{s.hint}</Text>
-              </View>
-              {on ? <Ionicons name="checkmark-circle" size={20} color={s.color} /> : <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />}
-            </Pressable>;
-          })}
+          {/* 8 แถว: แนวข้อสอบทั้งหมด — กดแล้ว "ตั้งแนวไว้ให้" แล้วไปหน้าดึงโจทย์ให้ผู้ใช้กดดึงเอง
+               แถวโค้ด/รหัสเทียม แสดงเฉพาะวิชาที่มีสัญญาณเขียนโปรแกรมจริง (hasCodeMode)
+               ผังภาพ/รหัสเทียม/ตารางเทียบ/สุ่มทุกอย่าง มีเฉพาะใน popup นี้ ห้ามเพิ่มในหน้าเลือก */}
+          <ScrollView style={{ maxHeight: 470 }} showsVerticalScrollIndicator={false}>
+            {([
+              ...(hasCodeMode ? [{ k: "code", label: "ข้อสอบโค้ด", hint: "โจทย์แนวเขียน/อ่านโค้ด มีช่องโค้ดให้ตอบ พร้อมใบ้ทีละบรรทัด", icon: "code-slash-outline", color: "#34d399" }] : []),
+              { k: "options", label: "ตัวเลือกแบบช้อยส์", hint: "โจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง) เลือกแล้วเฉลยทันที", icon: "list-outline", color: "#fbbf24" },
+              { k: "flowchart", label: "ผังภาพ", hint: "ตอบเป็นผังงาน flowchart เรียงลูกศรให้อ่านง่าย", icon: "git-branch-outline", color: "#38bdf8" },
+              ...(hasCodeMode ? [{ k: "pseudocode", label: "รหัสเทียม", hint: "ตอบเป็นขั้นตอน pseudocode ไม่ต้องเป็นภาษาโปรแกรมจริง", icon: "terminal-outline", color: "#818cf8" }] : []),
+              { k: "table", label: "ตารางเทียบ", hint: "จัดคำตอบเป็นตารางเทียบข้อมูล", icon: "grid-outline", color: "#f472b6" },
+              { k: "random", label: "สุ่มทุกอย่าง", hint: "ระบบสุ่มรูปแบบใหม่ทุกครั้งที่ดึง (โค้ด/รหัสเทียมสุ่มเฉพาะวิชาที่เขียนโปรแกรม)", icon: "shuffle-outline", color: "#fb923c" },
+              { k: "", label: "ดึงโจทย์ (ระบบเลือกให้เอง)", hint: "สุ่มโจทย์จากไฟล์ในวิชา แล้วให้ระบบเลือกรูปแบบคำตอบเอง", icon: "document-text-outline", color: "#4ade80" },
+              { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "สอบ 5 ข้อ แล้วระบบบอกว่าหัวข้อไหนต้องเน้น หัวข้อไหนข้ามได้", icon: "checkmark-done-outline", color: "#a78bfa" },
+            ] as { k: string; label: string; hint: string; icon: string; color: string }[]).map((s) => {
+              const isQuiz = s.k === "quiz";
+              // แถว quiz ไฮไลต์เมื่ออยู่หน้าวินิจฉัย / แถวแนวอื่นไฮไลต์เมื่ออยู่หน้าดึงและแนวตรงกับที่เลือกไว้
+              const on = isQuiz ? diagStage === "quiz" : diagStage === "pull" && pullStyle === s.k;
+              return <Pressable key={s.k || "system"} onPress={() => {
+                  setExamPick(false);
+                  if (isQuiz) { setDiagStage("quiz"); return; }
+                  // แนวข้อสอบ = ตั้ง pullStyle ไว้ก่อน แล้วให้ผู้ใช้กดดึงเองจากหน้าดึงโจทย์ (ยังเปลี่ยนแนวได้ในหน้าเลือก)
+                  setDiagStage("pull");
+                  setPullStyle(s.k);
+                }}
+                style={[styles.row, on && { backgroundColor: s.color + "26", borderWidth: 1, borderColor: s.color }]}>
+                <View style={[styles.wantIcon, { backgroundColor: s.color + "22", marginBottom: 0 }]}>
+                  <Ionicons name={s.icon as any} size={19} color={s.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowName, on && { color: "#fff" }]}>{s.label}</Text>
+                  <Text style={[styles.rowMeta, on && { color: "#e9d5ff" }]}>{s.hint}</Text>
+                </View>
+                {on ? <Ionicons name="checkmark-circle" size={20} color={s.color} /> : <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />}
+              </Pressable>;
+            })}
+          </ScrollView>
 
           <Pressable style={styles.ghostBtn} onPress={() => setExamPick(false)}>
             <Text style={styles.ghostText}>ไว้ทีหลัง</Text>
