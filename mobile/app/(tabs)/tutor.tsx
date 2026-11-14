@@ -1409,56 +1409,36 @@ export default function Tutor() {
             <Ionicons name="options-outline" size={19} color="#a78bfa" />
             <Text style={font.h2}>เลือกโจทย์ที่ต้องการ</Text>
           </View>
-          <Text style={font.caption}>เลือกแนวโจทย์และหัวข้อที่อยากได้ แล้วกดดึง — ไม่เลือก = สุ่มจากทั้งวิชา</Text>
+          <Text style={font.caption}>ไม่เลือกอะไรเลย = สุ่มจากทั้งวิชา</Text>
 
-          {/* แนวโจทย์ — แยกเป็น "หมวดย่อย" คนละอัน ห้ามปนกัน:
-               ทั่วไป / โค้ด / หลายตัวเลือก (แต่ละอันมีผลเฉพาะรอบดึงนี้ ไม่ไปเปลี่ยนโหมดหลัก) */}
-          <View style={{ marginTop: 14 }}>
-            <Text style={styles.segLabel}>แนวโจทย์</Text>
-            <Text style={font.caption}>เลือกได้อย่างเดียว — มีผลเฉพาะการดึงรอบนี้ ไม่เปลี่ยนโหมดหลัก</Text>
-            {/* แนวที่ตั้งไว้จาก popup (ผังภาพ/รหัสเทียม/ตารางเทียบ/สุ่มทุกอย่าง) ไม่มีปุ่มในหน้านี้
-                 แสดงไว้ให้รู้ว่ารอบดึงนี้ใช้แนวไหน และเปลี่ยนกลับได้จาก 3 หมวดด้านล่าง */}
-            {pullStyle !== "" && pullStyle !== "code" && pullStyle !== "options" ? (
-              <Text style={[font.caption, { color: "#38bdf8", marginTop: 4 }]}>
-                แนวที่เลือกไว้จาก popup: {pullStyleLabel(pullStyle)} — เปลี่ยนได้จาก 3 หมวดนี้ หรือเข้า popup ใหม่จากเมนู → ข้อสอบ
-              </Text>
-            ) : null}
-
-            {/* หมวดทั่วไป — ระบบดูโจทย์แล้วเลือกรูปแบบคำตอบให้เอง */}
-            <Text style={styles.sylGroup}>ทั่วไป</Text>
-            <View style={styles.srcRow}>
-              <Pressable style={[styles.srcChip, pullStyle === "" && styles.srcChipOn]} onPress={() => setPullStyle("")}>
-                <Ionicons name="grid-outline" size={13} color={pullStyle === "" ? "#a78bfa" : colors.textMuted} />
-                <Text style={[styles.srcChipText, pullStyle === "" && { color: "#a78bfa" }]}>ระบบเลือกรูปแบบให้เอง</Text>
-              </Pressable>
-            </View>
-
-            {/* หมวดโค้ด — ยืนตั้งตัวหาก เฉพาะวิชาที่ไฟล์มีเนื้อหาเขียนโค้ดจริงเท่านั้น */}
-            {hasCodeMode ? <>
-              <Text style={styles.sylGroup}>โค้ด</Text>
-              <View style={styles.srcRow}>
-                <Pressable style={[styles.srcChip, pullStyle === "code" && styles.srcChipOn]} onPress={() => setPullStyle(pullStyle === "code" ? "" : "code")}>
-                  <Ionicons name="code-slash-outline" size={13} color={pullStyle === "code" ? "#34d399" : colors.textMuted} />
-                  <Text style={[styles.srcChipText, pullStyle === "code" && { color: "#34d399" }]}>เขียน / อ่านโค้ด</Text>
-                </Pressable>
-              </View>
-            </> : null}
-
-            {/* หมวดหลายตัวเลือก — แยกต่างหากจากโค้ดและทั่วไป ห้ามอยู่แถวเดียวกัน */}
-            <Text style={styles.sylGroup}>ตัวเลือก</Text>
-            <View style={styles.srcRow}>
-              <Pressable style={[styles.srcChip, pullStyle === "options" && styles.srcChipOn]} onPress={() => setPullStyle(pullStyle === "options" ? "" : "options")}>
-                <Ionicons name="list-outline" size={13} color={pullStyle === "options" ? "#fbbf24" : colors.textMuted} />
-                <Text style={[styles.srcChipText, pullStyle === "options" && { color: "#fbbf24" }]}>โจทย์หลายตัวเลือก (ก ข ค ง)</Text>
-              </Pressable>
-            </View>
+          {/* ขั้น 1 — แนวโจทย์: เลือกได้อย่างเดียว มีผลเฉพาะรอบดึงนี้ ไม่แตะโหมดหลัก */}
+          <Text style={styles.stepLabel}>1. แนวโจทย์ — เลือกได้อย่างเดียว</Text>
+          {/* แนวจาก popup (ผังภาพ/รหัสเทียม/ตารางเทียบ/สุ่มทุกอย่าง) ไม่มีปุ่มในหน้านี้
+               แสดงให้รู้ว่ารอบนี้ใช้แนวไหน และเปลี่ยนได้จากแถวนี้ */}
+          {pullStyle !== "" && pullStyle !== "code" && pullStyle !== "options" ? (
+            <Text style={[font.caption, { color: "#38bdf8", marginBottom: 6 }]}>
+              แนวจาก popup: {pullStyleLabel(pullStyle)} — เปลี่ยนได้จากแถวนี้
+            </Text>
+          ) : null}
+          <View style={styles.pickRow}>
+            <Pressable style={[styles.srcChip, pullStyle === "" && styles.srcChipOn]} onPress={() => setPullStyle("")}>
+              <Ionicons name="grid-outline" size={13} color={pullStyle === "" ? "#a78bfa" : colors.textMuted} />
+              <Text style={[styles.srcChipText, pullStyle === "" && { color: "#a78bfa" }]}>ระบบเลือกให้เอง</Text>
+            </Pressable>
+            <Pressable style={[styles.srcChip, pullStyle === "options" && styles.srcChipOn]} onPress={() => setPullStyle(pullStyle === "options" ? "" : "options")}>
+              <Ionicons name="list-outline" size={13} color={pullStyle === "options" ? "#fbbf24" : colors.textMuted} />
+              <Text style={[styles.srcChipText, pullStyle === "options" && { color: "#fbbf24" }]}>ตัวเลือก ก ข ค ง</Text>
+            </Pressable>
+            {hasCodeMode ? <Pressable style={[styles.srcChip, pullStyle === "code" && styles.srcChipOn]} onPress={() => setPullStyle(pullStyle === "code" ? "" : "code")}>
+              <Ionicons name="code-slash-outline" size={13} color={pullStyle === "code" ? "#34d399" : colors.textMuted} />
+              <Text style={[styles.srcChipText, pullStyle === "code" && { color: "#34d399" }]}>โค้ด</Text>
+            </Pressable> : null}
           </View>
 
-          {/* หัวข้อที่วิชานี้มีจริง — อ่านจากไฟล์ที่ซิงก์มา (ใช้ชิปเดิมที่ย้ายมาจากบัตรวินิจฉัย) */}
-          {sylBusy ? <Text style={font.caption}>กำลังอ่านหัวข้อในเนื้อหาวิชา...</Text> : null}
+          {/* ขั้น 2 — หัวข้อ: อ่านจากไฟล์ที่ซิงก์มา เลือกได้หลายอัน (ไม่เลือก = ทั้งวิชา) */}
+          <Text style={styles.stepLabel}>2. หัวข้อ — เลือกได้หลายอัน</Text>
+          {sylBusy ? <Text style={font.caption}>กำลังโหลดหัวข้อ...</Text> : null}
           {(syllabus?.topics || []).length ? <>
-            <Text style={styles.segLabel}>หัวข้อที่วิชานี้มีจริง</Text>
-            <Text style={font.caption}>ไม่เลือกไว้ = สุ่มโจทย์ทั้งวิชา</Text>
             {["พื้นฐาน", "โครงสร้าง", "ทดสอบ", "ทั่วไป"].map((g) => {
               const group = (syllabus.topics || []).filter((t: any) => t.group === g);
               if (!group.length) return null;
@@ -1476,7 +1456,7 @@ export default function Tutor() {
                 </View>
               </View>;
             })}
-          </> : !sylBusy ? <Text style={font.caption}>ยังไม่มีหัวข้อให้เลือก — จะดึงจากทั้งวิชาแทน</Text> : null}
+          </> : !sylBusy ? <Text style={font.caption}>ยังไม่มีหัวข้อให้เลือก — ดึงจากทั้งวิชาแทน</Text> : null}
 
           <View style={{ gap: 8, marginTop: 14 }}>
             <Button onPress={async () => { await loadProblem(); setPickStage(false); }} loading={probBusy} icon="shuffle-outline">
@@ -1881,7 +1861,10 @@ export default function Tutor() {
       </Modal>
 
       {/* popup เลือกว่าจะเข้าทำอะไรในโหมดข้อสอบ — เด้งตอนเข้าแท็บ "ข้อสอบ" */}
-      <Modal visible={examPick} animationType="fade" transparent onRequestClose={() => setExamPick(false)}>
+      {/* animationType="none" — เดิมใช้ "fade" แต่แอนิเมชันของ RNW พึ่ง requestAnimationFrame
+           ซึ่งถูก suspend ในสภาพแวดล้อมที่ไม่ render ต่อเนื่อง ทำให้ fade-out ไม่จบ
+           และ popup ค้างบังหน้าจอ — ปิดทันทีจึงเชื่อถือได้กว่า */}
+      <Modal visible={examPick} animationType="none" transparent onRequestClose={() => setExamPick(false)}>
         <Pressable style={styles.backdrop} onPress={() => setExamPick(false)} />
         <View style={styles.sheet}>
           <View style={styles.sheetHead}>
@@ -2153,6 +2136,8 @@ const styles = StyleSheet.create({
   zoomNeedText: { fontSize: 13, color: "#1e293b", marginTop: 2 },
   needBox: { marginBottom: 12, padding: 12, borderRadius: 13, backgroundColor: "#fbbf2412", borderWidth: 1, borderColor: "#fbbf2455" },
   srcRow: { flexDirection: "row", gap: 6, marginBottom: 12 },
+  stepLabel: { fontSize: 13, fontWeight: "900", color: colors.text, marginTop: 16, marginBottom: 7 },
+  pickRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   srcChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 11, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   srcChipOn: { backgroundColor: "#38bdf81f", borderColor: "#38bdf8" },
   srcChipText: { fontSize: 11, fontWeight: "800", color: colors.textSecondary },
