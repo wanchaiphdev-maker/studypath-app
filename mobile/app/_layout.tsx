@@ -47,6 +47,6 @@ export default function RootLayout() {
   return <ThemeProvider><AlertHost /><Stack initialRouteName="(auth)/login" screenOptions={{ headerShown: false }}>
     <Stack.Screen name="(auth)/login" /><Stack.Screen name="(auth)/register" />
     <Stack.Screen name="(tabs)" /><Stack.Screen name="community" /><Stack.Screen name="community/[id]" />
-    <Stack.Screen name="subject/[id]" /><Stack.Screen name="quiz/[id]" />
+    <Stack.Screen name="subject/[id]" />
   </Stack></ThemeProvider>;
 }

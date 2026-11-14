@@ -8,20 +8,16 @@ import {useLocalSearchParams,router} from "expo-router";
 import {Ionicons} from "@expo/vector-icons";
 import {colors,font,spacing} from "../../lib/theme";
 import {Button,Card,GlowCard,IconTile,Pill,ProgressBar,SectionHeader} from "../../lib/ui";
-import {createMaterial,generateQuiz,getSubject,uploadMaterial} from "../../lib/api";
-import QuizPickerModal from "../../components/QuizPickerModal";
+import {createMaterial,getSubject,uploadMaterial} from "../../lib/api";
 
 export default function SubjectDetail(){
- const{id}=useLocalSearchParams<{id:string}>();const[subject,setSubject]=useState<any>(null),[title,setTitle]=useState(""),[text,setText]=useState(""),[busy,setBusy]=useState(false),[noteOpen,setNoteOpen]=useState(false),[quizOpen,setQuizOpen]=useState(false);
+ const{id}=useLocalSearchParams<{id:string}>();const[subject,setSubject]=useState<any>(null),[title,setTitle]=useState(""),[text,setText]=useState(""),[busy,setBusy]=useState(false),[noteOpen,setNoteOpen]=useState(false);
  const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);const state=useAudioRecorderState(recorder);
  useEffect(()=>{setAudioModeAsync({playsInSilentMode:true,allowsRecording:true}).catch(()=>{})},[]);
  async function load(){try{setSubject(await getSubject(String(id)))}catch(e){Alert.alert("โหลดวิชาไม่สำเร็จ",String(e))}}useEffect(()=>{load()},[id]);
  async function addMaterial(){if(!text.trim())return;setBusy(true);try{await createMaterial(String(id),title||"Lecture Note",text);setText("");setTitle("");await load()}catch(e){Alert.alert("เพิ่มเอกสารไม่สำเร็จ",String(e))}finally{setBusy(false)}}
  async function record(){try{if(state.isRecording){await recorder.stop();const uri=recorder.uri;if(!uri)return;setBusy(true);await uploadMaterial(String(id),{uri,name:"lecture-"+Date.now()+".m4a",mimeType:"audio/mp4"},title||"Lecture Recording");setTitle("");await load();Alert.alert("สำเร็จ","ถอดเสียงและรวมเข้า Knowledge Base แล้ว");setBusy(false)}else{const p=await requestRecordingPermissionsAsync();if(!p.granted){Alert.alert("ต้องอนุญาตไมโครโฟน");return}await recorder.prepareToRecordAsync();recorder.record()}}catch(e){setBusy(false);Alert.alert("บันทึกเสียงไม่สำเร็จ",String(e))}}
  async function pick(){setBusy(true);try{const r=await DocumentPicker.getDocumentAsync({type:["application/pdf","text/plain","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/vnd.ms-powerpoint","audio/*","video/*"],copyToCacheDirectory:true,multiple:false});if(r.canceled||!r.assets?.[0])return;const f=r.assets[0];await uploadMaterial(String(id),{uri:f.uri,name:f.name||"learning-material",mimeType:f.mimeType||"application/pdf"},title||f.name);setTitle("");await load();Alert.alert("สำเร็จ","เพิ่มเนื้อหาเข้า Knowledge Base แล้ว")}catch(e){Alert.alert("อัปโหลดไม่สำเร็จ",String(e))}finally{setBusy(false)}}
- async function quiz(){setQuizOpen(true)}
-  // เลือกสไลด์แล้วค่อยสร้าง — ใช้เฉพาะไฟล์ที่เลือก (ไม่เลือก = ทั้งวิชา)
-  async function quizConfirm(ids:string[]){setQuizOpen(false);setBusy(true);try{const q=await generateQuiz(String(id),8,ids.length?ids:undefined);Alert.alert("สร้าง Quiz สำเร็จ","ใช้เนื้อหา "+((q as any)?.usedMaterialCount??ids.length)+" ไฟล์");router.push(("/quiz/"+q.id) as any)}catch(e){Alert.alert("สร้าง Quiz ไม่สำเร็จ",String(e))}finally{setBusy(false)}}
  if(!subject)return <View style={styles.loading}><Text style={font.body}>กำลังโหลด...</Text><Pressable onPress={()=>router.canGoBack()?router.back():router.replace("/(tabs)/subjects" as any)} style={{marginTop:18,flexDirection:"row",alignItems:"center",gap:8,padding:12,borderRadius:12,backgroundColor:colors.surfaceAlt}}><Ionicons name="arrow-back" size={20} color={colors.text}/><Text style={font.body}>กลับไปหน้ารายวิชา</Text></Pressable></View>
  const mastery=Number(subject.progress?.[0]?.mastery||0);
  const allMaterials=subject.materials||[];
@@ -60,14 +56,6 @@ export default function SubjectDetail(){
   <SectionHeader title="เช็คชื่อ / เข้าเรียน" action={attendanceMaterials.length+" รายการ"}/>
   {attendanceMaterials.length===0?<Card><Text style={font.caption}>ยังไม่พบรายการเช็คชื่อในวิชานี้ รายการเช็คชื่อที่มีคำว่า “เช็คชื่อ”, “ลงชื่อ”, “Attendance” หรือ “Check-in” จะแสดงในส่วนนี้</Text></Card>:attendanceMaterials.map((m:any)=><Pressable key={m.id} onPress={()=>m.externalUrl?Linking.openURL(m.externalUrl).catch(()=>Alert.alert("เปิดลิงก์ไม่สำเร็จ")):undefined}><Card style={styles.material}><IconTile icon="checkbox-outline" color="#f59e0b" size={42}/><View style={{flex:1}}><Text style={font.title}>{m.title}</Text><Text style={font.caption}>รายการเช็คชื่อ · {m.status}</Text>{m.externalUrl?<Text style={font.caption}>แตะเพื่อเปิดแบบฟอร์ม</Text>:null}</View><Pill text={m.externalUrl?"เปิดเช็คชื่อ":"รายการ"} color="#f59e0b"/></Card></Pressable>)}
   {learningMaterials.length===0?<Card><Text style={font.caption}>ยังไม่มีไฟล์เนื้อหา ลองซิงก์ Google Classroom หรืออัปโหลดสไลด์/PDF</Text></Card>:bucketed.filter(b=>b.items.length).map(b=><View key={b.k}><SectionHeader title={b.t} action={b.items.length+" รายการ"}/>{b.items.map((m:any)=><Pressable key={m.id} onPress={()=>m.externalUrl?Linking.openURL(m.externalUrl).catch(()=>Alert.alert("เปิดลิงก์ไม่สำเร็จ")):undefined}><Card style={styles.material}><IconTile icon={b.i as any} color={b.c} size={42}/><View style={{flex:1}}><Text style={font.title} numberOfLines={2}>{m.title}</Text><Text style={font.caption}>{fmtWhen(m.externalUpdatedAt)?fmtWhen(m.externalUpdatedAt)+" · ":""}{m.sourceLabel||m.sourceType}</Text>{m.externalUrl?<Text style={font.caption}>แตะเพื่อเปิด</Text>:null}</View><Pill text={b.p} color={b.c}/></Card></Pressable>)}</View>)}
-  <QuizPickerModal
-    visible={quizOpen}
-    materials={learningMaterials}
-    subjectName={String(subject.name||"")}
-    busy={busy}
-    onClose={()=>setQuizOpen(false)}
-    onConfirm={quizConfirm}
-  />
  </ScrollView>
 }
 const styles=StyleSheet.create({

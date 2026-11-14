@@ -97,14 +97,6 @@ export async function uploadMaterial(subjectId: string, file: { uri: string; nam
   return body;
 }
 export async function askMaterial(materialId: string, question: string) { return api("/studypath/materials/" + materialId + "/ask", { method: "POST", body: JSON.stringify({ question }) }); }
-export async function generateQuiz(subjectId: string, count = 5, materialIds?: string[]) {
-  return api<any>("/studypath/subjects/" + subjectId + "/quizzes/generate", {
-    method: "POST",
-    // ไม่ส่ง materialIds = ใช้ทั้งวิชา · ส่งมา = ใช้เฉพาะที่ผู้ใช้เลือก
-    body: JSON.stringify(materialIds ? { count, materialIds } : { count }),
-  });
-}
-export async function submitQuiz(quizId: string, answers: any[]) { return api<any>("/studypath/quizzes/" + quizId + "/attempt", { method: "POST", body: JSON.stringify({ answers }) }); }
 export async function getProgress() { return api<any>("/studypath/progress"); }
 export async function logStudySession(minutes: number, subjectId?: string, goal?: string) { return api("/studypath/study-sessions", { method: "POST", body: JSON.stringify({ minutes, subjectId, goal }) }); }
 export async function getReviewCards() { return api<any[]>("/studypath/review"); }
