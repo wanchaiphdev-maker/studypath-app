@@ -985,6 +985,19 @@ export default function Tutor() {
     const k = q.trim().toLowerCase();
     return k ? subjects.filter((s) => String(s.name).toLowerCase().includes(k)) : subjects;
   }, [subjects, q]);
+  // กลุ่มตามเทอม — ไม่ค้นหา = จัดกลุ่มให้เห็นรอบที่วิชาเข้ามา, ค้นหา = แบน ๆ หาเจอง่ายกว่า
+  const pickGroups = useMemo(() => {
+    if (q.trim()) return [{ label: null as string | null, list: filtered }];
+    const m = new Map<string, { label: string; yo: number; so: number; list: typeof subjects }>();
+    for (const s of filtered) {
+      const sem = s.semester, ay = sem?.academicYear;
+      const k = String(sem?.id || "none");
+      let g = m.get(k);
+      if (!g) { g = { label: String(sem?.name || "วิชา"), yo: Number(ay?.order || 0), so: Number(sem?.order || 0), list: [] }; m.set(k, g); }
+      g.list.push(s);
+    }
+    return [...m.values()].sort((a, b) => a.yo - b.yo || a.so - b.so).map((g) => ({ label: g.label as string | null, list: g.list }));
+  }, [filtered, q]);
 
   const needSubject = () => {
     if (!subjectId) { Alert2("ยังไม่ได้เลือกวิชา", "แตะที่ชื่อวิชาด้านบนก่อน"); return true; }
@@ -1926,17 +1939,20 @@ export default function Tutor() {
         </View>
         <TextInput value={q} onChangeText={setQ} placeholder="ค้นหาชื่อวิชา..." placeholderTextColor={colors.textMuted} style={styles.search} autoFocus />
         <ScrollView style={{ maxHeight: 380 }} keyboardShouldPersistTaps="handled">
-          {filtered.map((s: any) => {
-            const on = s.id === subjectId;
-            return <Pressable key={s.id} style={[styles.row, on && styles.rowOn]}
-              onPress={() => { setSubjectId(s.id); resetOnboarding(); setFocusTopics([]); setPlan(null); setPickerOpen(false); setPickStage(false); setPullStyle(""); }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowName, on && { color: "#fff" }]} numberOfLines={2}>{s.name}</Text>
-                <Text style={[styles.rowMeta, on && { color: "#ede9fe" }]}>{s._count?.materials || 0} ไฟล์</Text>
-              </View>
-              {on ? <Ionicons name="checkmark-circle" size={20} color="#fff" /> : null}
-            </Pressable>;
-          })}
+          {pickGroups.map((g, gi) => <View key={"pg" + gi}>
+            {g.label ? <Text style={styles.pickGroup}>{g.label}</Text> : null}
+            {g.list.map((s: any) => {
+              const on = s.id === subjectId;
+              return <Pressable key={s.id} style={[styles.row, on && styles.rowOn]}
+                onPress={() => { setSubjectId(s.id); resetOnboarding(); setFocusTopics([]); setPlan(null); setPickerOpen(false); setPickStage(false); setPullStyle(""); }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowName, on && { color: "#fff" }]} numberOfLines={2}>{s.name}</Text>
+                  <Text style={[styles.rowMeta, on && { color: "#ede9fe" }]}>{s._count?.materials || 0} ไฟล์</Text>
+                </View>
+                {on ? <Ionicons name="checkmark-circle" size={20} color="#fff" /> : null}
+              </Pressable>;
+            })}
+          </View>)}
           {!filtered.length ? <Text style={[font.caption, { padding: 14 }]}>ไม่พบวิชาที่ค้นหา</Text> : null}
         </ScrollView>
       </View>
@@ -2138,6 +2154,7 @@ const styles = StyleSheet.create({
   srcRow: { flexDirection: "row", gap: 6, marginBottom: 12 },
   stepLabel: { fontSize: 13, fontWeight: "900", color: colors.text, marginTop: 16, marginBottom: 7 },
   pickRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  pickGroup: { fontSize: 11, fontWeight: "900", color: colors.textMuted, letterSpacing: 0.6, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
   srcChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 11, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   srcChipOn: { backgroundColor: "#38bdf81f", borderColor: "#38bdf8" },
   srcChipText: { fontSize: 11, fontWeight: "800", color: colors.textSecondary },

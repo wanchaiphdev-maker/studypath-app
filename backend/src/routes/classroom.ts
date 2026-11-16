@@ -5,6 +5,7 @@ import path from "path";
 import { Readable } from "stream";
 import { PDFParse } from "pdf-parse";
 import { prisma, requireAuth } from "../auth";
+import type { Semester } from "@prisma/client";
 import { getGoogleAccessToken } from "./google";
 import { getAutosyncState, runAutosyncOnce } from "../autosync";
 import { syncSubmissionsForCourse } from "./submissions";
@@ -136,6 +137,39 @@ router.get("/courses", requireAuth(), async (req: any, res) => {
  */
 let syncRunning = false;
 
+/**
+ * ถอดเวลาหาจากรหัส cuid (c + base36 ms) — ใช้ดูว่าวิชาเข้ามารอบไหน
+ * (โมเดล Subject ไม่มี createdAt เลยต้องอ่านเวลาจากรหัสแทน)
+ */
+function cuidTime(id: string): number | null {
+  if (!id || id[0] !== "c") return null;
+  for (const len of [8, 7, 9]) {
+    const n = parseInt(id.slice(1, 1 + len), 36);
+    if (n > 1577836800000 && n < 2208988800000) return n; // ปี 2020..2040
+  }
+  return null;
+}
+
+/**
+ * ชื่อเทอมตามลำดับรอบที่วิชาเข้ามา:
+ * 0 = "เทอม 1", 1 = "เทอม 2", 2 = "ปี 2 เทอม 1", 3 = "ปี 2 เทอม 2", ...
+ */
+function termLabel(order: number): string {
+  const year = Math.floor(order / 2) + 1;
+  const term = (order % 2) + 1;
+  return year === 1 ? `เทอม ${term}` : `ปี ${year} เทอม ${term}`;
+}
+
+/** วิชากลุ่มใหม่เข้ามา: เกิน 24 ชม. จากวิชาล่าสุดในเทอม = คนละรอบ -> ขึ้นเทอมถัดไป */
+const BATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
+async function batchSemester(userId: string, yearId: string, current: Semester): Promise<Semester> {
+  const subs = await prisma.subject.findMany({ where: { semesterId: current.id }, select: { id: true } });
+  const latest = subs.reduce((max, s) => Math.max(max, cuidTime(s.id) || 0), 0);
+  if (!latest || Date.now() - latest <= BATCH_WINDOW_MS) return current; // ยังอยู่ในรอบเดียวกัน
+  const order = await prisma.semester.count({ where: { academicYearId: yearId } });
+  return prisma.semester.create({ data: { userId, academicYearId: yearId, name: termLabel(order), order } });
+}
+
 router.post("/sync", requireAuth(), async (req: any, res) => {
   if (syncRunning) return res.status(409).json({ error: "กำลังซิงก์อยู่ รอสักครู่แล้วลองใหม่อีกครั้ง" });
   syncRunning = true;
@@ -150,13 +184,16 @@ router.post("/sync", requireAuth(), async (req: any, res) => {
     if (!mappings.length) {
       let year = await prisma.academicYear.findFirst({ where: { userId: req.user.id }, orderBy: { order: "asc" } });
       if (!year) year = await prisma.academicYear.create({ data: { userId: req.user.id, name: "Google Classroom", order: 0 } });
-      let semester = await prisma.semester.findFirst({ where: { userId: req.user.id, academicYearId: year.id }, orderBy: { order: "asc" } });
-      if (!semester) semester = await prisma.semester.create({ data: { userId: req.user.id, academicYearId: year.id, name: "วิชาจาก Google Classroom", order: 0 } });
+      // เทอมล่าสุด = ตัวที่ order มากสุด (วิชากลุ่มใหม่จะถูกใส่ลงเทอมนี้ ถ้ายังอยู่ในรอบเดียวกัน)
+      let semester = await prisma.semester.findFirst({ where: { userId: req.user.id, academicYearId: year.id }, orderBy: { order: "desc" } });
+      if (!semester) semester = await prisma.semester.create({ data: { userId: req.user.id, academicYearId: year.id, name: "เทอม 1", order: 0 } });
       const autoMappings: { courseId: string; subjectId: string }[] = [];
       for (const course of courses) {
         const name = String(course.name || "วิชา Google Classroom").trim().slice(0, 160);
         let subject = userSubjects.find((item) => normalize(item.name) === normalize(name));
         if (!subject) {
+          // วิชาใหม่ = อาจเป็นรอบใหม่: ห่างจากวิชาล่าสุดเกิน 24 ชม. ให้ขึ้นเทอมถัดไป
+          semester = await batchSemester(req.user.id, year.id, semester);
           subject = await prisma.subject.create({ data: { userId: req.user.id, semesterId: semester.id, name, description: String(course.description || "").slice(0, 1000) || null } });
           await prisma.learningProgress.upsert({ where: { userId_subjectId: { userId: req.user.id, subjectId: subject.id } }, create: { userId: req.user.id, subjectId: subject.id }, update: {} });
           userSubjects.push(subject);
