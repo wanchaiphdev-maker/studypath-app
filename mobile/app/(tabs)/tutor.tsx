@@ -1393,6 +1393,12 @@ export default function Tutor() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Ionicons name="document-attach-outline" size={19} color="#4ade80" />
             <Text style={font.h2}>โจทย์จากในวิชา</Text>
+            {/* ปุ่มเปิด popup เลือกแนวข้อสอบ — เดิมเด้งอัตโนมัติตอนเข้าโหมดข้อสอบ
+                 ตอนนี้เข้าโหมดข้อสอบทันที แนวต่างๆ (ผังภาพ/ตารางเทียบ/สุ่มทุกอย่าง) เลือกจากปุ่มนี้แทน */}
+            <Pressable style={styles.styleBtn} onPress={() => setExamPick(true)}>
+              <Ionicons name="options-outline" size={14} color="#a78bfa" />
+              <Text style={styles.styleBtnText}>เลือกแนว</Text>
+            </Pressable>
           </View>
           <Text style={font.caption}>{PULL_CAPTIONS[pullStyle] ?? PULL_CAPTIONS[""]}</Text>
 
@@ -1731,12 +1737,14 @@ export default function Tutor() {
       {optOpen ? <>
         <View style={styles.pop}>
           <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {/* ไปยังหน้าต่างๆ */}
+          {/* ไปยังหน้าต่างๆ — กดอันเดียว = เข้าโหมดนั้นทันที
+               ข้อสอบ: เข้าหน้าข้อสอบเลย (ไม่เด้ง popup เลือกแนว — เลือกแนวได้จากปุ่ม "เลือกแนว" ในหน้าข้อสอบ)
+               บนหน้าถาม–ตอบ: ไม่ทำเครื่องหมายส่วนนี้ เพราะเลือกแทนด้วย "โหมด" ด้านล่าง (รวมเป็นการเลือกเดียว) */}
           <Text style={styles.popHead}>ไปที่</Text>
           <View style={styles.popCol}>
             {TABS.map((t) => {
-              const on = tab === t.k;
-              return <Pressable key={t.k} onPress={() => { setTab(t.k); setOptOpen(false); if (t.k === "diag") setExamPick(true); }}
+              const on = tab === t.k && tab !== "chat";
+              return <Pressable key={t.k} onPress={() => { setTab(t.k); setOptOpen(false); if (t.k === "diag") setDiagStage("pull"); }}
                 style={[styles.popItem, on && { borderColor: colors.accent, backgroundColor: colors.accent + "26" }]}>
                 <Ionicons name={t.icon as any} size={15} color={on ? colors.accent : colors.textSecondary} />
                 <Text style={[styles.popItemText, on && { color: "#fff" }]}>{t.label}</Text>
@@ -1747,17 +1755,20 @@ export default function Tutor() {
 
           <View style={styles.popDivider} />
 
-          {/* โหมด */}
+          {/* โหมด — เลือกได้อันเดียว และกดแล้วเข้าโหมดนั้นทันที (กลับหน้าถาม–ตอบเพื่อให้เห็นผล)
+               แสดงเครื่องหมายเฉพาะตอนอยู่หน้าถาม–ตอบ เพื่อไม่ให้ค้างทับกับ "ไปที่" */}
           <Text style={styles.popHead}>โหมด</Text>
           <View style={styles.popCol}>
             {(subjectModes.length ? subjectModes : FALLBACK_MODES).map((m) => {
-              const on = mode === m.k;
+              const on = mode === m.k && tab === "chat";
               return <Pressable key={m.k} onPress={() => {
                 const next = m.k as Mode;
                 const toCode = next === "code" && mode !== "code";
                 setMode(next); setOptOpen(false);
                 // โหมดโค้ด = ไปหน้าโจทย์แล้วดึงโจทย์เขียน/อ่านโค้ดให้ทันที
                 if (toCode) { setTab("diag"); setDiagStage("pull"); if (!probBusy) loadProblem("code"); }
+                // โหมดอื่น = กลับหน้าถาม–ตอบทันที กดอะไรก็เห็นโหมดนั้น ไม่ค้างทับโหมดอื่น
+                else setTab("chat");
               }}
                 style={[styles.popItem, on && { borderColor: m.color, backgroundColor: m.color + "26" }]}>
                 <Ionicons name={m.icon as any} size={15} color={on ? m.color : colors.textSecondary} />
@@ -2155,6 +2166,8 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 13, fontWeight: "900", color: colors.text, marginTop: 16, marginBottom: 7 },
   pickRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pickGroup: { fontSize: 11, fontWeight: "900", color: colors.textMuted, letterSpacing: 0.6, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
+  styleBtn: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+  styleBtnText: { fontSize: 11, fontWeight: "800", color: colors.textSecondary },
   srcChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 11, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   srcChipOn: { backgroundColor: "#38bdf81f", borderColor: "#38bdf8" },
   srcChipText: { fontSize: 11, fontWeight: "800", color: colors.textSecondary },
