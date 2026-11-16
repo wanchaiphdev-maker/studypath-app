@@ -1738,13 +1738,13 @@ export default function Tutor() {
         <View style={styles.pop}>
           <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* ไปยังหน้าต่างๆ — กดอันเดียว = เข้าโหมดนั้นทันที
-               ข้อสอบ: เข้าหน้าข้อสอบเลย (ไม่เด้ง popup เลือกแนว — เลือกแนวได้จากปุ่ม "เลือกแนว" ในหน้าข้อสอบ)
+               ข้อสอบ: เข้าหน้าข้อสอบแล้วเด้ง popup เลือกแนวให้เลือกทันที
                บนหน้าถาม–ตอบ: ไม่ทำเครื่องหมายส่วนนี้ เพราะเลือกแทนด้วย "โหมด" ด้านล่าง (รวมเป็นการเลือกเดียว) */}
           <Text style={styles.popHead}>ไปที่</Text>
           <View style={styles.popCol}>
             {TABS.map((t) => {
               const on = tab === t.k && tab !== "chat";
-              return <Pressable key={t.k} onPress={() => { setTab(t.k); setOptOpen(false); if (t.k === "diag") setDiagStage("pull"); }}
+              return <Pressable key={t.k} onPress={() => { setTab(t.k); setOptOpen(false); if (t.k === "diag") { setDiagStage("pull"); setExamPick(true); } }}
                 style={[styles.popItem, on && { borderColor: colors.accent, backgroundColor: colors.accent + "26" }]}>
                 <Ionicons name={t.icon as any} size={15} color={on ? colors.accent : colors.textSecondary} />
                 <Text style={[styles.popItemText, on && { color: "#fff" }]}>{t.label}</Text>
