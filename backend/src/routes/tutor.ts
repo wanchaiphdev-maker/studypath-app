@@ -656,7 +656,7 @@ export function dedupeOptions(options: any[], answerIndex: number, minCount = 2)
   return { options: kept, answerIndex: finalAnswer, removed: options.length - kept.length };
 }
 /** รูปแบบคำตอบที่ให้เลือก */
-type AnswerFormat = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode";
+type AnswerFormat = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode" | "translate";
 const FORMATS: Record<AnswerFormat, { label: string; hint: string; instruction: string }> = {
   text: { label: "ข้อความ", hint: "เขียนตอบเป็นข้อความ", instruction: "แสดงโจทย์เป็นข้อความอ่านง่าย ใช้หัวข้อย่อยและ bullet" },
   options: { label: "ตัวเลือก", hint: "A B C D", instruction: "แสดงโจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง) พร้อมเฉลยอธิบาย" },
@@ -665,6 +665,8 @@ const FORMATS: Record<AnswerFormat, { label: string; hint: string; instruction: 
   diagram: { label: "แผนผัง", hint: "ผังงาน/โครงสร้าง", instruction: "วาดแผนผังโครงสร้างข้อมูลหรือผังงานของโจทย์นี้ ใช้กล่อง ``` และอักขระขอบกล่อง" },
   table: { label: "ตาราง", hint: "เทียบข้อมูล", instruction: "แสดงโจทย์พร้อมตารางข้อมูลที่ต้องใช้ (ถ้ามี) ในกล่อง ``` จัดคอลัมน์ให้ตรงกัน" },
   pseudocode: { label: "รหัสเทียม", hint: "pseudocode", instruction: "แสดงโจทย์เป็นโจทย์เขียนรหัสเทียม (pseudocode) — เรียงขั้นตอนเป็นบรรทัด ๆ ด้วยคำสั่งภาษาอังกฤษง่าย ๆ เช่น BEGIN / IF / ELSE / WHILE / FOR / END ห้ามเป็นภาษาโปรแกรมจริง ห้ามใส่ชื่อฟังก์ชันหรือไวยากรณ์ของภาษาโปรแกรม" },
+  // แนวสำหรับวิชาภาษา — หยิบประโยค/ข้อความจริงจากไฟล์ในวิชา มาให้แปลไทย<->อังกฤษเอง
+  translate: { label: "แปลประโยค", hint: "ไทย ↔ อังกฤษ", instruction: "แสดงโจทย์เป็นการแปลภาษา — คัดประโยคหรือข้อความสั้น ๆ ที่มีจริงในเนื้อหาวิชานี้มา 1 ข้อ แล้วขึ้นต้นด้วยคำสั่งว่า \"แปลข้อความต่อไปนี้เป็น...\" โดยเลือกทิศทางให้ตรงกับต้นทาง (ต้นทางเป็นอังกฤษ = แปลเป็นไทย, ต้นทางเป็นไทย = แปลเป็นอังกฤษ) เว้นบรรทัดว่างใต้คำสั่งให้ผู้เรียนพิมพ์คำตอบแปลเอง ห้ามใส่คำแปลหรือเฉลยในโจทย์เด็ดขาด" },
 };
 /**
  * รูปแบบที่ผู้ใช้เลือกเอง

@@ -218,7 +218,7 @@ function guessLang(code: string): string {
 }
 
 /* รูปแบบคำตอบของระบบข้อสอบ — เลือกได้ทุกข้อ */
-type Fmt = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode";
+type Fmt = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode" | "translate";
 const FORMATS: { k: Fmt; label: string; icon: string; hint: string }[] = [
   { k: "text", label: "ข้อความ", icon: "document-text-outline", hint: "ตอบเป็นข้อความ" },
   { k: "options", label: "ตัวเลือก", icon: "list-outline", hint: "A B C ง" },
@@ -227,6 +227,7 @@ const FORMATS: { k: Fmt; label: string; icon: string; hint: string }[] = [
   { k: "diagram", label: "แผนผัง", icon: "grid-outline", hint: "ผังงาน/โครงสร้าง" },
   { k: "table", label: "ตาราง", icon: "grid-outline", hint: "เทียบข้อมูล" },
   { k: "pseudocode", label: "รหัสเทียม", icon: "terminal-outline", hint: "pseudocode" },
+  { k: "translate", label: "แปลประโยค", icon: "language-outline", hint: "ไทย ↔ อังกฤษ" },
 ];
 
 type Tab = "chat" | "plan" | "diag";
@@ -957,6 +958,11 @@ export default function Tutor() {
   // วิชานี้มีเนื้อหาเขียนโปรแกรมจริงในไฟล์ไหม — ใช้สัญญาณเดียวกับที่ซ่อนหมวด "โค้ด" ในหน้าเลือก
   // (ไม่เดาจากชื่อวิชา) ใช้ซ่อนแถวโค้ด/รหัสเทียมใน popup และกันการสุ่มฟอร์แมตโค้ดของวิชาทั่วไป
   const hasCodeMode = (subjectModes.length ? subjectModes : FALLBACK_MODES).some((m) => m.k === "code");
+  // สัญญาณอื่น ๆ ของวิชา — ใช้กรองแถวใน popup "จะเลือกทำอะไร?" ให้เห็นเฉพาะแนวที่เกี่ยวกับวิชานั้น
+  // (มาจากรายการโหมดของ /open ที่เซิร์ฟเวอร์อ่านเนื้อหาไฟล์จริงแล้ว ไม่เดาจากชื่อวิชา)
+  const hasDiagramMode = (subjectModes.length ? subjectModes : FALLBACK_MODES).some((m) => m.k === "diagram");
+  const hasCompareMode = subjectModes.some((m) => m.k === "compare");
+  const hasLangMode = subjectModes.some((m) => m.k === "vocab" || m.k === "grammar");
   // ถ้าโหมดที่เลือกไว้ไม่อยู่ในรายการของวิชานี้ ให้เด้งกลับเป็นอันแรก
   useEffect(() => {
     if (!subjectModes.length) return;
@@ -1851,16 +1857,20 @@ export default function Tutor() {
             <Pressable onPress={() => setExamPick(false)}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
           </View>
 
-          {/* 8 แถว: แนวข้อสอบทั้งหมด — กดแล้ว "ตั้งแนวไว้ให้" แล้วไปหน้าดึงโจทย์ให้ผู้ใช้กดดึงเอง
-               แถวโค้ด/รหัสเทียม แสดงเฉพาะวิชาที่มีสัญญาณเขียนโปรแกรมจริง (hasCodeMode)
+          {/* แถวแนวข้อสอบ — กดแล้ว "ตั้งแนวไว้ให้" แล้วไปหน้าดึงโจทย์ให้ผู้ใช้กดดึงเอง
+               แถวกลาง (ตัวเลือก/สุ่มทุกอย่าง/ดึงโจทย์/วินิจฉัย) ขึ้นทุกวิชา
+               แถวเฉพาะทางขึ้นเฉพาะวิชาที่มีสัญญาณจริงจากเนื้อหาไฟล์:
+               โค้ด/รหัสเทียม = hasCodeMode, ผังภาพ = สัญญาณผัง, ตารางเทียบ = สัญญาณเปรียบเทียบ,
+               แปลประโยค = วิชาภาษา (คำศัพท์/ไวยากรณ์)
                ผังภาพ/รหัสเทียม/ตารางเทียบ/สุ่มทุกอย่าง มีเฉพาะใน popup นี้ ห้ามเพิ่มในหน้าเลือก */}
           <ScrollView style={{ maxHeight: 470 }} showsVerticalScrollIndicator={false}>
             {([
               ...(hasCodeMode ? [{ k: "code", label: "ข้อสอบโค้ด", hint: "โจทย์แนวเขียน/อ่านโค้ด มีช่องโค้ดให้ตอบ พร้อมใบ้ทีละบรรทัด", icon: "code-slash-outline", color: "#34d399" }] : []),
               { k: "options", label: "ตัวเลือกแบบช้อยส์", hint: "โจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง) เลือกแล้วเฉลยทันที", icon: "list-outline", color: "#fbbf24" },
-              { k: "flowchart", label: "ผังภาพ", hint: "ตอบเป็นผังงาน flowchart เรียงลูกศรให้อ่านง่าย", icon: "git-branch-outline", color: "#38bdf8" },
+              ...(hasDiagramMode ? [{ k: "flowchart", label: "ผังภาพ", hint: "ตอบเป็นผังงาน flowchart เรียงลูกศรให้อ่านง่าย", icon: "git-branch-outline", color: "#38bdf8" }] : []),
               ...(hasCodeMode ? [{ k: "pseudocode", label: "รหัสเทียม", hint: "ตอบเป็นขั้นตอน pseudocode ไม่ต้องเป็นภาษาโปรแกรมจริง", icon: "terminal-outline", color: "#818cf8" }] : []),
-              { k: "table", label: "ตารางเทียบ", hint: "จัดคำตอบเป็นตารางเทียบข้อมูล", icon: "grid-outline", color: "#f472b6" },
+              ...(hasCompareMode ? [{ k: "table", label: "ตารางเทียบ", hint: "จัดคำตอบเป็นตารางเทียบข้อมูล", icon: "grid-outline", color: "#f472b6" }] : []),
+              ...(hasLangMode ? [{ k: "translate", label: "แปลประโยค", hint: "แปลประโยคจริงจากเนื้อหาในวิชา ไทย ↔ อังกฤษ", icon: "language-outline", color: "#2dd4bf" }] : []),
               { k: "random", label: "สุ่มทุกอย่าง", hint: "ระบบสุ่มรูปแบบใหม่ทุกครั้งที่ดึง (โค้ด/รหัสเทียมสุ่มเฉพาะวิชาที่เขียนโปรแกรม)", icon: "shuffle-outline", color: "#fb923c" },
               { k: "", label: "ดึงโจทย์ (ระบบเลือกให้เอง)", hint: "สุ่มโจทย์จากไฟล์ในวิชา แล้วให้ระบบเลือกรูปแบบคำตอบเอง", icon: "document-text-outline", color: "#4ade80" },
               { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "สอบ 5 ข้อ แล้วระบบบอกว่าหัวข้อไหนต้องเน้น หัวข้อไหนข้ามได้", icon: "checkmark-done-outline", color: "#a78bfa" },
