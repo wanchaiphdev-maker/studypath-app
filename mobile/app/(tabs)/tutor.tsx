@@ -229,23 +229,6 @@ const FORMATS: { k: Fmt; label: string; icon: string; hint: string }[] = [
   { k: "pseudocode", label: "รหัสเทียม", icon: "terminal-outline", hint: "pseudocode" },
 ];
 
-/** คำอธิบายใต้หัว "โจทย์จากในวิชา" ตามแนวที่เลือกไว้ (รวมสไตล์ที่เลือกได้เฉพาะใน popup) */
-const PULL_CAPTIONS: Record<string, string> = {
-  "": "ดึงโจทย์จริงจากไฟล์ที่ซิงก์มา ระบบจะเลือกรูปแบบคำตอบให้เองตามโจทย์",
-  code: "หมวดโค้ด — สุ่มโจทย์แนวเขียน/อ่านโค้ด มีช่องโค้ดให้ตอบ พร้อมใบ้ทีละบรรทัด",
-  options: "หมวดตัวเลือก — โจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง)",
-  flowchart: "หมวดผังภาพ — ตอบเป็นผังงาน flowchart เรียงลูกศรให้อ่านง่าย",
-  pseudocode: "หมวดรหัสเทียม — ตอบเป็นขั้นตอน pseudocode ไม่ต้องเป็นภาษาโปรแกรมจริง",
-  table: "หมวดตารางเทียบ — จัดคำตอบเป็นตารางเทียบข้อมูล",
-  random: "สุ่มทุกอย่าง — ระบบสุ่มรูปแบบใหม่ทุกครั้งที่ดึง (โค้ด/รหัสเทียมสุ่มเฉพาะวิชาที่เขียนโปรแกรม)",
-};
-
-/** ชื่อแนวที่เลือกไว้ — ใช้แสดงในหน้าเลือกก่อนดึงเมื่อเลือกสไตล์ที่มีเฉพาะใน popup */
-function pullStyleLabel(s: string) {
-  if (s === "random") return "สุ่มทุกอย่าง";
-  return FORMATS.find((f) => f.k === s)?.label || "ระบบเลือกให้เอง";
-}
-
 type Tab = "chat" | "plan" | "diag";
 const TABS: { k: Tab; label: string; icon: string }[] = [
   { k: "chat", label: "ถาม–ตอบ", icon: "chatbubbles-outline" },
@@ -1149,7 +1132,6 @@ export default function Tutor() {
 
           {stage === "want" ? <>
             <Text style={font.h2}>👋 {opening.greeting}</Text>
-            <Text style={font.caption}>เลือกว่าอยากให้ช่วยเรื่องไหนก่อน แล้วผมจะเริ่มจากเนื้อหาที่ดีที่สุดให้</Text>
             <View style={styles.wantGrid}>
               {(opening.choices || []).map((c: any, i: number) => <Pressable key={i} style={styles.wantCard}
                 onPress={() => ask(c.prompt, c.key as Mode)}>
@@ -1157,7 +1139,6 @@ export default function Tutor() {
                   <Ionicons name={c.icon as any} size={19} color={modeMeta.color || "#a78bfa"} />
                 </View>
                 <Text style={styles.wantLabel}>{c.label}</Text>
-                <Text style={styles.wantSub} numberOfLines={2}>{c.sub}</Text>
               </Pressable>)}
             </View>
             <Pressable style={styles.ghostBtn} onPress={() => setStage("weak")}>
@@ -1167,14 +1148,12 @@ export default function Tutor() {
 
           {stage === "weak" ? <>
             <Text style={font.h2}>คุณอ่อนด้านไหนมากที่สุด?</Text>
-            <Text style={font.caption}>ผมอ่านหัวข้อในวิชานี้แล้ว {opening.totalMaterials} รายการ เลือกหัวข้อที่รู้สึกว่าไม่เข้าใจที่สุด</Text>
             <View style={{ gap: 8, marginTop: 12 }}>
               {topics.map((t: any, i: number) => <Pressable key={i} style={styles.optRow}
                 onPress={() => { setWeakTopic(t.title); setStage("choose"); }}>
                 <View style={styles.radio}><Ionicons name="trending-down-outline" size={16} color="#f59e0b" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={font.title}>{t.title}</Text>
-                  <Text style={font.caption} numberOfLines={2}>{t.summary}</Text>
                   <View style={{ flexDirection: "row", gap: 6, marginTop: 5 }}>
                     <Pill text={t.level || "กลาง"} color={t.level === "พื้นฐาน" ? "#34d399" : t.level === "สูง" ? "#f43f5e" : "#38bdf8"} />
                     {t.kind ? <Pill text={t.kind} color="#a78bfa" /> : null}
@@ -1205,7 +1184,6 @@ export default function Tutor() {
                 return <View key={i} style={[styles.optRow, isWeak && { borderColor: "#f59e0b", backgroundColor: "#f59e0b18" }]}>
                   <View style={{ flex: 1 }}>
                     <Text style={font.title}>{t.title}</Text>
-                    {isWeak ? <Text style={[font.caption, { color: "#f59e0b" }]}>← หัวข้อที่คุณบอกว่าอ่อนที่สุด (จะเริ่มตั้งแต่พื้นฐาน)</Text> : null}
                     <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
                       <Pressable style={[styles.miniBtn, c === "start" && styles.miniStart]} onPress={() => setChoices({ ...choices, [t.title]: "start" })}>
                         <Ionicons name="play" size={12} color={c === "start" ? "#ffffff" : "#34d399"} />
@@ -1232,7 +1210,6 @@ export default function Tutor() {
                 <View style={styles.topicNum}><Text style={styles.topicNumText}>{i + 1}</Text></View>
                 <View style={{ flex: 1 }}>
                   <Text style={font.title}>{s.title}</Text>
-                  {s.detail ? <Text style={font.caption}>{s.detail}</Text> : null}
                   {s.minutes ? <Text style={[font.caption, { color: "#38bdf8" }]}>≈ {s.minutes} นาที</Text> : null}
                 </View>
               </View>)}
@@ -1344,7 +1321,6 @@ export default function Tutor() {
               <View style={styles.topicNum}><Text style={styles.topicNumText}>{i + 1}</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={font.title}>{s.title}</Text>
-                {s.detail ? <Text style={font.caption}>{s.detail}</Text> : null}
                 {s.minutes ? <Text style={[font.caption, { color: "#38bdf8" }]}>≈ {s.minutes} นาที</Text> : null}
               </View>
               <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
@@ -1358,7 +1334,6 @@ export default function Tutor() {
 
         <Card style={styles.panel}>
           <Text style={font.h2}>แผนการเรียนทั้งวิชา</Text>
-          <Text style={font.caption}>ระบบอ่านหัวข้อจากไฟล์ทั้งหมดในวิชา แล้วเรียงลำดับว่าควรเริ่มที่ไหน</Text>
           <Button onPress={loadPlan} loading={planBusy} icon="map-outline">สร้างแผนการเรียน</Button>
         </Card>
 
@@ -1372,10 +1347,8 @@ export default function Tutor() {
               <View style={styles.topicNum}><Text style={styles.topicNumText}>{t.order ?? i + 1}</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={font.title}>{t.title}</Text>
-                <Text style={font.caption} numberOfLines={2}>{t.summary}</Text>
                 <View style={{ flexDirection: "row", gap: 6, marginTop: 6 }}>
                   <Pill text={t.level || "กลาง"} color={t.level === "พื้นฐาน" ? "#34d399" : t.level === "สูง" ? "#f43f5e" : "#38bdf8"} />
-                  {t.reason ? <Text style={font.caption} numberOfLines={1}>· {t.reason}</Text> : null}
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
@@ -1400,7 +1373,6 @@ export default function Tutor() {
               <Text style={styles.styleBtnText}>เลือกแนว</Text>
             </Pressable>
           </View>
-          <Text style={font.caption}>{PULL_CAPTIONS[pullStyle] ?? PULL_CAPTIONS[""]}</Text>
 
           <Text style={styles.segLabel}>โจทย์มาจาก</Text>
           <View style={styles.srcRow}>
@@ -1428,17 +1400,9 @@ export default function Tutor() {
             <Ionicons name="options-outline" size={19} color="#a78bfa" />
             <Text style={font.h2}>เลือกโจทย์ที่ต้องการ</Text>
           </View>
-          <Text style={font.caption}>ไม่เลือกอะไรเลย = สุ่มจากทั้งวิชา</Text>
 
           {/* ขั้น 1 — แนวโจทย์: เลือกได้อย่างเดียว มีผลเฉพาะรอบดึงนี้ ไม่แตะโหมดหลัก */}
           <Text style={styles.stepLabel}>1. แนวโจทย์ — เลือกได้อย่างเดียว</Text>
-          {/* แนวจาก popup (ผังภาพ/รหัสเทียม/ตารางเทียบ/สุ่มทุกอย่าง) ไม่มีปุ่มในหน้านี้
-               แสดงให้รู้ว่ารอบนี้ใช้แนวไหน และเปลี่ยนได้จากแถวนี้ */}
-          {pullStyle !== "" && pullStyle !== "code" && pullStyle !== "options" ? (
-            <Text style={[font.caption, { color: "#38bdf8", marginBottom: 6 }]}>
-              แนวจาก popup: {pullStyleLabel(pullStyle)} — เปลี่ยนได้จากแถวนี้
-            </Text>
-          ) : null}
           <View style={styles.pickRow}>
             <Pressable style={[styles.srcChip, pullStyle === "" && styles.srcChipOn]} onPress={() => setPullStyle("")}>
               <Ionicons name="grid-outline" size={13} color={pullStyle === "" ? "#a78bfa" : colors.textMuted} />
@@ -1532,7 +1496,6 @@ export default function Tutor() {
                 <Ionicons name="bulb-outline" size={15} color="#fbbf24" />
                 <Text style={styles.hintHeadText}>วิเคราะห์โจทย์</Text>
               </View>
-              <Text style={styles.hintNote}>แนวทางทำโจทย์ — ลองคิดทำเองก่อนดูขั้นถัดไป</Text>
 
               {analysisSection("Input :", analysis.input)}
               {analysisSection("Output :", analysis.output)}
@@ -1594,7 +1557,6 @@ export default function Tutor() {
                   <Ionicons name="bulb-outline" size={14} color="#fbbf24" />
                   <Text style={styles.hintHeadText}>ใบ้ใส่ในช่องโค้ดแล้ว {hintShown}/{hintLines.length} บรรทัด</Text>
                 </View>
-                <Text style={styles.hintNote}>ดูใบ้ในช่องโค้ดด้านบน แล้วแก้/เขียนต่อด้วยของคุณเองได้เลย ยังไม่ต้องเปิดหมดก็ได้</Text>
               </View> : null}
             </View>
             : <TextInput
@@ -1643,15 +1605,9 @@ export default function Tutor() {
 
         <Card style={styles.panel}>
           <Text style={font.h2}>วินิจฉัยอัตโนมัติ</Text>
-          <Text style={font.caption}>ระบบสุ่มคำถาม 5 ข้อจากเนื้อหาในวิชา แล้วบอกว่าอะไรต้องเน้น อะไรข้ามได้</Text>
 
           {/* ชิปเลือกหัวข้อย้ายขึ้นไปหน้าเลือกก่อนดึงโจทย์แล้ว (เลือกที่เดียว ใช้ร่วมกัน) */}
           <Text style={[styles.segLabel, { marginTop: 14 }]}>หัวข้อที่จะสอบ</Text>
-          <Text style={font.caption}>
-            {focusTopics.length
-              ? `เน้น ${focusTopics.length} หัวข้อ — เลือกไว้ตอนกด "ดึงโจทย์"`
-              : `ไม่ได้เลือก = สอบทั้งวิชา — อยากเน้นหัวข้อให้เลือกตอนกด "ดึงโจทย์"`}
-          </Text>
 
           <Button onPress={() => startQuizFocused()} loading={quizBusy} icon="checkmark-circle-outline">
             เริ่มข้อสอบ ({focusTopics.length ? focusTopics.length + " หัวข้อ" : "ทั้งวิชา"})
@@ -1773,7 +1729,7 @@ export default function Tutor() {
                 style={[styles.popItem, on && { borderColor: m.color, backgroundColor: m.color + "26" }]}>
                 <Ionicons name={m.icon as any} size={15} color={on ? m.color : colors.textSecondary} />
                 <Text style={[styles.popItemText, on && { color: "#fff" }]}>{m.label}</Text>
-                <Text style={styles.popItemHint} numberOfLines={1}>{m.hint}</Text>
+                <View style={{ flex: 1 }} />
                 {on ? <Ionicons name="checkmark" size={15} color={m.color} /> : null}
               </Pressable>;
             })}
@@ -1790,7 +1746,7 @@ export default function Tutor() {
                 style={[styles.popItem, on && { borderColor: "#38bdf8", backgroundColor: "#38bdf826" }]}>
                 <Ionicons name={s.icon as any} size={15} color={on ? "#38bdf8" : colors.textSecondary} />
                 <Text style={[styles.popItemText, on && { color: "#fff" }]}>{s.label}</Text>
-                <Text style={styles.popItemHint} numberOfLines={1}>{s.hint}</Text>
+                <View style={{ flex: 1 }} />
                 {on ? <Ionicons name="checkmark" size={15} color="#38bdf8" /> : null}
               </Pressable>;
             })}
@@ -1806,7 +1762,7 @@ export default function Tutor() {
               return <Pressable key={l.k} onPress={() => { setLevel(l.k); setOptOpen(false); }}
                 style={[styles.popItem, on && { borderColor: l.color, backgroundColor: l.color + "26" }]}>
                 <Text style={[styles.popItemText, on && { color: "#fff" }]}>{l.label}</Text>
-                <Text style={styles.popItemHint} numberOfLines={1}>{l.hint}</Text>
+                <View style={{ flex: 1 }} />
                 {on ? <Ionicons name="checkmark" size={15} color={l.color} /> : null}
               </Pressable>;
             })}
@@ -1819,7 +1775,6 @@ export default function Tutor() {
             {messages.length ? <Pressable style={styles.popItem} onPress={() => { setOptOpen(false); stopSpeak(); setMessages([]); }}>
               <Ionicons name="refresh-outline" size={15} color="#f59e0b" />
               <Text style={styles.popItemText}>ล้างบทสนทนา</Text>
-              <Text style={styles.popItemHint} numberOfLines={1}>เริ่มใหม่</Text>
             </Pressable> : null}
           </View>
           </ScrollView>
@@ -1895,7 +1850,6 @@ export default function Tutor() {
             <Text style={styles.sheetTitle}>จะเลือกทำอะไร?</Text>
             <Pressable onPress={() => setExamPick(false)}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
           </View>
-          <Text style={font.caption}>เลือกแนวข้อสอบรอบนี้ — เลือกแล้วไปหน้าดึงโจทย์พร้อมแนวที่ตั้งไว้ คุณกดดึงเองเมื่อพร้อม เปลี่ยนได้ทุกเมื่อ</Text>
 
           {/* 8 แถว: แนวข้อสอบทั้งหมด — กดแล้ว "ตั้งแนวไว้ให้" แล้วไปหน้าดึงโจทย์ให้ผู้ใช้กดดึงเอง
                แถวโค้ด/รหัสเทียม แสดงเฉพาะวิชาที่มีสัญญาณเขียนโปรแกรมจริง (hasCodeMode)
@@ -1927,7 +1881,6 @@ export default function Tutor() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.rowName, on && { color: "#fff" }]}>{s.label}</Text>
-                  <Text style={[styles.rowMeta, on && { color: "#e9d5ff" }]}>{s.hint}</Text>
                 </View>
                 {on ? <Ionicons name="checkmark-circle" size={20} color={s.color} /> : <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />}
               </Pressable>;

@@ -52,7 +52,6 @@ export default function RegisterScreen() {
             <Ionicons name="person-add" size={28} color="#fff" />
           </View>
           <Text style={styles.brandName}>StudyPath</Text>
-          <Text style={styles.brandTag}>สร้างบัญชีเพื่อเริ่มใช้งาน</Text>
         </View>
 
         <Text style={styles.title}>สมัครสมาชิก</Text>

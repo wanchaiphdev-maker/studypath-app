@@ -133,12 +133,10 @@ export default function ClassroomScreen() {
     <Pressable style={styles.back} onPress={() => goBack()}><Ionicons name="chevron-back" size={20} color={colors.text} /><Text style={font.caption}>กลับ</Text></Pressable>
     <Text style={styles.eyebrow}>GOOGLE WORKSPACE</Text>
     <Text style={font.h1}>Google Classroom</Text>
-    <Text style={font.caption}>ระบบดึงไฟล์และคลิปใหม่จาก Classroom ให้อัตโนมัติทุก 5 นาที โดยข้ามข้อความขอลาและการสมัครเข้าเรียน</Text>
 
     {!connected ? <Card style={styles.connectCard}>
       <View style={styles.googleIcon}><Ionicons name="logo-google" size={24} color="#fff" /></View>
       <Text style={font.h2}>เชื่อมบัญชี Google</Text>
-      <Text style={font.caption}>StudyPath จะขอสิทธิ์อ่าน Classroom และไฟล์ Drive ที่ใช้กับการเรียน เพื่อซิงก์เนื้อหาเข้าวิชาของคุณ</Text>
       <Pressable style={styles.primary} onPress={connect}><Ionicons name="link-outline" size={18} color="#fff" /><Text style={styles.primaryText}>เชื่อม Google Classroom</Text></Pressable>
     </Card> : <>
       <Card style={styles.connected}>
@@ -183,7 +181,6 @@ export default function ClassroomScreen() {
         {syncing ? <ActivityIndicator color="#fff" /> : <Ionicons name="cloud-download-outline" size={19} color="#fff" />}
         <Text style={styles.primaryText}>{syncing ? "กำลังนำเข้าเนื้อหา..." : "Sync เนื้อหาเข้า Knowledge Base"}</Text>
       </Pressable>
-      <Card style={styles.note}><Ionicons name="sparkles-outline" size={19} color="#a78bfa" /><Text style={[font.caption,{flex:1}]}>หลัง Sync แล้ว สไลด์/เอกสารจะอยู่ในวิชาที่จับคู่ และ AI Tutor, Quiz, Review และ Knowledge Graph จะใช้ข้อมูลเหล่านั้นต่อได้</Text></Card>
     </>}
   </ScrollView>;
 }

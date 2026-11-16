@@ -15,7 +15,7 @@ export default function SubjectsScreen(){
   // จัดกลุ่มตามเทอม — เรียงตามปีการศึกษา -> ภาคเรียน (กลุ่มที่เข้ามาทีหลัง = เทอมถัดไป)
   const groups=(()=>{const m=new Map<string,{label:string,yo:number,so:number,list:any[]}>();for(const s of filtered){const sem=s.semester,ay=sem?.academicYear,k=String(sem?.id||"none");let g=m.get(k);if(!g){g={label:String(sem?.name||"วิชา"),yo:Number(ay?.order||0),so:Number(sem?.order||0),list:[]};m.set(k,g)}g.list.push(s)}return[...m.values()].sort((a,b)=>a.yo-b.yo||a.so-b.so)})();
  return <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-  <View style={styles.header}><View><Text style={styles.mini}>MY LEARNING</Text><Text style={font.h1}>วิชาของฉัน</Text><Text style={font.body}>ทุกวิชาอยู่ใน Knowledge Base เดียว</Text></View><IconTile icon="library" color={colors.accent} size={50}/></View>
+  <View style={styles.header}><View><Text style={styles.mini}>MY LEARNING</Text><Text style={font.h1}>วิชาของฉัน</Text></View><IconTile icon="library" color={colors.accent} size={50}/></View>
    <Card style={styles.search}><Ionicons name="search" size={18} color={colors.textMuted}/><TextInput value={q} onChangeText={setQ} placeholder="ค้นหาวิชา..." placeholderTextColor={colors.textMuted} style={styles.searchInput}/>{q.length>0?<Pressable onPress={()=>setQ("")} hitSlop={8}><Ionicons name="close-circle" size={17} color={colors.textMuted}/></Pressable>:null}</Card>
    <SectionHeader title="กำลังเรียน" action={q.trim()?`พบ ${filtered.length} จาก ${subjects.length}`:subjects.length+" วิชา"}/>
    {groups.map((g,gi)=><View key={"g"+gi}>
