@@ -189,9 +189,9 @@ export async function tutorProblemVariant(subjectId: string, format: string, bas
   });
 }
 
-/** ส่งคำตอบโจทย์ไปให้อาจารย์ตรวจ */
-export async function tutorCheckAnswer(subjectId: string, problem: string, answer: string, deliverables: string[] = [], done: string[] = []) {
-  return api<any>("/studypath/tutor/diagnose/answer", { method: "POST", body: JSON.stringify({ subjectId, problem, answer, deliverables, done }) });
+/** ส่งคำตอบโจทย์ไปให้อาจารย์ตรวจ (format = แนวคำตอบที่ใช้ตอบ เช่น "pseudocode") */
+export async function tutorCheckAnswer(subjectId: string, problem: string, answer: string, deliverables: string[] = [], done: string[] = [], format?: string) {
+  return api<any>("/studypath/tutor/diagnose/answer", { method: "POST", body: JSON.stringify({ subjectId, problem, answer, deliverables, done, format: format || "" }) });
 }
 
 /** วิเคราะห์โจทย์ (Input/Output/Process/ตัวแปร/ค่าเริ่มต้น/รหัสเทียม) — ผู้เรียนกดดูเอง แยกจากตัวโจทย์ */

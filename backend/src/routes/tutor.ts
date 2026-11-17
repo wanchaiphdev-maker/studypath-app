@@ -1169,7 +1169,7 @@ function stripCodeKeepThai(src: string): string {
 router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
   try {
     const subjectId = String(req.body?.subjectId || "").trim();
-    const wanted = pickFormat(req.body?.format);
+    let wanted = pickFormat(req.body?.format);
     let format = wanted;
     const skip = Array.isArray(req.body?.seen) ? req.body.seen.map(String) : [];
     // หัวข้อที่ผู้ใช้เลือกตอนกด "ดึงโจทย์" — กรองเฉพาะโจทย์ที่ตรงหัวข้อ
@@ -1178,6 +1178,13 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       : [];
     const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id }, include: { materials: true } });
     if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
+
+    // hasCode = ดูจากเนื้อหาไฟล์จริงของวิชา — วิชาที่ไม่มีเขียนโค้ดจะไม่ถูกยกฟอร์แมต "โค้ด" มาให้เลือก
+    // และใช้คัดโจทย์ใน "โหมดฝึกทำรหัสเทียม" ให้มีเฉพาะข้อที่ตอบเป็นรหัสเทียมได้จริง
+    const hasCode = analyzeSubjectSignals(subject.materials || []).code >= EXTRA_MIN.code;
+    // กันฝั่งเซิร์ฟเวอร์ด้วย (แถวแนวในแอปกรองไปแล้ว): วิชาที่ไฟล์ไม่มีสัญญาณโค้ดจริง
+    // ไม่มีแนวรหัสเทียมให้ฝึก — ปล่อยให้ระบบเลือกฟอร์แมตเองแทนที่จะค้างเป็นรหัสเทียม
+    if (wanted === "pseudocode" && !hasCode) { wanted = ""; format = ""; }
 
     // แหล่งที่มา: ไฟล์ในวิชา (ค่าเริ่มต้น) หรืองานที่นักเรียนเคยส่งไป
     if (String(req.body?.source || "") === "submission") {
@@ -1207,7 +1214,15 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
           hint: 'ระบบอ่านได้จากงานที่ส่งใน Google Classroom เท่านั้น — กลับไปหน้า Classroom แล้วกด "ซิงก์" เพื่อนำเข้างานที่ส่ง',
         });
       }
-      const pool = filterByTopics(extractProblems(items as any[], 8), onlyTopics);
+      // โหมดฝึกทำรหัสเทียม = เฉพาะโจทย์ที่ตอบเป็นรหัสเทียมได้จริง — ข้อโค้ดจริงให้ข้าม
+      const poolBase = filterByTopics(extractProblems(items as any[], 8), onlyTopics);
+      const pool = wanted === "pseudocode" ? poolBase.filter((p: any) => !isRealCodeProblem(p.text, hasCode)) : poolBase;
+      if (wanted === "pseudocode" && !pool.length) {
+        return res.status(404).json({
+          error: "ยังไม่พบโจทย์ที่เหมาะกับรหัสเทียมในงานที่ส่งไป",
+          hint: 'ยังไม่มีข้อที่ตอบเป็นรหัสเทียมได้ — กลับไปเมนูข้อสอบแล้วเลือกแนว "ข้อสอบโค้ด" แทน',
+        });
+      }
       const usable = pool.length ? pool : items.slice(0, 6);
       const picked = pickRandom(usable) || usable[0];
       const rendered = await renderProblem(subject, picked.text, wanted, skip);
@@ -1219,8 +1234,17 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       });
     }
 
-    const all = filterByTopics(extractProblems(subject.materials), onlyTopics);
+    const allBase = filterByTopics(extractProblems(subject.materials), onlyTopics);
+    // โหมดฝึกทำรหัสเทียม = เฉพาะโจทย์ที่ตอบเป็นรหัสเทียมได้จริง — ข้อโค้ดจริงให้ข้าม
+    // (คงกติกา "โค้ดจริง = แนวโค้ด" หน้ารหัสเทียมจะไม่มีวันเห็นข้อโค้ดจริงปน)
+    const all = wanted === "pseudocode" ? allBase.filter((p) => !isRealCodeProblem(p.text, hasCode)) : allBase;
     if (!all.length) {
+      if (wanted === "pseudocode" && allBase.length) {
+        return res.status(404).json({
+          error: "ยังไม่พบโจทย์ที่เหมาะกับรหัสเทียมในวิชานี้",
+          hint: 'ไฟล์ของวิชานี้เป็นโค้ดจริงทั้งหมด — กลับไปเมนูข้อสอบแล้วเลือกแนว "ข้อสอบโค้ด" แทน',
+        });
+      }
       return res.status(404).json({
         error: "ยังไม่พบโจทย์ในไฟล์ของวิชานี้",
         hint: "ต้องมีข้อความอย่างน้อยในไฟล์ เช่น ใบงาน แบบฝึกหัด หรือประกาศใน Classroom — ลองซิงก์ใหม่",
@@ -1236,8 +1260,7 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     const chosen = sameAsCurrent || pickRandom(fresh.length ? fresh : all)!;
 
     // รูปแบบที่ใช้ได้จริงกับโจทย์นี้ — คำนวณจากโจทย์ดิบ แล้วเลือกอันที่ตรงที่สุดให้เอง
-    // hasCode = ดูจากเนื้อหาไฟล์จริงของวิชา วิชาที่ไม่มีเขียนโค้ดจะไม่ถูกยกฟอร์แมต "โค้ด" มาให้เลือก
-    const hasCode = analyzeSubjectSignals(subject.materials || []).code >= EXTRA_MIN.code;
+    // (hasCode คำนวณไว้ด้านบนแล้ว — โหมดรหัสเทียมคัดข้อโค้ดจริงทิ้งไปก่อนถึงตรงนี้)
     const pickedF = pickFormats(subject.name, chosen.text, hasCode);
     let formats = pickedF.list;
     if (wanted && !formats.some((f) => f.format === wanted)) {
@@ -1450,6 +1473,8 @@ router.post("/diagnose/answer", requireAuth(), async (req: any, res) => {
     const answer = String(req.body?.answer || "").slice(0, 3000);
     const deliverables: string[] = Array.isArray(req.body?.deliverables) ? req.body.deliverables.map(String).slice(0, 8) : [];
     const done: string[] = Array.isArray(req.body?.done) ? req.body.done.map(String) : [];
+    // แนวคำตอบที่ผู้เรียนใช้ตอบ — รหัสเทียมต้องตรวจคนละแบบกับโค้ดจริง
+    const answerFmt = String(req.body?.format || "");
     if (!subjectId || !problem) return res.status(400).json({ error: "ข้อมูลไม่ครบ" });
 
     let feedback: any = {
@@ -1466,11 +1491,15 @@ router.post("/diagnose/answer", requireAuth(), async (req: any, res) => {
               role: "system",
               content:
                 "คุณคืออาจารย์ที่ตรวจงานนักเรียน ตอบสั้นกระชับภาษาไทย ห้ามพูดเกริ่นนำ " +
-                "ถ้าเป็นโค้ด ให้เทียบกับเฉลยเชิงตรรกะ ไม่ต้องเทียบรูปแบบการเขียน " +
+                (answerFmt === "pseudocode"
+                  ? "คำตอบเป็นรหัสเทียม (pseudocode) — ตรวจลำดับขั้นตอนและตรรกะ (การรับข้อมูล/ประมวลผล/แสดงผล, จุดเริ่มต้น-จุดจบ, IF/ELSE, WHILE/FOR, ตัวแปร) เทียบกับวิธีที่ถูกต้อง ไม่ต้องติดไวยากรณ์ของภาษาโปรแกรมจริง "
+                  : "ถ้าเป็นโค้ด ให้เทียบกับเฉลยเชิงตรรกะ ไม่ต้องเทียบรูปแบบการเขียน ") +
                 (deliverables.length
                   ? "โจทย์นี้สั่งให้ส่ง " + deliverables.length + " ส่วน ต้องครบทุกส่วนถึงจะถือว่าถูก: " + deliverables.join(" / ") + "\n"
                   : "") +
-                "ตอบเป็น JSON: {\"correct\":true/false,\"score\":0-100,\"points\":[\"...คะแนนที่ถูก...\"],\"fix\":\"จุดที่ต้องแก้\"}",
+                "สรุปทุกครั้งให้ครบทั้ง 4 อย่าง: correct = ถูก/ผิด, score = ทำได้ดีแค่ไหน (0-100), " +
+                "points = จุดที่ทำได้ดี, fix = ผิดตรงไหนและควรแก้ไขอย่างไร (รวมวิธีทำที่ดีที่สุดสำหรับข้อนี้)\n" +
+                "ตอบเป็น JSON: {\"correct\":true/false,\"score\":0-100,\"points\":[\"...จุดที่ทำได้ดี...\"],\"fix\":\"ผิดตรงไหน + ควรทำอย่างไร\"}",
             },
             { role: "user", content: "โจทย์:\n" + problem + "\n\nคำตอบนักเรียน:\n" + answer },
           ],

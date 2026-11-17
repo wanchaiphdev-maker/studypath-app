@@ -679,6 +679,14 @@ export default function Tutor() {
   const fmt: Fmt = ((problem?.format as Fmt) || "text") as Fmt;
   const fmtMeta = FORMATS.find((f) => f.k === fmt) || FORMATS[0];
   /**
+   * โหมดฝึกทำรหัสเทียม — เลือก "รหัสเทียม" จาก popup ข้อสอบแล้ว:
+   * หน้ามีแค่ โจทย์ (ดึงจากไฟล์จริง) + ช่องเขียนมีเลขบรรทัด + ตรวจคำตอบ + ข้อถัดไป (ตอนถูก)
+   * ซ่อนแถบเลือกแนว/ปุ่มสุ่ม/โจทย์ซ้อน/ถาม AI/วิเคราะห์ — เพราะผลวิเคราะห์มีส่วน
+   * "รหัสเทียม" ที่เป็นเฉลยข้อนั้น ถ้าเปิดดูได้ตอนฝึก = เห็นเฉลยตั้งแต่ก่อนทำ
+   */
+  const practice = pullStyle === "pseudocode";
+  const practiceProb = practice && !!problem && fmt === "pseudocode";
+  /**
    * ใบ้แบบ "insert เป็นโครงโค้ด" — เฉลยถูกสอดเข้าไปในช่องโค้ด (myAnswer) จริง
    * ทีละบรรทัด ผู้เรียนแก้/พิมพ์ต่อเองได้ทุกบรรทัด
    * AI ช่วยแค่ปลดล็อกทีละบรรทัดตอนติด ไม่ใช่เททั้งก้อนในครั้งเดียว
@@ -889,7 +897,7 @@ export default function Tutor() {
     if (!myAnswer.trim()) { Alert2("ยังไม่ได้เขียนคำตอบ", "พิมพ์คำตอบก่อนแล้วกดตรวจ"); return; }
     setMarkBusy(true);
     try {
-      const r = await tutorCheckAnswer(subjectId, problem.problem, myAnswer, problem.deliverables || [], doneItems);
+      const r = await tutorCheckAnswer(subjectId, problem.problem, myAnswer, problem.deliverables || [], doneItems, fmt);
       setMark(r.feedback);
       if (r.missing?.length) setMissing(r.missing);
       if (typeof r.feedback === "object" && r.feedback.fix) speak(spokenText(r.feedback.fix));
@@ -1367,8 +1375,8 @@ export default function Tutor() {
       {tab === "diag" ? <>
         {/* ===== โหมดย่อย "ดึงโจทย์" — หน้าข้อสอบใหญ่เหลือแค่อันนี้ล้วน ===== */}
         {diagStage === "pull" ? <>
-        {/* ===== ดึงโจทย์จริงจากในวิชา ===== */}
-        <Card style={styles.panel}>
+        {/* ===== ดึงโจทย์จริงจากในวิชา — โหมดฝึกทำรหัสเทียมซ่อนหน้านี้ทั้งหมด ===== */}
+        {!practice ? <Card style={styles.panel}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Ionicons name="document-attach-outline" size={19} color="#4ade80" />
             <Text style={font.h2}>โจทย์จากในวิชา</Text>
@@ -1397,11 +1405,22 @@ export default function Tutor() {
           <Button onPress={() => setPickStage((p) => !p)} loading={probBusy} icon="shuffle-outline">
             {problem ? "สุ่มโจทย์ใหม่" : "ดึงโจทย์จากวิชานี้"}
           </Button>
-        </Card>
+        </Card> : null}
+
+        {/* โหมดฝึกทำรหัสเทียม — ยังไม่มีข้อของแนวรหัสเทียม (หรือมีค้างจากแนวอื่น) = เริ่มที่ข้อแรก */}
+        {practice && !practiceProb ? <Card style={styles.panel}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Ionicons name="terminal-outline" size={19} color="#818cf8" />
+            <Text style={font.h2}>ฝึกทำรหัสเทียม</Text>
+          </View>
+          <Button onPress={() => loadProblem()} loading={probBusy} icon="play-outline">
+            {problem ? "สุ่มข้อใหม่ในแนวรหัสเทียม" : "เริ่มฝึกทำข้อแรก"}
+          </Button>
+        </Card> : null}
 
         {/* ===== หน้าเลือกก่อนดึง — กด "ดึงโจทย์" แล้วขึ้นตรงนี้:
              เลือกว่าจะเอาโจทย์ "แนวไหนบ้าง" + "หัวข้อไหนบ้าง" ค่อยกดดึงจริง ===== */}
-        {pickStage ? <Card style={styles.panel}>
+        {!practice && pickStage ? <Card style={styles.panel}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Ionicons name="options-outline" size={19} color="#a78bfa" />
             <Text style={font.h2}>เลือกโจทย์ที่ต้องการ</Text>
@@ -1460,7 +1479,7 @@ export default function Tutor() {
           <Text style={font.caption}>{probErr}</Text>
         </Card> : null}
 
-        {problem ? <Card style={styles.panel}>
+        {problem && (!practice || fmt === "pseudocode") ? <Card style={styles.panel}>
           <View style={styles.probHead}>
             <Pill text={fmtMeta.label} color="#4ade80" />
             <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
@@ -1482,7 +1501,9 @@ export default function Tutor() {
           <View style={styles.probBox}><RichText text={problem.problem} tone="dark" /></View>
 
           {/* วิเคราะห์โจทย์ — แยกจากตัวโจทย์ (โจทย์ไม่มีส่วนวิเคราะห์ปน)
-              ผู้เรียนกดดูเองตอนอยากเห็นแนวทาง Input/Output/Process/รหัสเทียม */}
+              ผู้เรียนกดดูเองตอนอยากเห็นแนวทาง Input/Output/Process/รหัสเทียม
+              โหมดฝึกทำรหัสเทียมซ่อนไว้ทั้งหมด — ผลวิเคราะห์มีส่วน "รหัสเทียม" ที่เป็นเฉลยข้อนั้น */}
+          {!practice ? <>
           <Pressable
             style={[styles.ghostBtn, { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6 }, analysisBusy && { opacity: 0.55 }]}
             disabled={analysisBusy}
@@ -1520,7 +1541,8 @@ export default function Tutor() {
                 </View>
               ) : null}
             </View>
-          ) : null}
+          ) : null}</>
+          : null}
 
           {/* เจ้าหน้าที่เอาแถว "จาก: <ชื่อไฟล์>" ออกแล้ว — ส่วนใหญ่ไม่มีลิงก์จริงอยู่แล้ว
               กดไม่ได้ แลบังความสนใจจากตัวโจทย์ */}
@@ -1565,6 +1587,13 @@ export default function Tutor() {
                 </View>
               </View> : null}
             </View>
+            : fmt === "pseudocode" ? <View>
+              {/* รหัสเทียม — ช่องเขียนมีเลขบรรทัด เหมาะกับการเรียงขั้นตอน (ใบ้/เฉลยไม่มีในแนวนี้) */}
+              <CodeInput value={myAnswer} onChange={setMyAnswer} placeholder="พิมพ์รหัสเทียมของคุณทีละบรรทัด..." />
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                <Pressable style={styles.ghostBtn} onPress={() => setMyAnswer("")}><Text style={styles.ghostText}>ล้าง</Text></Pressable>
+              </View>
+            </View>
             : <TextInput
               value={myAnswer} onChangeText={setMyAnswer} multiline
               placeholder="พิมพ์คำตอบของคุณ..."
@@ -1574,8 +1603,15 @@ export default function Tutor() {
 
           <View style={{ gap: 8, marginTop: 14 }}>
             <Button onPress={checkMyAnswer} loading={markBusy} icon="checkmark-done-outline">ตรวจคำตอบ</Button>
-            <Button onPress={loadVariant} loading={probBusy} variant="secondary" icon="repeat-outline">ขอโจทย์ซ้อน</Button>
-            <Button onPress={() => { loadProblem(); setTab("chat"); }} variant="secondary" icon="chatbubbles-outline">ถามอาจารย์ AI ช่วย</Button>
+            {/* โหมดฝึกทำรหัสเทียม — ตรวจ "ถูก" แล้วค่อยไปข้อถัดไป (สุ่มข้อใหม่จากไฟล์ ไม่ซ้ำเดิม)
+                 ส่วนโจทย์ซ้อน/ถาม AI ถูกซ่อนตามที่ผู้ใช้สั่งให้หน้านี้มีแค่การฝึกล้วน */}
+            {practice && typeof mark === "object" && mark?.correct === true
+              ? <Button onPress={() => loadProblem()} loading={probBusy} icon="arrow-forward-outline">ข้อถัดไป</Button>
+              : null}
+            {!practice ? <>
+              <Button onPress={loadVariant} loading={probBusy} variant="secondary" icon="repeat-outline">ขอโจทย์ซ้อน</Button>
+              <Button onPress={() => { loadProblem(); setTab("chat"); }} variant="secondary" icon="chatbubbles-outline">ถามอาจารย์ AI ช่วย</Button>
+            </> : null}
           </View>
 
           {mark ? <View style={styles.markBox}>
