@@ -754,6 +754,11 @@ async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat
   // ไม่ได้เลือกเอง -> ใช้รูปแบบที่ตรงกับโจทย์ที่สุด
   if (!wanted) format = picked.recommended;
   else if (!formats.some((f) => f.format === format)) format = formats[0]?.format || "text";
+  // โจทย์ต้นทางเป็นโค้ดจริง -> บังคับแนว "โค้ด" เสมอ แม้จะเลือกแนวอื่นไว้ (รหัสเทียม/ตาราง/ผังภาพ)
+  if (isRealCodeProblem(rawText, hasCode)) {
+    format = "code";
+    if (!formats.some((f) => f.format === "code")) formats = [...formats, { format: "code", why: "โจทย์ต้นทางเป็นโค้ดจริง" }];
+  }
 
   let rendered = rawText;
   let options: any[] = [];
@@ -1240,6 +1245,15 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     }
     if (!wanted) format = pickedF.recommended;
     else if (!formats.some((f) => f.format === format)) format = formats[0]?.format || "text";
+    // โจทย์ต้นทางเป็นโค้ดจริง (เช่น scanf/printf/for ในสไลด์) -> บังคับแนว "โค้ด" เสมอ
+    // แม้ผู้ใช้จะเลือกแนวอื่นไว้ (รหัสเทียม/สุ่มทุกอย่าง/ตาราง) เพราะนี่คือโค้ด ไม่ใช่รหัสเทียม
+    // วิชาที่ไม่มีหลักฐานโค้ดในไฟล์ (hasCode=false) จะไม่โดนบังคับ กันวิชาภาษาเป็นโค้ด
+    if (isRealCodeProblem(chosen.text, hasCode)) {
+      format = "code";
+      if (!formats.some((f) => f.format === "code")) {
+        formats = [...formats, { format: "code", why: "โจทย์ต้นทางเป็นโค้ดจริง" }];
+      }
+    }
     // ให้ AI จัดรูปแบบโจทย์ให้อ่านง่าย แต่ห้ามเปลี่ยนเนื้อหา
     let rendered = chosen.text;
     let options: { text: string; correct: boolean; explain?: string }[] = [];
@@ -1834,6 +1848,22 @@ export function analyzeSubjectSignals(materials: { title?: string | null; textCo
     }
   }
   return sig;
+}
+
+/**
+ * โจทย์ต้นทางเป็น "โค้ดจริง" หรือไม่ (มีซินแท็กซ์ภาษาโปรแกรมจริง เช่น scanf/printf/for{}
+ * แบบในสไลด์อาจารย์) — ถ้าใช่ต้องบังคับแนว "โค้ด" เสมอ แม้ผู้ใช้จะเลือกแนวอื่นไว้
+ * (เช่น กด "รหัสเทียม" แล้วโจทย์จริงเป็นโค้ด C ล้วน -> ระบบสลับเป็นแนวโค้ดให้)
+ *
+ * hasCode = ต้องมีหลักฐานโค้ดใน "ไฟล์ของวิชา" ด้วย (analyzeSubjectSignals >= EXTRA_MIN.code)
+ * กันวิชาสายภาษา/ทั่วไปที่บังเอิญมีคำว่า "โปรแกรม" ในประโยคถูกยกฟอร์แมตโค้ดมาให้
+ */
+function isRealCodeProblem(rawText: string, hasCode: boolean): boolean {
+  if (!hasCode) return false;
+  const p = SIGNAL_PATTERNS.find((x) => x.k === "code");
+  if (!p) return false;
+  // clone แบบไม่มี flag g กันค่า lastIndex ค้างข้ามรอบ (test() จะไม่สลับ true/false เอง)
+  return new RegExp(p.re.source, p.re.flags.replace("g", "")).test(String(rawText || ""));
 }
 
 /**
