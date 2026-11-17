@@ -176,9 +176,21 @@ export async function tutorEvaluate(subjectId: string, questions: any[], answers
   return api<any>("/studypath/tutor/diagnose/evaluate", { method: "POST", body: JSON.stringify({ subjectId, questions, answers, quizId }) });
 }
 
-/** ดึงโจทย์จริงจากในวิชา พร้อมจัดรูปแบบตามที่เลือก (topics = หัวข้อที่ผู้ใช้เลือกตอนกดดึง) */
-export async function tutorProblem(subjectId: string, format: string, seen: string[] = [], src?: string, topics?: string[]) {
-  return api<any>("/studypath/tutor/diagnose/problem", { method: "POST", body: JSON.stringify({ subjectId, format, seen, source: src || "", topics: topics || [] }) });
+/** ดึงโจทย์จริงจากในวิชา พร้อมจัดรูปแบบตามที่เลือก (topics = หัวข้อที่ผู้ใช้เลือกตอนกดดึง)
+ *  pick.materialId = ดึงจากไฟล์นั้นไฟล์เดียว, pick.level = กรองระดับความยาก (ไม่เลือก = เรียงง่ายก่อน) */
+export async function tutorProblem(subjectId: string, format: string, seen: string[] = [], src?: string, topics?: string[], pick?: { materialId?: string; level?: string }) {
+  return api<any>("/studypath/tutor/diagnose/problem", {
+    method: "POST",
+    body: JSON.stringify({
+      subjectId, format, seen, source: src || "", topics: topics || [],
+      materialId: pick?.materialId || "", level: pick?.level || "",
+    }),
+  });
+}
+
+/** รายชื่อไฟล์ในวิชา + จำนวนโจทย์ที่ดึงได้ + ระดับยากง่าย (เรียงตามลำดับใน Classroom) */
+export async function tutorFiles(subjectId: string) {
+  return api<any>("/studypath/tutor/diagnose/files?subjectId=" + encodeURIComponent(subjectId), { method: "GET" });
 }
 
 /** โจทย์ซ้อน: สร้างโจทย์ใหม่จากไฟล์เดียวกัน ให้ลองทำเอง ไม่มีเฉลย */

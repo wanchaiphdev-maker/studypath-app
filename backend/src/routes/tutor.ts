@@ -5,6 +5,7 @@ import path from "path";
 import { prisma, requireAuth } from "../auth";
 import { tidyProblem } from "../lib/tidy-problem";
 import { SUBJECT_SUFFIXES, detectSubjectTag, scanTopics, gateBySubject, buildTopicPrompt, mergeTopics, topicsFromTitles, looksLikeAnnouncement, stripProgrammingTopics, TOPIC_CATALOG } from "./topics";
+import { sortByTitle } from "../lib/natural-sort";
 
 const router = Router();
 
@@ -769,8 +770,9 @@ async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat
   // ไม่ได้เลือกเอง -> ใช้รูปแบบที่ตรงกับโจทย์ที่สุด
   if (!wanted) format = picked.recommended;
   else if (!formats.some((f) => f.format === format)) format = formats[0]?.format || "text";
-  // โจทย์ต้นทางเป็นโค้ดจริง -> บังคับแนว "โค้ด" เสมอ แม้จะเลือกแนวอื่นไว้ (รหัสเทียม/ตาราง/ผังภาพ)
-  if (isRealCodeProblem(rawText, hasCode)) {
+  // โจทย์ต้นทางเป็นโค้ดจริง -> บังคับแนว "โค้ด" เสมอ แม้จะเลือกแนวอื่นไว้ (ตาราง/ผังภาพ)
+  // เว้นแต่ผู้ใช้เลือก "รหัสเทียม" ไว้: ให้ AI แต่งข้อโค้ดเป็นโจทย์รหัสเทียมแทน (บังคับแล้วหน้าฝึกจะไม่ขึ้น)
+  if (wanted !== "pseudocode" && isRealCodeProblem(rawText, hasCode)) {
     format = "code";
     if (!formats.some((f) => f.format === "code")) formats = [...formats, { format: "code", why: "โจทย์ต้นทางเป็นโค้ดจริง" }];
   }
@@ -1034,7 +1036,7 @@ function findSectionTitleBefore(full: string, pos: number): string {
   return "";
 }
 
-function extractProblems(materials: any[], limit = 8) {
+function extractProblems(materials: any[], limit = 8, perFileCap = 2) {
   const scored: { text: string; source: any; score: number }[] = [];
 
   for (const m of materials) {
@@ -1103,7 +1105,7 @@ function extractProblems(materials: any[], limit = 8) {
   return scored.filter((s) => {
     const k = s.source.materialId;
     perFile[k] = (perFile[k] || 0) + 1;
-    return perFile[k] <= 2;
+    return perFile[k] <= perFileCap;
   }).slice(0, limit);
 }
 
@@ -1187,6 +1189,61 @@ function stripCodeKeepThai(src: string): string {
   });
 }
 
+/* ------------------------------------------------------------------ */
+/*  ระดับความยาก — อิง "ลำดับไฟล์ใน Classroom" (เรียงตามบท/สัปดาห์)        */
+/*  ไฟล์ต้น ๆ (บทแรก/สัปดาห์แรก) = พื้นฐาน ไฟล์ท้าย = ยาก               */
+/*  การดึงโจทย์เรียงง่ายก่อน = เรียงตามลำดับไฟล์นี้จากบนลงล่างนั่นเอง   */
+/* ------------------------------------------------------------------ */
+const LEVEL_TH: Record<string, string> = { easy: "ง่าย", medium: "กลาง", hard: "ยาก" };
+
+function fileLevel(index: number, total: number): "easy" | "medium" | "hard" {
+  const r = index / Math.max(1, total);
+  return r < 1 / 3 ? "easy" : r < 2 / 3 ? "medium" : "hard";
+}
+
+/**
+ * ไม่เจอข้อระดับที่ผู้เรียนเลือกในไฟล์ที่เลือก (โจทย์ต่อไฟล์มีน้อย เจอบ่อย)
+ * = "ทำข้อที่มีต่อ แต่ให้ AI ต่อยอดให้ยาก/ตรงระดับขึ้น" ตามกติกาข้อนี้
+ */
+function levelEscalationRule(level: string): string {
+  if (!LEVEL_TH[level]) return "";
+  return (
+    "ปรับระดับความยาก: ผู้เรียนเลือกระดับ" + LEVEL_TH[level] +
+    "แต่ไฟล์ต้นทางไม่มีข้อระดับนี้ ให้ต่อยอดโจทย์ข้อนี้โดย " +
+    (level === "hard"
+      ? "เพิ่มเงื่อนไขซ้อน กรณีพิเศษ หรือจำนวนขั้นตอนให้คิดหลายขั้น ให้ซับซ้อนและยากขึ้น"
+      : level === "medium"
+        ? "ปรับให้มีเงื่อนไขพอประมาณ ไม่ง่ายไม่ยากเกินไป"
+        : "ตัดเหลือเงื่อนไขหลัก ทำให้กระชับและคิดทีละขั้น ง่ายขึ้น") +
+    " คงหัวข้อและแนวคิดเดิมของโจทย์ไว้ ยังคงห้ามใส่โค้ดและเฉลยในตัวโจทย์เหมือนเดิม\n"
+  );
+}
+
+/** รายชื่อไฟล์ในวิชา (เรียงตามลำดับใน Classroom) + จำนวนโจทย์ที่ดึงได้ + ระดับยากง่าย */
+router.get("/diagnose/files", requireAuth(), async (req: any, res) => {
+  try {
+    const subjectId = String(req.query?.subjectId || "").trim();
+    const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id }, include: { materials: true } });
+    if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
+    const sorted = sortByTitle(subject.materials || []);
+    // นับโจทย์แบบเพดาน 10 ข้อ/ไฟล์ — ตรงกับเพดานตอนดึงจากไฟล์ที่เลือก (จำนวนตรงกับที่เห็นบนจอ)
+    // (extractProblems ปกติจำกัด 2 ข้อ/ไฟล์สำหรับการสุ่มทั่วไป)
+    const raw = extractProblems(sorted, 100000, 10);
+    const counts: Record<string, number> = {};
+    for (const p of raw) counts[p.source.materialId] = (counts[p.source.materialId] || 0) + 1;
+    res.json({
+      files: sorted.map((m: any, i: number) => ({
+        id: m.id,
+        title: m.title,
+        count: counts[m.id] || 0,
+        level: fileLevel(i, sorted.length),
+      })),
+    });
+  } catch (error) {
+    res.status(400).json({ error: String(error instanceof Error ? error.message : error) });
+  }
+});
+
 router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
   try {
     const subjectId = String(req.body?.subjectId || "").trim();
@@ -1197,6 +1254,11 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     const onlyTopics: string[] = Array.isArray(req.body?.topics)
       ? req.body.topics.map((t: any) => String(t || "").trim()).filter(Boolean)
       : [];
+    // เลือกไฟล์ต้นทาง (1 ไฟล์) + ระดับความยากจากหน้าเลือก — มีผลทุกแนวข้อสอบ
+    const onlyMaterial = String(req.body?.materialId || "").trim();
+    const requestedLevel: string = ["easy", "medium", "hard"].includes(req.body?.level)
+      ? String(req.body.level)
+      : "";
     const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id }, include: { materials: true } });
     if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
 
@@ -1235,15 +1297,8 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
           hint: 'ระบบอ่านได้จากงานที่ส่งใน Google Classroom เท่านั้น — กลับไปหน้า Classroom แล้วกด "ซิงก์" เพื่อนำเข้างานที่ส่ง',
         });
       }
-      // โหมดฝึกทำรหัสเทียม = เฉพาะโจทย์ที่ตอบเป็นรหัสเทียมได้จริง — ข้อโค้ดจริงให้ข้าม
-      const poolBase = filterByTopics(extractProblems(items as any[], 8), onlyTopics);
-      const pool = wanted === "pseudocode" ? poolBase.filter((p: any) => !isRealCodeProblem(p.text, hasCode)) : poolBase;
-      if (wanted === "pseudocode" && !pool.length) {
-        return res.status(404).json({
-          error: "ยังไม่พบโจทย์ที่เหมาะกับรหัสเทียมในงานที่ส่งไป",
-          hint: 'ยังไม่มีข้อที่ตอบเป็นรหัสเทียมได้ — กลับไปเมนูข้อสอบแล้วเลือกแนว "ข้อสอบโค้ด" แทน',
-        });
-      }
+      // ข้อโค้ดจริงไม่ถูกกรองทิ้งแล้ว — AI จะแต่งข้อโค้ดให้เป็นคำถามได้ทุกแนว (รวมโหมดฝึก)
+      const pool = filterByTopics(extractProblems(items as any[], 8), onlyTopics);
       const usable = pool.length ? pool : items.slice(0, 6);
       const picked = pickRandom(usable) || usable[0];
       const rendered = await renderProblem(subject, picked.text, wanted, skip);
@@ -1255,30 +1310,64 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       });
     }
 
-    const allBase = filterByTopics(extractProblems(subject.materials), onlyTopics);
-    // โหมดฝึกทำรหัสเทียม = เฉพาะโจทย์ที่ตอบเป็นรหัสเทียมได้จริง — ข้อโค้ดจริงให้ข้าม
-    // (คงกติกา "โค้ดจริง = แนวโค้ด" หน้ารหัสเทียมจะไม่มีวันเห็นข้อโค้ดจริงปน)
-    const all = wanted === "pseudocode" ? allBase.filter((p) => !isRealCodeProblem(p.text, hasCode)) : allBase;
+    // ข้อโค้ดจริงไม่ถูกกรองทิ้งแล้ว — เอาข้อโค้ดมาให้ AI แต่งเป็นโจทย์ตามแนวที่เลือกเองได้ (รวมโหมดฝึก)
+    // ระดับความยากอิง "ลำดับไฟล์ใน Classroom" (เรียงตามบท/สัปดาห์) — ไฟล์ต้น = ง่าย ไฟล์ท้าย = ยาก
+    const sortedMats = sortByTitle(subject.materials || []);
+    const matOrder = new Map<string, number>();
+    sortedMats.forEach((m: any, i: number) => matOrder.set(m.id, i));
+    const matTotal = Math.max(1, sortedMats.length);
+    const orderIdx = (p: any) => matOrder.get(p?.source?.materialId) ?? 1e9;
+
+    // แหล่งโจทย์: ไฟล์ที่เลือก / ไฟล์ระดับที่เลือก / ทั้งวิชา
+    // (ดึงเยอะพอให้เรียงง่ายก่อนได้จริง — เดิมจำกัด 8 ข้อจากสูงสุดทำให้ไฟล์ที่เลือก/ระดับที่ขอไม่อยู่ในกองเลย)
+    let poolMaterials: any[] = subject.materials || [];
+    if (onlyMaterial) {
+      poolMaterials = poolMaterials.filter((m: any) => m.id === onlyMaterial);
+    } else if (requestedLevel) {
+      const lv = sortedMats.filter((m: any, i: number) => fileLevel(i, sortedMats.length) === requestedLevel);
+      if (lv.length) poolMaterials = lv;
+    }
+    let levelFallback = false;
+    let all = filterByTopics(extractProblems(poolMaterials, 60, onlyMaterial ? 10 : 2), onlyTopics);
+    // เลือกไฟล์ไว้แต่ไฟล์นั้นดึงโจทย์ไม่ได้ -> บอกตรง ๆ ให้เลือกไฟล์อื่น
+    if (onlyMaterial && !all.length) {
+      return res.status(404).json({
+        error: "ไฟล์ที่เลือกยังไม่มีโจทย์ที่ดึงได้",
+        hint: "ลองเลือกไฟล์อื่นในรายชื่อ หรือกดซิงก์ Classroom เพื่ออัปเดตไฟล์",
+      });
+    }
+    // ระดับที่เลือกไม่มีโจทย์เลย -> ใช้ทั้งวิชา แล้วให้ AI ต่อยอดข้อที่มีให้ตรงระดับแทน (levelFallback)
+    if (!all.length && requestedLevel && !onlyMaterial) {
+      all = filterByTopics(extractProblems(subject.materials, 60, 2), onlyTopics);
+      levelFallback = !!all.length;
+    }
     if (!all.length) {
-      if (wanted === "pseudocode" && allBase.length) {
-        return res.status(404).json({
-          error: "ยังไม่พบโจทย์ที่เหมาะกับรหัสเทียมในวิชานี้",
-          hint: 'ไฟล์ของวิชานี้เป็นโค้ดจริงทั้งหมด — กลับไปเมนูข้อสอบแล้วเลือกแนว "ข้อสอบโค้ด" แทน',
-        });
-      }
       return res.status(404).json({
         error: "ยังไม่พบโจทย์ในไฟล์ของวิชานี้",
         hint: "ต้องมีข้อความอย่างน้อยในไฟล์ เช่น ใบงาน แบบฝึกหัด หรือประกาศใน Classroom — ลองซิงก์ใหม่",
       });
     }
 
+    // เรียง "ง่ายก่อน" เสมอ — ตามลำดับไฟล์ในวิชา (บทแรก/สัปดาห์แรกอยู่ก่อน)
+    const candidates = all.slice().sort((a, b) => orderIdx(a) - orderIdx(b));
+    // เลือกไฟล์ + ระดับพร้อมกัน: ไฟล์ที่เลือกไม่ได้อยู่ระดับที่ขอ -> คงข้อที่มี แล้วให้ AI ต่อยอดให้ตรงระดับ
+    if (onlyMaterial && requestedLevel && fileLevel(orderIdx(candidates[0]), matTotal) !== requestedLevel) {
+      levelFallback = true;
+    }
+
     // เลี่ยงโจทย์ที่เพิ่งทำไปแล้ว
     // โจทย์ซ้อน = ดึงจากไฟล์เดียวกับที่กำลังทำอยู่ เพื่อให้โครงสร้างตรงกัน
     const baseId = String(req.body?.baseMaterialId || "");
     const sameAsCurrent = baseId ? all.find((p: any) => p.source.materialId === baseId) : null;
-    // เลี่ยงโจทย์ที่เพิ่งทำไปแล้ว
-    const fresh = all.filter((p) => !skip.includes(p.source.materialId + "|" + p.text.slice(0, 40)));
-    const chosen = sameAsCurrent || pickRandom(fresh.length ? fresh : all)!;
+    const fresh = candidates.filter((p) => !skip.includes(p.source.materialId + "|" + p.text.slice(0, 40)));
+    // เรียงง่ายก่อน = เอาข้อใหม่ "ระดับล่างสุด" ที่ยังไม่เคยทำ (สุ่มภายในไฟล์นั้น กันซ้ำจำเจ)
+    const pickEasyFirst = (list: any[], fallback: any[]) => {
+      if (!list.length) return pickRandom(fallback)!;
+      let min = Infinity;
+      for (const p of list) min = Math.min(min, orderIdx(p));
+      return pickRandom(list.filter((p) => orderIdx(p) === min))!;
+    };
+    const chosen = sameAsCurrent || pickEasyFirst(fresh, candidates);
 
     // รูปแบบที่ใช้ได้จริงกับโจทย์นี้ — คำนวณจากโจทย์ดิบ แล้วเลือกอันที่ตรงที่สุดให้เอง
     // (hasCode คำนวณไว้ด้านบนแล้ว — โหมดรหัสเทียมคัดข้อโค้ดจริงทิ้งไปก่อนถึงตรงนี้)
@@ -1290,9 +1379,11 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     if (!wanted) format = pickedF.recommended;
     else if (!formats.some((f) => f.format === format)) format = formats[0]?.format || "text";
     // โจทย์ต้นทางเป็นโค้ดจริง (เช่น scanf/printf/for ในสไลด์) -> บังคับแนว "โค้ด" เสมอ
-    // แม้ผู้ใช้จะเลือกแนวอื่นไว้ (รหัสเทียม/สุ่มทุกอย่าง/ตาราง) เพราะนี่คือโค้ด ไม่ใช่รหัสเทียม
+    // แม้ผู้ใช้จะเลือกแนวอื่นไว้ (สุ่มทุกอย่าง/ตาราง) เพราะนี่คือโค้ด ไม่ใช่รหัสเทียม
     // วิชาที่ไม่มีหลักฐานโค้ดในไฟล์ (hasCode=false) จะไม่โดนบังคับ กันวิชาภาษาเป็นโค้ด
-    if (isRealCodeProblem(chosen.text, hasCode)) {
+    // เว้นแต่ผู้ใช้เลือกแนว "รหัสเทียม" ไว้: ข้อโค้ดจะถูก AI แต่งเป็นโจทย์รหัสเทียมแทน
+    // (บังคับเป็นโค้ด = ฟอร์แมตไม่ตรงกับหน้าฝึก ทำให้โจทย์ไม่ขึ้นบนจอเลย)
+    if (wanted !== "pseudocode" && isRealCodeProblem(chosen.text, hasCode)) {
       format = "code";
       if (!formats.some((f) => f.format === "code")) {
         formats = [...formats, { format: "code", why: "โจทย์ต้นทางเป็นโค้ดจริง" }];
@@ -1302,11 +1393,14 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     let rendered = chosen.text;
     let options: { text: string; correct: boolean; explain?: string }[] = [];
     let deliverables: string[] = [];
+    const isVariant = !!req.body?.variant;
+    // โหมดฝึกทำรหัสเทียม — ให้ AI แต่งโจทย์ใหม่เป็นคำถามล้วน (ไม่ใช่คำตอบ/โค้ดสำเร็จรูปจากไฟล์)
+    const pseudoPractice = wanted === "pseudocode" && format === "pseudocode" && !isVariant;
+    // ไม่เจอข้อระดับที่เลือกในไฟล์ -> สั่ง AI ต่อยอดข้อที่มีให้ตรงระดับ (ยากขึ้น/ง่ายขึ้น)
+    const levelRule = levelFallback ? levelEscalationRule(requestedLevel) : "";
+    let aiRendered = false;
 
     try {
-      const isVariant = !!req.body?.variant;
-      // โหมดฝึกทำรหัสเทียม — ให้ AI แต่งโจทย์ใหม่เป็นคำถามล้วน (ไม่ใช่คำตอบ/โค้ดสำเร็จรูปจากไฟล์)
-      const pseudoPractice = wanted === "pseudocode" && format === "pseudocode" && !isVariant;
       const result: any = await llm(
         [
           {
@@ -1340,7 +1434,8 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
               (isVariant || pseudoPractice ? "ห้ามใส่คำตอบหรือเฉลยในตัวโจทย์ " : "ใส่คำอธิบายไว้ในตัวโจทย์เป็นคอมเมนต์เท่านั้น\n") +
               "รูปแบบที่ต้องการ: " + (pseudoPractice
                 ? "โจทย์ภาษาไทยอ่านง่าย บอกว่าให้เขียนรหัสเทียมทำอะไร มีเงื่อนไขทีละข้อ ไม่กระชับอัดกัน โครงรหัสเทียมที่ถูกต้องขึ้นต้นด้วย start และลงท้ายด้วย stop"
-                : (FORMATS[format as AnswerFormat]?.instruction || FORMATS.text.instruction)),
+                : (FORMATS[format as AnswerFormat]?.instruction || FORMATS.text.instruction)) +
+              levelRule,
           },
           {
             role: "user",
@@ -1355,6 +1450,7 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
 
       if (result && typeof result.problem === "string" && result.problem.trim().length > 10) {
         rendered = result.problem.trim().slice(0, 2000);
+        aiRendered = true;
       }
 
       // โจทย์ต้องไม่มีโค้ด ไม่ว่าจะเป็นโจทย์ต้นทางหรือโจทย์ซ้อน
@@ -1414,6 +1510,19 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       console.warn("จัดรูปแบบโจทย์ไม่สำเร็จ ใช้ข้อความดิบ", String(error));
     }
 
+    // AI แต่งโจทย์ไม่สำเร็จในโหมดฝึก — ต้นทางอาจเป็นโค้ด/เฉลยสำเร็จรูป ห้ามเอามาโชว์ดิบ
+    // (ผู้เรียนจะเห็นเฉลยตั้งแต่ก่อนทำ) -> ตัดโค้ด/บทวิเคราะห์ออกก่อน ยังมีโค้ดปนอยู่จริง = ให้กดสุ่มใหม่
+    if (pseudoPractice && !aiRendered) {
+      const safeRaw = stripAnalysis(stripCodeKeepThai(chosen.text)).trim();
+      if (!safeRaw || isRealCodeProblem(safeRaw, hasCode)) {
+        return res.status(503).json({
+          error: "AI ยังแต่งโจทย์ข้อนี้ไม่ได้ — กดสุ่มข้อใหม่อีกครั้ง",
+          hint: "ระบบ AI อาจยังไม่พร้อมชั่วคราว",
+        });
+      }
+      rendered = safeRaw.slice(0, 2000);
+    }
+
     // ถ้า AI ไม่ได้แยกให้ ให้เดาจากคำในโจทย์เอง
     if (!deliverables.length) deliverables = detectDeliverables(rendered);
 
@@ -1427,9 +1536,11 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       // คีย์จาก "ข้อความดิบ" ต้นฉบับ — ลูกค้าส่งกลับมาใน seen เพื่อกันข้อซ้ำ
       // (โจทย์ที่ AI แต่งใหม่คนละคำนำหน้ากับต้นฉบับ ถ้าเทียบด้วยข้อความที่แสดงจะไม่ตรงเลย)
       rawKey: chosen.source.materialId + "|" + chosen.text.slice(0, 40),
-      totalProblems: all.length,
+      totalProblems: candidates.length,
       generatedByAi: rendered !== chosen.text,
       variant: !!req.body?.variant,
+      // true = ไม่เจอข้อระดับที่เลือกในไฟล์นี้ -> AI ต่อยอดข้อที่มีให้ตรงระดับแทน (แจ้งผู้ใช้เบา ๆ บนจอ)
+      levelFallback,
     });
   } catch (error) {
     res.status(400).json({ error: String(error instanceof Error ? error.message : error) });

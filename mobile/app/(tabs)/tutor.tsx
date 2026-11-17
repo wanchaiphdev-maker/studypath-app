@@ -9,7 +9,7 @@ import { Button, Card, GlowCard, Pill } from "../../lib/ui";
 import MermaidFlow from "../../components/MermaidFlow";
 import {
   BASE_URL, getSubjects, tutorAnalyze, tutorAskStream, tutorCheckAnswer, tutorDiagnose, tutorEvaluate,
-  tutorOpen, tutorPlan, tutorPracticeHint, tutorProblem, tutorProblemVariant, tutorStudyPlan, tutorTts, tutorTopics,
+  tutorFiles, tutorOpen, tutorPlan, tutorPracticeHint, tutorProblem, tutorProblemVariant, tutorStudyPlan, tutorTts, tutorTopics,
 } from "../../lib/api";
 
 /* ================================================================== */
@@ -636,6 +636,30 @@ export default function Tutor() {
     return () => { alive = false; };
   }, [subjectId]);
 
+  /* --- เลือก "ไฟล์ต้นทาง" + "ระดับความยาก" — ใช้กับทุกแนวข้อสอบ ---
+     ระดับอิงลำดับไฟล์ใน Classroom: ไฟล์ต้น (บทแรก/สัปดาห์แรก) = ง่าย ไฟล์ท้าย = ยาก
+     ไม่เลือกไฟล์ = ทั้งวิชา, ไม่เลือกระดับ = ระบบเรียงง่ายก่อนให้เอง */
+  const [pickFile, setPickFile] = useState<string>("");
+  const [pickLevel, setPickLevel] = useState<"" | "easy" | "medium" | "hard">("");
+  const [fileList, setFileList] = useState<any[]>([]);
+  const [fileBusy, setFileBusy] = useState(false);
+  const [filesFor, setFilesFor] = useState("");
+
+  /** รายชื่อไฟล์ในวิชา + จำนวนโจทย์ + ระดับยากง่าย (เปลี่ยนวิชาแล้วดึงใหม่) */
+  useEffect(() => {
+    if (!subjectId || filesFor === subjectId) return;
+    let alive = true;
+    setFileBusy(true);
+    setFileList([]);
+    setPickFile("");   // ไฟล์ที่เลือกไว้เป็นของวิชาเก่า = ล้างทิ้ง
+    setPickLevel("");
+    tutorFiles(subjectId)
+      .then((r: any) => { if (alive) { setFileList(r.files || []); setFilesFor(subjectId); } })
+      .catch(() => { if (alive) { setFileList([]); setFilesFor(subjectId); } })
+      .finally(() => { if (alive) setFileBusy(false); });
+    return () => { alive = false; };
+  }, [subjectId]);
+
   /* --- ระบบข้อสอบ: ดึงโจทย์จริงจากในวิชา + เลือกรูปแบบคำตอบ --- */
   // รูปแบบคำตอบไม่ให้ผู้ใช้เลือกเองแล้ว (ซ้ำกับโหมดในเมนู) ให้เซร์ฟเวอร์เลือกตามโจทย์
   const [problem, setProblem] = useState<any>(null);
@@ -873,7 +897,8 @@ export default function Tutor() {
         : pullStyle === "random" ? pickRandomFmt()
           : (pullStyle || (mode === "code" ? "code" : ""));
       // focusTopics = หัวข้อที่เลือกไว้ในหน้าเลือกก่อนดึง (ไม่เลือก = ทั้งวิชา)
-      const r = await tutorProblem(subjectId, useFmt, seen, src, focusTopics);
+      // pickFile/pickLevel = ไฟล์ต้นทาง 1 ไฟล์ + ระดับความยาก (ไม่เลือก = ทั้งวิชา / เรียงง่ายก่อน)
+      const r = await tutorProblem(subjectId, useFmt, seen, src, focusTopics, { materialId: pickFile, level: pickLevel });
       setProblem(r);
       // rawKey = คีย์จากข้อความดิบที่เซิร์ฟเวอร์เทียบตอนกรองข้อซ้ำ — ใช้ก่อน
       // (โจทย์ที่ AI แต่งใหม่มีคำนำหน้าต่างจากต้นฉบับ เทียบด้วยข้อความบนจอจะไม่ตรงเลย)
@@ -1432,6 +1457,13 @@ export default function Tutor() {
             <Ionicons name="terminal-outline" size={19} color="#818cf8" />
             <Text style={font.h2}>ฝึกทำรหัสเทียม</Text>
           </View>
+          {/* เลือกไฟล์ต้นทาง + ระดับก่อนเริ่มฝึก — ไม่เลือก = ทั้งวิชา + เรียงง่ายก่อน */}
+          <FileLevelPick
+            files={fileList} busy={fileBusy}
+            pickFile={pickFile} onFile={setPickFile}
+            pickLevel={pickLevel} onLevel={setPickLevel}
+            stepStart={1} compact
+          />
           <Button onPress={() => loadProblem()} loading={probBusy} icon="play-outline">
             {problem ? "สุ่มข้อใหม่ในแนวรหัสเทียม" : "เริ่มฝึกทำข้อแรก"}
           </Button>
@@ -1485,6 +1517,15 @@ export default function Tutor() {
             })}
           </> : !sylBusy ? <Text style={font.caption}>ยังไม่มีหัวข้อให้เลือก — ดึงจากทั้งวิชาแทน</Text> : null}
 
+          {/* ขั้น 3–4 — ไฟล์ต้นทาง (1 ไฟล์) + ระดับความยาก: ใช้กับทุกแนวข้อสอบ
+              มีผลเฉพาะ "โจทย์มาจาก = ไฟล์ในวิชา" เท่านั้น (งานที่ส่งไม่มีไฟล์ให้เลือก) */}
+          {src === "class" ? <FileLevelPick
+            files={fileList} busy={fileBusy}
+            pickFile={pickFile} onFile={setPickFile}
+            pickLevel={pickLevel} onLevel={setPickLevel}
+            stepStart={3}
+          /> : null}
+
           <View style={{ gap: 8, marginTop: 14 }}>
             <Button onPress={async () => { await loadProblem(); setPickStage(false); }} loading={probBusy} icon="shuffle-outline">
               ดึงโจทย์ ({focusTopics.length ? focusTopics.length + " หัวข้อ" : "ทั้งวิชา"})
@@ -1499,6 +1540,13 @@ export default function Tutor() {
         </Card> : null}
 
         {problem && (!practice || fmt === "pseudocode") ? <Card style={styles.panel}>
+          {/* โหมดฝึก — เปลี่ยนไฟล์/ระดับได้ระหว่างทำ (ไม่เกี่ยวกับเฉลย ไม่ปลดล็อกอะไร) */}
+          {practice ? <FileLevelPick
+            files={fileList} busy={fileBusy}
+            pickFile={pickFile} onFile={setPickFile}
+            pickLevel={pickLevel} onLevel={setPickLevel}
+            stepStart={1} compact
+          /> : null}
           <View style={styles.probHead}>
             <Pill text={fmtMeta.label} color="#4ade80" />
             <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
@@ -1512,8 +1560,11 @@ export default function Tutor() {
                 <Ionicons name="copy-outline" size={13} color="#a78bfa" /><Text style={styles.miniActionText}>คัดลอก</Text>
               </Pressable>
             </View>
-            <Text style={styles.probCount}>{problem.totalProblems} โจทย์ในวิชานี้</Text>
+            <Text style={styles.probCount}>{problem.totalProblems} โจทย์{pickFile ? "ในไฟล์นี้" : "ในวิชานี้"}</Text>
           </View>
+
+          {/* ไม่เจอข้อระดับที่เลือกในไฟล์นี้ — AI ต่อยอดข้อนี้ให้ตรงระดับแทน (แจ้งเบา ๆ ไม่ขวางการทำ) */}
+          {problem.levelFallback ? <Text style={styles.levelNote}>ไม่เจอข้อระดับนี้ในไฟล์ — AI ปรับข้อนี้ให้ตรงระดับที่เลือกให้แล้ว</Text> : null}
 
 
           {/* โจทย์ — แสดงผ่าน RichText เพื่อให้มีสี/กล่องเหมือนโค้ดและผังภาพ */}
@@ -2028,6 +2079,61 @@ function Alert2(title: string, msg?: string) {
   Alert.alert(title, msg);
 }
 
+function levelColor(level: string) {
+  return level === "easy" ? "#34d399" : level === "hard" ? "#f43f5e" : "#fbbf24";
+}
+
+/**
+ * หน้าเลือก "ไฟล์ต้นทาง + ระดับความยาก" — ใช้ร่วมกันทุกแนวข้อสอบ
+ * (หน้าดึงโจทย์ + การ์ดเริ่มฝึก + หน้าโจทย์ระหว่างฝึก)
+ * ระดับอิงลำดับไฟล์ใน Classroom: ไฟล์ต้น (บทแรก/สัปดาห์แรก) = ง่าย ไฟล์ท้าย = ยาก
+ * ไม่เลือกไฟล์ = ทั้งวิชา, ไม่เลือกระดับ = ระบบเรียงง่ายก่อนให้เองเสมอ
+ */
+function FileLevelPick(props: {
+  files: any[]; busy: boolean;
+  pickFile: string; onFile: (id: string) => void;
+  pickLevel: "" | "easy" | "medium" | "hard"; onLevel: (l: "" | "easy" | "medium" | "hard") => void;
+  /** เลขขั้นแรก — หน้าดึงโจทย์เริ่มจาก 3 (มีแนว + หัวข้อนำอยู่), หน้าฝึกเริ่มจาก 1 */
+  stepStart?: number;
+  /** กระชับ = ใช้ในหน้าโจทย์ระหว่างฝึก (รายการไฟล์สั้นลง) */
+  compact?: boolean;
+}) {
+  const { files, busy, pickFile, onFile, pickLevel, onLevel, stepStart = 1, compact = false } = props;
+  return <>
+    <Text style={styles.stepLabel}>{stepStart}. ไฟล์ต้นทาง — เลือกได้ 1 ไฟล์ (ไม่เลือก = ทั้งวิชา)</Text>
+    {busy ? <Text style={font.caption}>กำลังโหลดรายชื่อไฟล์...</Text>
+      : !files.length ? <Text style={font.caption}>ยังไม่มีไฟล์ในวิชานี้</Text>
+        : <ScrollView style={{ maxHeight: compact ? 112 : 190 }} showsVerticalScrollIndicator={false}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
+            {files.map((f: any) => {
+              const on = pickFile === f.id;
+              const lc = levelColor(f.level);
+              return <Pressable key={f.id} style={[styles.chip, on && styles.chipOn]} onPress={() => onFile(on ? "" : f.id)}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 215 }}>
+                  {/* จุดสี = ระดับของไฟล์ตามลำดับใน Classroom (เขียว=ง่าย ส้ม=กลาง แดง=ยาก) */}
+                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: on ? "#ffffff" : lc }} />
+                  <Text style={[styles.chipText, on && { color: "#ffffff" }, { flexShrink: 1 }]} numberOfLines={1}>{f.title}</Text>
+                  <Text style={[styles.chipCount, on && { color: "#ffffff" }]}>{f.count}</Text>
+                </View>
+              </Pressable>;
+            })}
+          </View>
+        </ScrollView>}
+
+    <Text style={styles.stepLabel}>{stepStart + 1}. ระดับความยาก — ไม่เลือก = เรียงง่ายก่อน</Text>
+    <View style={styles.pickRow}>
+      {([["easy", "ง่าย"], ["medium", "กลาง"], ["hard", "ยาก"]] as const).map(([k, label]) => {
+        const on = pickLevel === k;
+        const lc = levelColor(k);
+        return <Pressable key={k} style={[styles.srcChip, on && { borderColor: lc, backgroundColor: lc + "26" }]}
+          onPress={() => onLevel(on ? "" : k)}>
+          <Text style={[styles.srcChipText, on && { color: lc }]}>{label}</Text>
+        </Pressable>;
+      })}
+    </View>
+  </>;
+}
+
 /* ================================================================== */
 
 const styles = StyleSheet.create({
@@ -2265,6 +2371,10 @@ const styles = StyleSheet.create({
   sylGroup: { fontSize: 10.5, fontWeight: "900", color: colors.textMuted, letterSpacing: 0.6 },
   chipOn: { backgroundColor: "#38bdf8", borderColor: "#38bdf8" },
   chipText: { fontSize: 11, fontWeight: "800", color: colors.textSecondary },
+  // จำนวนโจทย์ในไฟล์ (ต่อท้ายชื่อไฟล์ในหน้าเลือกไฟล์ต้นทาง)
+  chipCount: { fontSize: 10, fontWeight: "900", color: colors.textMuted },
+  // แจ้งเบา ๆ ว่าไม่เจอข้อระดับที่เลือก AI ต่อยอดข้อที่มีให้ตรงระดับแทน
+  levelNote: { fontSize: 11, fontWeight: "800", color: "#fbbf24", marginTop: 8 },
   progressWrap: { gap: 7, padding: 12, borderRadius: 12, backgroundColor: colors.surfaceAlt },
   progressBar: { height: 7, borderRadius: 4, backgroundColor: colors.surface, overflow: "hidden" },
   progressFill: { height: 7, borderRadius: 4, backgroundColor: colors.accent },
