@@ -194,6 +194,11 @@ export async function tutorCheckAnswer(subjectId: string, problem: string, answe
   return api<any>("/studypath/tutor/diagnose/answer", { method: "POST", body: JSON.stringify({ subjectId, problem, answer, deliverables, done, format: format || "" }) });
 }
 
+/** ขอคำใบ้โหมดฝึกทำรหัสเทียม — ใบ้ทีละขั้น ไม่บอกเฉลย (prev = คำใบ้ที่ได้ไปแล้ว กันซ้ำ/ให้ลึกขึ้น) */
+export async function tutorPracticeHint(subjectId: string, problem: string, answer: string, prev: string[] = []) {
+  return api<any>("/studypath/tutor/diagnose/hint", { method: "POST", body: JSON.stringify({ subjectId, problem, answer, prev }) });
+}
+
 /** วิเคราะห์โจทย์ (Input/Output/Process/ตัวแปร/ค่าเริ่มต้น/รหัสเทียม) — ผู้เรียนกดดูเอง แยกจากตัวโจทย์ */
 export async function tutorAnalyze(subjectId: string, problem: string) {
   return api<any>("/studypath/tutor/diagnose/analyze", { method: "POST", body: JSON.stringify({ subjectId, problem }) });

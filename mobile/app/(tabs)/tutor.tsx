@@ -9,7 +9,7 @@ import { Button, Card, GlowCard, Pill } from "../../lib/ui";
 import MermaidFlow from "../../components/MermaidFlow";
 import {
   BASE_URL, getSubjects, tutorAnalyze, tutorAskStream, tutorCheckAnswer, tutorDiagnose, tutorEvaluate,
-  tutorOpen, tutorPlan, tutorProblem, tutorProblemVariant, tutorStudyPlan, tutorTts, tutorTopics,
+  tutorOpen, tutorPlan, tutorPracticeHint, tutorProblem, tutorProblemVariant, tutorStudyPlan, tutorTts, tutorTopics,
 } from "../../lib/api";
 
 /* ================================================================== */
@@ -651,6 +651,9 @@ export default function Tutor() {
   const [hintLines, setHintLines] = useState<string[]>([]);
   const [hintShown, setHintShown] = useState(0);
   const [hintBusy, setHintBusy] = useState(false);
+  // คำใบ้โหมดฝึกทำรหัสเทียม — เก็บทีละข้อ ใบ้ลึกขึ้นเรื่อย ๆ ไม่สอดเฉลยลงช่อง (คนละระบบกับ hintLines ด้านบน)
+  const [practiceHints, setPracticeHints] = useState<string[]>([]);
+  const [psuHintBusy, setPsuHintBusy] = useState(false);
   // วิเคราะห์โจทย์ (Input/Output/Process/ตัวแปร/ค่าเริ่มต้น/รหัสเทียม) — แยกจากตัวโจทย์
   // ผู้เรียนกดปุ่มเองตอนอยากดูแนวทาง โจทย์จะไม่มีส่วนวิเคราะห์ปนอยู่เด็ดขาด
   type Analysis = { input: string[]; output: string[]; process: string[]; variables: string[]; initial: string[]; pseudocode: string };
@@ -802,6 +805,20 @@ export default function Tutor() {
     insertHintLines(rest);
     setHintShown(hintLines.length);
   }
+  /** คำใบ้โหมดฝึกทำรหัสเทียม — AI ใบ้ขั้นถัดไป ไม่บอกเฉลย ไม่สอดอะไรลงช่อง
+   *  กดซ้ำได้เรื่อย ๆ โดยส่งคำใบ้เดิมไปด้วย เพื่อให้ใบ้ถัดไปลึกขึ้นและไม่ซ้ำ */
+  async function fetchPracticeHint() {
+    if (!problem) return;
+    setPsuHintBusy(true);
+    try {
+      const r = await tutorPracticeHint(subjectId, problem.problem, myAnswer, practiceHints);
+      if (r?.hint) setPracticeHints((h) => [...h, String(r.hint)]);
+      else Alert2("ยังขอใบ้ไม่ได้", "AI ไม่ส่งคำใบ้กลับมา ลองอีกครั้ง");
+    } catch (e: any) {
+      Alert2("ยังขอใบ้ไม่ได้", String(e?.message || e));
+    } finally { setPsuHintBusy(false); }
+  }
+
   /** เคลียร์ใบ้เมื่อสุ่มโจทย์ใหม่ (ช่องโค้ดก็ถูกล้างโดย loadProblem/loadVariant อยู่แล้ว) */
   function resetHints() { setHintLines([]); setHintShown(0); }
 
@@ -847,7 +864,7 @@ export default function Tutor() {
 
   async function loadProblem(forceFmt?: string) {
     if (needSubject()) return;
-    setProbBusy(true); setProbErr(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis();
+    setProbBusy(true); setProbErr(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis(); setPracticeHints([]);
     try {
       // แนวโจทย์จากหน้าเลือก (pullStyle) มาก่อน — เลือกที่นี่มีผลเฉพาะรอบดึงนี้ ไม่เปลี่ยนโหมดหลัก
       // "random" (สุ่มทุกอย่าง) = สุ่มฟอร์แมตใหม่เองทุกครั้งที่ดึง โค้ด/รหัสเทียมสุ่มได้เฉพาะวิชาที่มีสัญญาณโค้ด
@@ -858,7 +875,9 @@ export default function Tutor() {
       // focusTopics = หัวข้อที่เลือกไว้ในหน้าเลือกก่อนดึง (ไม่เลือก = ทั้งวิชา)
       const r = await tutorProblem(subjectId, useFmt, seen, src, focusTopics);
       setProblem(r);
-      if (r?.source) setSeen((s) => [...s, r.source.materialId + "|" + String(r.problem).slice(0, 40)].slice(-20));
+      // rawKey = คีย์จากข้อความดิบที่เซิร์ฟเวอร์เทียบตอนกรองข้อซ้ำ — ใช้ก่อน
+      // (โจทย์ที่ AI แต่งใหม่มีคำนำหน้าต่างจากต้นฉบับ เทียบด้วยข้อความบนจอจะไม่ตรงเลย)
+      if (r?.source) setSeen((s) => [...s, r.rawKey || (r.source.materialId + "|" + String(r.problem).slice(0, 40))].slice(-20));
       // สุ่มโจทย์ใหม่ = ต้องเห็นผลลัพธ์ทันที ไม่ใช่ถูกเลื่อนไปเอาท้ายจอ
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
     } catch (e: any) {
@@ -871,7 +890,7 @@ export default function Tutor() {
   async function loadVariant() {
     if (needSubject()) return;
     if (!problem?.source?.materialId) { Alert2("ยังไม่มีโจทย์", "กดสุ่มโจทย์ก่อน แล้วค่อยขอโจทย์ซ้อน"); return; }
-    setProbBusy(true); setProbErr(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis();
+    setProbBusy(true); setProbErr(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis(); setPracticeHints([]);
     try {
       const r = await tutorProblemVariant(subjectId, fmt || "", problem.source.materialId);
       setProblem(r);
@@ -1588,11 +1607,31 @@ export default function Tutor() {
               </View> : null}
             </View>
             : fmt === "pseudocode" ? <View>
-              {/* รหัสเทียม — ช่องเขียนมีเลขบรรทัด เหมาะกับการเรียงขั้นตอน (ใบ้/เฉลยไม่มีในแนวนี้) */}
+              {/* รหัสเทียม — ช่องเขียนมีเลขบรรทัด เหมาะกับการเรียงขั้นตอน (เฉลยไม่มีในแนวนี้) */}
               <CodeInput value={myAnswer} onChange={setMyAnswer} placeholder="พิมพ์รหัสเทียมของคุณทีละบรรทัด..." />
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                 <Pressable style={styles.ghostBtn} onPress={() => setMyAnswer("")}><Text style={styles.ghostText}>ล้าง</Text></Pressable>
+                {/* โหมดฝึกทำ — ขอคำใบ้ AI: ใบ้ทีละขั้น ไม่บอกเฉลย ไม่แทรกอะไรลงช่องคำตอบ */}
+                {practice ? <Pressable style={[styles.ghostBtn, psuHintBusy && { opacity: 0.5 }]} disabled={psuHintBusy}
+                  onPress={fetchPracticeHint}>
+                  <Text style={styles.ghostText}>
+                    {psuHintBusy ? "กำลังคิดคำใบ้..." : practiceHints.length ? "ขอคำใบ้เพิ่ม" : "ติด? ขอคำใบ้"}
+                  </Text>
+                </Pressable> : null}
               </View>
+
+              {/* คำใบ้ที่ได้มาทั้งหมด — เรียงตามลำดับที่ขอ (ข้อถัดไปใบ้ลึกขึ้น) */}
+              {practiceHints.length ? <View style={styles.hintBox}>
+                <View style={styles.hintHead}>
+                  <Ionicons name="bulb-outline" size={14} color="#fbbf24" />
+                  <Text style={styles.hintHeadText}>คำใบ้ {practiceHints.length} ข้อ — ยังไม่ใช่เฉลย ทำต่อเองได้เลย</Text>
+                </View>
+                {practiceHints.map((h, i) => (
+                  <Text key={i} style={[font.caption, { color: "#fde68a", marginTop: 6, lineHeight: 20 }]}>
+                    {i + 1}. {h}
+                  </Text>
+                ))}
+              </View> : null}
             </View>
             : <TextInput
               value={myAnswer} onChangeText={setMyAnswer} multiline
@@ -1607,6 +1646,10 @@ export default function Tutor() {
                  ส่วนโจทย์ซ้อน/ถาม AI ถูกซ่อนตามที่ผู้ใช้สั่งให้หน้านี้มีแค่การฝึกล้วน */}
             {practice && typeof mark === "object" && mark?.correct === true
               ? <Button onPress={() => loadProblem()} loading={probBusy} icon="arrow-forward-outline">ข้อถัดไป</Button>
+              : null}
+            {/* ตอบผิด = ทำอีกครั้ง: ปิดผลตรวจเพื่อกลับไปแก้คำตอบเดิมในช่อง (คำตอบไม่ถูล้าง) แล้วส่งตรวจใหม่ */}
+            {practice && typeof mark === "object" && mark?.correct === false
+              ? <Button onPress={() => { setMark(null); setMissing([]); }} variant="secondary" icon="refresh-outline">ทำอีกครั้ง</Button>
               : null}
             {!practice ? <>
               <Button onPress={loadVariant} loading={probBusy} variant="secondary" icon="repeat-outline">ขอโจทย์ซ้อน</Button>
@@ -1631,6 +1674,16 @@ export default function Tutor() {
               {typeof mark === "object" ? (
                 <>
                   {mark.points?.length ? <RichText text={"* " + mark.points.join("\n* ")} /> : null}
+                  {mark.lines?.length ? (
+                    <View style={{ marginTop: 8 }}>
+                      <Text style={styles.markTitle}>บรรทัดที่ต้องแก้</Text>
+                      {mark.lines.map((l: any, i: number) => (
+                        <Text key={i} style={[font.caption, { lineHeight: 20 }]}>
+                          • บรรทัด {l.line}: {l.why || "-"}{l.fix ? ` → ${l.fix}` : ""}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : null}
                   {mark.fix ? <RichText text={"**ต้องแก้:** " + mark.fix} /> : null}
                 </>
               ) : <RichText text={mark} />}

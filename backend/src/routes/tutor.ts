@@ -744,6 +744,21 @@ function detectDeliverables(text: string): string[] {
 }
 
 
+/**
+ * โหมดฝึกทำรหัสเทียม — กติกาให้ AI "แต่งโจทย์ใหม่" ก่อนขึ้นจอ:
+ * เนื้อหาไฟล์มักเป็นคำตอบ/โค้ดสำเร็จรูป (เช่นบล็อก INPUT...END) ถ้าโชว์ดิบ = เห็นเฉลยตั้งแต่ก่อนทำ
+ * เลยให้แปลงเป็น "คำถาม" ที่อ่านเข้าใจง่าย ไม่กระชับอัดกัน โครงรหัสเทียมถูกต้องมี start...stop
+ */
+const PSEUDO_QUESTION_RULES =
+  "โจทย์นี้สำหรับโหมดฝึกเขียนรหัสเทียม — หน้าที่คือเปลี่ยนเนื้อหาต้นทางให้เป็น \"คำถาม\" ที่ผู้เรียนอ่านเข้าใจง่าย " +
+  "กติกา: " +
+  "(1) ต้องเป็นคำถาม/คำสั่งที่ผู้เรียนต้องเขียนรหัสเทียมตอบ ห้ามใส่วิธีทำ ห้ามใส่เฉลย " +
+  "ห้ามคัดลอกโค้ดหรือรหัสเทียมสำเร็จรูปจากต้นทางมาเป็นโจทย์ " +
+  "(2) ถ้าต้นทางเป็นคำตอบหรือส่วนโค้ดอยู่แล้ว ให้แปลงเป็นโจทย์ว่า \"จงเขียนรหัสเทียม...\" " +
+  "พร้อมอธิบายเงื่อนไขทุกข้อเป็นภาษาไทยที่อ่านง่ายทีละข้อ ห้ามกระชับอัดกัน " +
+  "(3) รหัสเทียมที่ถูกต้องต้องขึ้นต้นด้วย start และลงท้ายด้วย stop — ถ้าใส่ตัวอย่างโครงในโจทย์ให้ใช้ start...stop เสมอ " +
+  "(4) คงตัวเลขและเงื่อนไขครบตามต้นฉบับ ห้ามตัดออก\ ";
+
 /** ให้ AI จัดรูปแบบโจทย์ (คืน problem/formats/deliverables) */
 async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat | "", skip: string[]) {
   let format = wanted;
@@ -763,6 +778,8 @@ async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat
   let rendered = rawText;
   let options: any[] = [];
   let deliverables: string[] = [];
+  // โหมดฝึกทำรหัสเทียม — ใช้กติกา "แต่งโจทย์ใหม่" (คำถามล้วน ไม่มีเฉลย) แทนการจัดรูปจากเนื้อหาดิบ
+  const pseudoPractice = wanted === "pseudocode" && format === "pseudocode";
 
   try {
     const result: any = await llm(
@@ -770,8 +787,10 @@ async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat
         {
           role: "system",
           content:
-            "คุณคืออาจารย์ AI หน้าที่จัดโจทย์ให้อ่านง่ายเท่านั้น " +
-            "ห้ามแก้เนื้อหา ห้ามเปลี่ยนตัวเลข ห้ามเพิ่มหรือลดเงื่อนไข ห้ามทำโจทย์ใหม่ " +
+            (pseudoPractice
+              ? PSEUDO_QUESTION_RULES
+              : "คุณคืออาจารย์ AI หน้าที่จัดโจทย์ให้อ่านง่ายเท่านั้น " +
+                "ห้ามแก้เนื้อหา ห้ามเปลี่ยนตัวเลข ห้ามเพิ่มหรือลดเงื่อนไข ห้ามทำโจทย์ใหม่ ") +
             'ตอบเป็น JSON เท่านั้น รูปแบบ: {"problem":"โจทย์ที่จัดรูปแบบแล้ว","deliverables":["สิ่งที่โจทย์สั่งให้ทำ"]}\n' +
             "- deliverables คือรายการสิ่งที่โจทย์สั่งให้ทำจริงๆ ดึงจากโจทย์เท่านั้น\n" +
             (format === "options" ? 'เพิ่ม "options":[{"text":"...","correct":true},{"text":"..."}] จำนวน 4 ตัวเลือก\n' : "") +
@@ -781,8 +800,10 @@ async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat
               "สำคัญมาก: ห้ามสรุปย่อ ห้ามตัดเงื่อนไขหรือตัวเลขใด ๆ ออก " +
               "ต้องคงเนื้อหาโจทย์ให้ครบทุกเงื่อนไขและทุกตัวเลขตามต้นฉบับ " +
               "ถ้าต้นฉบับยาว โจทย์ที่ตอบก็ต้องยาวพอๆ กัน ห้ามกลายเหลือแค่คำสั่งว่าให้ทำอะไร " +
-            "ใส่คำอธิบายไว้ในตัวโจทย์เป็นคอมเมนต์เท่านั้น\n" +
-            "รูปแบบที่ต้องการ: " + (FORMATS[format as AnswerFormat]?.instruction || FORMATS.text.instruction),
+            (pseudoPractice ? "ห้ามใส่คำตอบหรือเฉลยในตัวโจทย์\n" : "ใส่คำอธิบายไว้ในตัวโจทย์เป็นคอมเมนต์เท่านั้น\n") +
+            "รูปแบบที่ต้องการ: " + (pseudoPractice
+              ? "โจทย์ภาษาไทยอ่านง่าย บอกว่าให้เขียนรหัสเทียมทำอะไร มีเงื่อนไขทีละข้อ ไม่กระชับอัดกัน โครงรหัสเทียมที่ถูกต้องขึ้นต้นด้วย start และลงท้ายด้วย stop"
+              : (FORMATS[format as AnswerFormat]?.instruction || FORMATS.text.instruction)),
         },
         { role: "user", content: "ชื่อวิชา: " + subject.name + "\nโจทย์ดิบ:\n" + rawText.slice(0, 1200) },
       ],
@@ -1284,6 +1305,8 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
 
     try {
       const isVariant = !!req.body?.variant;
+      // โหมดฝึกทำรหัสเทียม — ให้ AI แต่งโจทย์ใหม่เป็นคำถามล้วน (ไม่ใช่คำตอบ/โค้ดสำเร็จรูปจากไฟล์)
+      const pseudoPractice = wanted === "pseudocode" && format === "pseudocode" && !isVariant;
       const result: any = await llm(
         [
           {
@@ -1298,8 +1321,10 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
                   "ห้ามใส่บล็อกล่วงหน้า ``` ในคำตอบ ห้ามใส่ input() print() scanf printf " +
                   "ห้ามใส่ชื่อตัวแปรหรือฟังก์ชันของภาษาโปรแกรม ห้ามอธิบายวิธีทำ " +
                   "ส่งเฉพาะข้อความโจทย์ล้วน ๆ ที่นักเรียนอ่านแล้วต้องเขียนเองได้เท่านั้น\n"
-                : "คุณคืออาจารย์ AI หน้าที่จัดโจทย์ให้อ่านง่ายเท่านั้น " +
-                  "ห้ามแก้เนื้อหา ห้ามเปลี่ยนตัวเลข ห้ามเพิ่มหรือลดเงื่อนไข ห้ามทำโจทย์ใหม่ ") +
+                : pseudoPractice
+                  ? PSEUDO_QUESTION_RULES
+                  : "คุณคืออาจารย์ AI หน้าที่จัดโจทย์ให้อ่านง่ายเท่านั้น " +
+                    "ห้ามแก้เนื้อหา ห้ามเปลี่ยนตัวเลข ห้ามเพิ่มหรือลดเงื่อนไข ห้ามทำโจทย์ใหม่ ") +
               'ตอบเป็น JSON เท่านั้น รูปแบบ: {"problem":"โจทย์ที่จัดรูปแบบแล้ว","deliverables":["สิ่งที่โจทย์สั่งให้ทำ"]}\n' +
               "- deliverables คือรายการสิ่งที่โจทย์สั่งให้ทำจริงๆ เช่น ผังงาน, รหัสเทียม, ตารางทดสอบ, เขียนโปรแกรม, อธิบายผลลัพธ์ " +
               "  ดึงจากโจทย์เท่านั้น ถ้าโจทย์ไม่ได้สั่งอะไรเพิ่มให้คำสั่งให้ครบตามที่โจทย์ต้องการจริง " +
@@ -1312,8 +1337,10 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
               "สำคัญมาก: ห้ามสรุปย่อ ห้ามตัดเงื่อนไขหรือตัวเลขใด ๆ ออก " +
               "ต้องคงเนื้อหาโจทย์ให้ครบทุกเงื่อนไขและทุกตัวเลขตามต้นฉบับ " +
               "ถ้าต้นฉบับยาว โจทย์ที่ตอบก็ต้องยาวพอๆ กัน ห้ามกลายเหลือแค่คำสั่งว่าให้ทำอะไร " +
-              (isVariant ? "ห้ามใส่คำตอบหรือเฉลยในตัวโจทย์ " : "ใส่คำอธิบายไว้ในตัวโจทย์เป็นคอมเมนต์เท่านั้น\n") +
-              "รูปแบบที่ต้องการ: " + (FORMATS[format as AnswerFormat]?.instruction || FORMATS.text.instruction),
+              (isVariant || pseudoPractice ? "ห้ามใส่คำตอบหรือเฉลยในตัวโจทย์ " : "ใส่คำอธิบายไว้ในตัวโจทย์เป็นคอมเมนต์เท่านั้น\n") +
+              "รูปแบบที่ต้องการ: " + (pseudoPractice
+                ? "โจทย์ภาษาไทยอ่านง่าย บอกว่าให้เขียนรหัสเทียมทำอะไร มีเงื่อนไขทีละข้อ ไม่กระชับอัดกัน โครงรหัสเทียมที่ถูกต้องขึ้นต้นด้วย start และลงท้ายด้วย stop"
+                : (FORMATS[format as AnswerFormat]?.instruction || FORMATS.text.instruction)),
           },
           {
             role: "user",
@@ -1348,9 +1375,13 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       // AI บางทีสรุปจน "ข้อมูลจริง" ของโจทย์หายไปเหลือแต่คำสั่งว่าให้ทำอะไร
       // ถ้าสั้นผิดปกติเมื่อเทียบกับต้นฉบับ = ใช้ต้นฉบับที่ตัดโค้ดแล้วแทน ข้อมูลต้องไม่หาย
       // ต้องตัดบทวิเคราะห์ออกจากต้นฉบับด้วย ไม่งั้นเฉลย/บทวิเคราะห์จะถูกดันกลับมาเป็นโจทย์
-      const fromSource = stripAnalysis(stripCodeKeepThai(chosen.text)).trim();
-      if (fromSource.length > rendered.length + 80) {
-        rendered = fromSource.slice(0, 2000);
+      // โหมดฝึกทำรหัสเทียม: ห้ามเอาเนื้อหาดิบทับ — ต้นทางมักเป็นคำตอบ/โค้ดสำเร็จรูป
+      // ที่ AI เพิ่งแปลงเป็นคำถามไปแล้ว ถ้าทับกลับ = เห็นเฉลยตั้งแต่ก่อนทำเหมือนเดิม
+      if (!pseudoPractice) {
+        const fromSource = stripAnalysis(stripCodeKeepThai(chosen.text)).trim();
+        if (fromSource.length > rendered.length + 80) {
+          rendered = fromSource.slice(0, 2000);
+        }
       }
 
       // คำสั่งโจทย์ท้ายสุด ("จงเขียนโปรแกรม...") ห้ามหาย — AI บางรอบตัดทิ้ง = โจทย์ไม่รู้ว่าให้ทำอะไร
@@ -1393,6 +1424,9 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       options,
       deliverables,
       source: chosen.source,
+      // คีย์จาก "ข้อความดิบ" ต้นฉบับ — ลูกค้าส่งกลับมาใน seen เพื่อกันข้อซ้ำ
+      // (โจทย์ที่ AI แต่งใหม่คนละคำนำหน้ากับต้นฉบับ ถ้าเทียบด้วยข้อความที่แสดงจะไม่ตรงเลย)
+      rawKey: chosen.source.materialId + "|" + chosen.text.slice(0, 40),
       totalProblems: all.length,
       generatedByAi: rendered !== chosen.text,
       variant: !!req.body?.variant,
@@ -1482,6 +1516,7 @@ router.post("/diagnose/answer", requireAuth(), async (req: any, res) => {
       score: 0,
       points: [],
       fix: "ตรวจแล้ว คำตอบนี้ยังไม่ครบ ลองทำใหม่ตามโจทย์ทีละขั้น",
+      lines: [],
     };
     if (answer.trim().length > 0) {
       try {
@@ -1492,14 +1527,17 @@ router.post("/diagnose/answer", requireAuth(), async (req: any, res) => {
               content:
                 "คุณคืออาจารย์ที่ตรวจงานนักเรียน ตอบสั้นกระชับภาษาไทย ห้ามพูดเกริ่นนำ " +
                 (answerFmt === "pseudocode"
-                  ? "คำตอบเป็นรหัสเทียม (pseudocode) — ตรวจลำดับขั้นตอนและตรรกะ (การรับข้อมูล/ประมวลผล/แสดงผล, จุดเริ่มต้น-จุดจบ, IF/ELSE, WHILE/FOR, ตัวแปร) เทียบกับวิธีที่ถูกต้อง ไม่ต้องติดไวยากรณ์ของภาษาโปรแกรมจริง "
+                  ? "คำตอบเป็นรหัสเทียม (pseudocode) — ตรวจลำดับขั้นตอนและตรรกะ (การรับข้อมูล/ประมวลผล/แสดงผล, จุดเริ่มต้น-จุดจบ, IF/ELSE, WHILE/FOR, ตัวแปร) เทียบกับวิธีที่ถูกต้อง ไม่ต้องติดไวยากรณ์ของภาษาโปรแกรมจริง " +
+                    "รหัสเทียมที่ถูกต้องต้องขึ้นต้นด้วย start (จุดเริ่มต้น) และลงท้ายด้วย stop (จุดสิ้นสุด) ถ้าขาดหรือผิดลำดับให้ระบุเป็นจุดที่ต้องแก้ "
                   : "ถ้าเป็นโค้ด ให้เทียบกับเฉลยเชิงตรรกะ ไม่ต้องเทียบรูปแบบการเขียน ") +
                 (deliverables.length
                   ? "โจทย์นี้สั่งให้ส่ง " + deliverables.length + " ส่วน ต้องครบทุกส่วนถึงจะถือว่าถูก: " + deliverables.join(" / ") + "\n"
                   : "") +
                 "สรุปทุกครั้งให้ครบทั้ง 4 อย่าง: correct = ถูก/ผิด, score = ทำได้ดีแค่ไหน (0-100), " +
                 "points = จุดที่ทำได้ดี, fix = ผิดตรงไหนและควรแก้ไขอย่างไร (รวมวิธีทำที่ดีที่สุดสำหรับข้อนี้)\n" +
-                "ตอบเป็น JSON: {\"correct\":true/false,\"score\":0-100,\"points\":[\"...จุดที่ทำได้ดี...\"],\"fix\":\"ผิดตรงไหน + ควรทำอย่างไร\"}",
+                "และใส่ lines = รายการบรรทัดในคำตอบนักเรียนที่ผิด (นับบรรทัดจาก 1 ตามที่ตอบมาจริง): " +
+                '[{"line":n,"why":"ทำไมบรรทัดนี้ผิด","fix":"ควรแก้เป็นอะไร"}] ถ้าไม่มีบรรทัดผิดให้เป็น [] และใส่เฉพาะบรรทัดที่ผิดจริงเท่านั้น\n' +
+                "ตอบเป็น JSON: {\"correct\":true/false,\"score\":0-100,\"points\":[\"...จุดที่ทำได้ดี...\"],\"fix\":\"ผิดตรงไหน + ควรทำอย่างไร\",\"lines\":[{\"line\":n,\"why\":\"...\",\"fix\":\"...\"}]}",
             },
             { role: "user", content: "โจทย์:\n" + problem + "\n\nคำตอบนักเรียน:\n" + answer },
           ],
@@ -1512,6 +1550,17 @@ router.post("/diagnose/answer", requireAuth(), async (req: any, res) => {
             score: Number(r.score) || 0,
             points: Array.isArray(r.points) ? r.points.map(String).slice(0, 6) : [],
             fix: String(r.fix || "").slice(0, 400),
+            // บรรทัดที่ผิดในคำตอบผู้เรียน (เรียงตามบรรทัดจริง) — ใช้ขึ้นจอว่า "บรรทัดไหน แก้ยังไง"
+            lines: Array.isArray(r.lines)
+              ? r.lines
+                  .map((l: any) => ({
+                    line: Number(l?.line) || 0,
+                    why: String(l?.why || "").slice(0, 200),
+                    fix: String(l?.fix || "").slice(0, 300),
+                  }))
+                  .filter((l: any) => l.why || l.fix)
+                  .slice(0, 12)
+              : [],
           };
         }
       } catch { /* ใช้ผลสำรอง */ }
@@ -1522,6 +1571,49 @@ router.post("/diagnose/answer", requireAuth(), async (req: any, res) => {
     res.json({ feedback, missing, doneCount: done.length, deliverableCount: deliverables.length, checkedAt: new Date().toISOString() });
   } catch (error) {
     res.status(400).json({ error: String(error instanceof Error ? error.message : error) });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* คำใบ้ในโหมดฝึกทำรหัสเทียม — ใบ้ทีละขั้น ไม่บอกเฉลย                  */
+/* (ส่งคำใบ้เดิมกลับมาด้วยทุกครั้ง เพื่อให้ใบ้ถัดไปลึกขึ้นและไม่ซ้ำ)   */
+/* ------------------------------------------------------------------ */
+router.post("/diagnose/hint", requireAuth(), async (req: any, res) => {
+  try {
+    const problem = String(req.body?.problem || "").slice(0, 3000);
+    const answer = String(req.body?.answer || "").slice(0, 3000);
+    const prev: string[] = Array.isArray(req.body?.prev) ? req.body.prev.map(String).slice(0, 8) : [];
+    if (!problem) return res.status(400).json({ error: "ข้อมูลไม่ครบ" });
+
+    const hint = await llm(
+      [
+        {
+          role: "system",
+          content:
+            "คุณคืออาจารย์ผู้ช่วยสอนการเขียนรหัสเทียม ตอบภาษาไทยสั้น ๆ ไม่เกริ่นนำ ไม่ทักทาย " +
+            "หน้าที่: ให้ \"คำใบ้\" ขั้นถัดไปแก่ผู้เรียนที่กำลังติดโจทย์นี้ — ใบ้แนวทางเท่านั้น ห้ามบอกเฉลย " +
+            "ห้ามเขียนรหัสเทียมที่สมบูรณ์ให้เห็นทั้งหมด " +
+            "ให้บอกแค่ว่าขั้นต่อไปควรทำอะไรก่อน (เช่น เริ่มจากรับข้อมูลอะไร ใช้ลูปหรือเงื่อนไขอะไร ต้องแสดงผลอะไร) " +
+            "ตอบเป็นข้อความล้วน ๆ ห้ามใช้เครื่องหมาย LaTeX เช่น $...$ ห้ามใช้บล็อก ``` หรือตัวหนา ** " +
+            "ยาวไม่เกิน 3 ประโยค" +
+            (prev.length
+              ? "\nคำใบ้ที่เคยให้ไปแล้ว — ห้ามซ้ำ ต้องลึกขึ้นเรื่อย ๆ:\n" + prev.map((h, i) => `${i + 1}. ${h}`).join("\n")
+              : ""),
+        },
+        { role: "user", content: "โจทย์:\n" + problem + "\n\nคำตอบที่ผู้เรียนเขียนไว้:\n" + (answer.trim() || "(ยังไม่ได้เขียน)") },
+      ],
+      { temperature: 0.6 }
+    );
+    const text = String(hint || "")
+      // AI บางรอบยังส่งสัญลักษณ์คณิตศาสตร์/โค้ดมาเอง — ล้างออกให้เป็นข้อความล้วนอ่านง่ายบนจอ
+      .replace(/\$([^$]+)\$/g, "$1")
+      .replace(/`{1,3}/g, "")
+      .trim();
+    if (!text) return res.status(502).json({ error: "AI ยังร่างคำใบ้ไม่สำเร็จ ลองอีกครั้ง" });
+    res.json({ hint: text.slice(0, 800) });
+  } catch (error) {
+    console.warn("ขอคำใบ้ไม่สำเร็จ", String(error));
+    res.status(502).json({ error: "ขอคำใบ้ไม่สำเร็จ ลองอีกครั้ง" });
   }
 });
 
