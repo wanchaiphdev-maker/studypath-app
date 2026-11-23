@@ -288,17 +288,54 @@ function toSources(ranked: { m: any; chunk: any }[]) {
 /* 1) ถาม–ตอบ — ยึดเนื้อหาในวิชาเป็นหลักฐาน แต่ถ้าไม่มีก็อธิบายต่อได้      */
 /* ------------------------------------------------------------------ */
 
+/** ประวัติบทสนทนาที่ส่งกลับมาเพื่อให้ถามต่อเนื่องได้เหมือน ChatGPT */
+type ChatTurn = { role: "user" | "assistant"; content: string };
+
+const MAX_HISTORY_TURNS = 10;
+const MAX_HISTORY_CHARS = 1500;
+
+function parseHistory(raw: any): ChatTurn[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ChatTurn[] = [];
+  for (const item of raw) {
+    if (!item) continue;
+    const role =
+      item.role === "assistant" || item.role === "ai" || item.role === "model"
+        ? "assistant"
+        : item.role === "user" || item.role === "me"
+          ? "user"
+          : null;
+    const content = String(item.content ?? item.text ?? "").replace(/\s+/g, " ").trim();
+    if (!role || !content) continue;
+    out.push({ role, content: content.slice(0, MAX_HISTORY_CHARS) });
+  }
+  return out.slice(-MAX_HISTORY_TURNS);
+}
+
 /** ข้อความทักทาย/คุยเล่นทั่วไป — ให้ AI คุยตอบได้ตามมารยาท ไม่ต้องยัดเนื้อหาวิชา */
 function isCasualChat(q: string): boolean {
-  const t = String(q || "").trim();
+  const t = String(q || "").replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\s+/g, " ").trim();
   if (!t || t.length > 60) return false;
-  const OPENING = /^(สวั?ส?ด+ี|หวัดดี|ดีครับ|ดีค่ะ|ดีคะ|hello|hi+|hey|ราตรีสวัสดิ์|ฝันดี)/i;
-  const THANKS = /^(ขอบคุณ|ขอบใจ|เข้าใจแล้ว|เข้าใจครับ|เข้าใจค่ะ|โอเค|บ๊ายบาย|ลาก่อน|แล้วเจอกัน|สบายดี)/i;
-  if (!OPENING.test(t) && !THANKS.test(t)) return false;
+  const head = t.slice(0, 40).toLowerCase();
+  // ทักทายแบบพิมพ์ผิด/พิมพ์เพี้ยนก็ยังจับได้ เช่น "สวีสดีสาจารย์" (ตั้งใจพิมพ์ "สวัสดีอาจารย์")
+  const GREETING = /(สว[ัีะ]?[สซ]?ดี|หวัดดี|ดีครับ|ดีค่ะ|ดีคะ|อรุณสวัสดิ์|ราตรีสวัสดิ์|ฝันดี|\b(?:hello|hi|hey|yo)\b)/i;
+  const THANKS = /(ขอบคุณ|ขอบใจ|เข้าใจแล้ว|โอเค|บ๊ายบาย|ลาก่อน|แล้วเจอกัน|สบายดี|\b(?:thanks|thank you|ok|okay)\b)/i;
+  if (!GREETING.test(head) && !THANKS.test(t)) return false;
   // ถ้ามีคำถาม/คำสั่งเชิงเนื้อหา = ไม่ใช่คุยเล่น ให้ไปทางคำตอบตามเนื้อหาปกติ
-  const STUDY = /(\?|อธิบาย|คืออะไร|หมายถึง|ทำไม|ทําไม|ยังไง|อย่างไร|ทำอย่างไร|สรุป|เปรียบเทียบ|โค้ด|ตัวอย่าง|ขั้นตอน|นิยาม|โจทย์|แบบฝึก|ไม่เข้าใจ|ช่วย|สอน|เรื่อง|quiz)/i;
+  const STUDY = /(\?|อธิบาย|คืออะไร|หมายถึง|ทำไม|ทําไม|ยังไง|อย่างไร|ทำอย่างไร|สรุป|เปรียบเทียบ|โค้ด|ตัวอย่าง|ขั้นตอน|นิยาม|โจทย์|แบบฝึก|ไม่เข้าใจ|ช่วย|สอน|quiz|สอบ|การบ้าน|บทที่|ไฟล์)/i;
   if (STUDY.test(t)) return false;
   return true;
+}
+
+/** คำถามต่อเนื่องที่อ้างถึงเรื่องเดิม ต้องค้นเนื้อหาด้วยบริบทเดิมด้วย ไม่ใช่ค้นแค่ประโยคสั้น ๆ */
+function retrievalQuery(question: string, history: ChatTurn[]) {
+  const lastUser = [...history].reverse().find((h) => h.role === "user")?.content || "";
+  if (!lastUser) return question;
+  const contextual =
+    question.length <= 40 ||
+    /(มัน|อันนี้|อันนั้น|ที่พูด|เมื่อกี้|ต่อ|อีก|ตัวอย่าง|ขยาย|อธิบายเพิ่ม|แล้ว|ทำไม|ยังไง)/i.test(question);
+  if (!contextual) return question;
+  return (lastUser.slice(0, 200) + " " + question).trim();
 }
 
 /** สร้าง prompt ชุดเดียวกัน ใช้ได้ทั้งแบบ stream และแบบรอผลเต็ม */
@@ -309,18 +346,25 @@ function buildPrompt(
   difficulty: Difficulty,
   speed: Speed,
   ranked: { m: any; chunk: any }[],
-  materials: any[]
+  materials: any[],
+  history: ChatTurn[] = []
 ) {
+  const prior = history.map((h) => ({ role: h.role, content: h.content }));
+
   // ข้อความทักทาย/คุยเล่น → โหมดสนทนา (ไม่อ้างอิงไฟล์ ไม่บังคับเข้าเนื้อหา)
   if (isCasualChat(question)) {
     const chatSystem =
-      'คุณคือ "ครู AI" ผู้ช่วยการเรียนของมหาวิทยาลัย (ดูแลวิชา ' + subject.name + ') พูดคุยเป็นธรรมชาติเหมือนคนจริง ตอบภาษาไทยเป็นกันเอง สั้นกระชับ\n' +
-      "1) ถ้าทักทาย (สวัสดี/หวัดดี/hello) ให้ทักทายกลับสั้นๆ เป็นมิตร แล้วบอกว่าดูแลวิชานี้อยู่ เสนอช่วยเรื่องเรียนได้\n" +
-      "2) ตอบตามบริบทของอีกฝ่าย ถามกลับได้บางคำเพื่อให้รู้สึกว่าเป็นการสนทนาจริง ไม่ใช่บทตอบสำเร็จรูป\n" +
-      "3) ถ้าเป็นการขอบคุณ/กล่าวลา/ถามทั่วไป ให้ตอบตามมารยาทสั้นๆ ไม่ต้องยัดเนื้อหาวิชา\n" +
-      "4) ถ้าคนเริ่มถามเรื่องเรียน/เนื้อหา ให้สลับไปช่วยเรื่องวิชาทันที\n" +
-      "5) ไม่ต้องขึ้นต้นว่า 'ความรู้ทั่วไป' และไม่ต้องบังคับปิดท้ายด้วยคำถามทุกครั้ง";
-    return { messages: [{ role: "system", content: chatSystem }, { role: "user", content: question }], grounded: false };
+      'คุณคือ "ครู AI" ผู้ช่วยการเรียนของมหาวิทยาลัย (ดูแลวิชา ' + subject.name + ') พูดคุยเป็นธรรมชาติเหมือน ChatGPT ตอบภาษาไทยเป็นกันเองและสั้น\n' +
+      "1) ตอบสิ่งที่อีกฝ่ายพูดจริง ๆ ก่อน เช่น ทักทายก็ทักทายกลับ ขอบคุณก็รับคำขอบคุณ\n" +
+      "2) ข้อความสั้น → ตอบสั้น 1-2 ประโยค ไม่ต้องขึ้นหัวข้อ ไม่ต้องยัดเนื้อหาวิชา ไม่ต้องปิดท้ายด้วยคำถามทุกครั้ง\n" +
+      "3) ใช้ประวัติบทสนทนาก่อนหน้า ถ้าอีกฝ่ายอ้างถึงสิ่งที่คุยกันไว้ ให้ตอบต่อเนื่องอย่างสม่ำเสมอ\n" +
+      "4) ถ้าอีกฝ่ายเริ่มถามเรื่องเรียน/เนื้อหา ค่อยสลับไปช่วยเรื่องวิชานั้นอย่างเต็มที่\n" +
+      "5) ห้ามขึ้นต้นว่า 'ความรู้ทั่วไป' และห้ามใช้บทตอบสำเร็จรูปซ้ำ ๆ";
+    return {
+      messages: [{ role: "system", content: chatSystem }, ...prior, { role: "user", content: question }],
+      grounded: false,
+      casual: true,
+    };
   }
 
   const grounded = ranked.length > 0;
@@ -329,17 +373,17 @@ function buildPrompt(
     : materials.slice(0, 12).map((m) => `- ${m.title}`).join("\n");
 
   const system =
-    "คุณคืออาจารย์ AI ของมหาวิทยาลัย ตอบภาษาไทยให้นักเรียนเข้าใจจริง\n" +
+    "คุณคืออาจารย์ AI ของมหาวิทยาลัย คุยกับนักศึกษาเป็นภาษาไทยอย่างเป็นธรรมชาติและตรงประเด็น\n" +
     (grounded
       ? "1) ใช้หลักฐานที่ให้มาเป็นหลัก ห้ามแต่งข้อมูลที่ไม่มีในหลักฐาน\n"
-      : "1) คำถามนี้ไม่ตรงกับเนื้อหาในไฟล์ที่ซิงก์มาเลย — ห้ามปฏิเสธ ให้ใช้ความรู้ทั่วไปของสาขานั้นอธิบายต่อ โดยยึดว่าวิชานี้สอนเรื่องอะไร\n") +
-    "2) ถ้าตอบจากความรู้ทั่วไป (ไม่ได้อยู่ในไฟล์) ให้ขึ้นบรรทัดแรกว่า 'ความรู้ทั่วไป (ไม่ได้อยู่ในไฟล์ที่ซิงก์)' เพื่อให้นักเรียนรู้ว่าอะไรมาจากไฟล์ อะไรมาจากการอธิบายเพิ่ม\n" +
-    "3) ห้ามเกริ่นนำและห้ามพูดที่ไม่เกี่ยวกับเนื้อหา เช่น 'สวัสดีครับ', 'ได้เลยครับ', 'คำถามของคุณคือ', 'ยินดีตอบคำถาม', 'หวังว่าจะเป็นประโยชน์' — ต้องเริ่มเข้าเนื้อหาทันที\n" +
-    "4) ห้ามอ้างอิงคำถามซ้ำ ห้ามสรุปซ้ำสิ่งที่เพิ่งอธิบาย ห้ามปิดท้ายด้วยคำเล็กๆ ที่ไม่มีสาระ\n" +
-    "5) เขียนเป็นภาษาไทย ใช้หัวข้อย่อยและ bullet ให้อ่านง่าว่างระหว่างบรรทัดชัดเจน\n" +
-    "6) ถ้าเกี่ยวกับการเขียนโปรแกรม ให้ใส่โค้ดในกล่อง ``` พร้อมชื่อภาษาไว้หน้ากล่อง แล้วอธิบายทีละบรรทัดหลังกล่อง\n" +
-    "7) ถ้าอธิบายขั้นตอนหรือการไหลของงาน ให้วาด flowchart ในกล่อง ``` ใช้อักขระ ─│┌┐└┘├┤▼▲→ ให้เรียงตรงหลัก\n" +
-    "8) จบด้วยคำถามต่อท้าย 1 ประโยคสั้นๆ ว่า 'อยากให้ลงรายละเอียดตรงไหนต่อไหม'\n" +
+      : "1) คำถามนี้ไม่ตรงกับเนื้อหาในไฟล์ที่ซิงก์มา — ห้ามปฏิเสธ ให้ใช้ความรู้ทั่วไปของสาขานั้นอธิบายต่อ โดยยึดว่าวิชานี้สอนเรื่องอะไร\n") +
+    "2) ตอบคำถามที่ถามจริง ๆ เป็นประโยคแรก ไม่ต้องเกริ่นนำ ไม่ต้องทวนคำถาม\n" +
+    "3) ถ้าคำถามสั้น/ง่าย ให้ตอบสั้นกระชับ 2-5 ประโยคก่อน แล้วค่อยขยายเมื่อถูกถามต่อ — ไม่ต้องจัดหัวข้อทุกครั้ง\n" +
+    "4) ใช้ bullet/ตาราง/ขั้นตอนเมื่อช่วยให้เข้าใจง่ายเท่านั้น และถ้าอธิบายขั้นตอนการทำงานจึงค่อยวาด flowchart ในกล่อง ```\n" +
+    "5) ใช้ประวัติบทสนทนาก่อนหน้าให้ต่อเนื่องเหมือนคุยกับคนคนเดิม — ห้ามอธิบายซ้ำสิ่งที่เพิ่งตอบไปแล้ว\n" +
+    (grounded ? "" : "6) ถ้าตอบจากความรู้ทั่วไป (ไม่ได้อยู่ในไฟล์) ให้ขึ้นบรรทัดแรกว่า 'ความรู้ทั่วไป (ไม่ได้อยู่ในไฟล์ที่ซิงก์)'\n") +
+    "7) ถ้าเกี่ยวกับการเขียนโปรแกรม ให้ใส่โค้ดในกล่อง ``` พร้อมชื่อภาษา แล้วอธิบายเฉพาะจุดสำคัญ\n" +
+    "8) ไม่ต้องปิดท้ายด้วยคำถามทุกครั้ง — ถ้าจะถามต่อ ให้ถามเฉพาะเมื่อมีประโยชน์จริง\n" +
     "โหมดที่สั่ง: " + MODES[mode].instruction + "\n" +
     "ระดับความยาก: " + DIFFICULTY[difficulty].instruction + "\n" +
     "สไตล์การตอบ: " + SPEED[speed].instruction;
@@ -350,7 +394,11 @@ function buildPrompt(
     (grounded ? "หลักฐานจากไฟล์ในวิชา:\n" + context : "หัวข้อที่มีอยู่ในวิชานี้:\n" + context) +
     "\n\nคำถาม:\n" + question;
 
-  return { messages: [{ role: "system", content: system }, { role: "user", content: user }], grounded };
+  return {
+    messages: [{ role: "system", content: system }, ...prior, { role: "user", content: user }],
+    grounded,
+    casual: false,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -488,18 +536,20 @@ router.post("/ask", requireAuth(), async (req: any, res) => {
   let mode = pickMode(req.body?.mode);
   if (mode === "explain" && /(ผังงาน|ผังภาพ|flowchart|flow\s?chart|algorithm\s*selection)/i.test(question)) mode = "diagram";
     const speed = pickSpeed(req.body?.speed);
+    const history = parseHistory(req.body?.history);
     if (!subjectId || !question) return res.status(400).json({ error: "กรุณาเลือกวิชาและพิมพ์คำถาม" });
 
     const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id } });
     if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
 
-    const { materials, ranked } = await retrieve(subjectId, req.user.id, question);
+    const casual = isCasualChat(question);
+    const { materials, ranked } = await retrieve(subjectId, req.user.id, retrievalQuery(question, history));
     // ข้อความทักทาย/คุยเล่น ไม่ต้องมีเนื้อหาวิชาก็คุยได้
-    if (!materials.length && !isCasualChat(question)) {
-      return res.json({ grounded: false, usedModel: false, answer: "วิชานี้ยังไม่มีเนื้อหาใน Knowledge Base กรุณาซิงก์จาก Google Classroom ก่อน", sources: [] });
+    if (!materials.length && !casual) {
+      return res.json({ grounded: false, usedModel: false, casual: false, answer: "วิชานี้ยังไม่มีเนื้อหาใน Knowledge Base กรุณาซิงก์จาก Google Classroom ก่อน", sources: [] });
     }
 
-    const { messages, grounded } = buildPrompt(subject, question, mode, difficulty, speed, ranked, materials);
+    const { messages, grounded } = buildPrompt(subject, question, mode, difficulty, speed, ranked, materials, history);
     let answer: string | null = null;
     try {
       answer = await llm(messages, { temperature: SPEED[speed].temperature, model: SPEED[speed].model });
@@ -508,7 +558,7 @@ router.post("/ask", requireAuth(), async (req: any, res) => {
     }
 
     if (!answer) {
-      answer = isCasualChat(question)
+      answer = casual
         ? "สวัสดีครับ! ผมครู AI ของวิชานี้ " + subject.name + " วันนี้ให้ช่วยเรื่องอะไรดี"
         : ranked.length
           ? ranked.map((r) => r.chunk.content).join("\n\n")
@@ -517,10 +567,11 @@ router.post("/ask", requireAuth(), async (req: any, res) => {
 
     res.json({
       grounded,
+      casual,
       usedModel: !!answer && ranked.length > 0,
       mode, difficulty, speed,
       answer,
-      sources: isCasualChat(question) ? [] : toSources(ranked),
+      sources: casual ? [] : toSources(ranked),
       evidenceCount: ranked.length,
       materialCount: materials.length,
     });
@@ -544,6 +595,8 @@ router.post("/ask/stream", requireAuth(), async (req: any, res) => {
   // ถามว่า "ทำผังงาน" แต่โหมดยังเป็นค่าเริ่มต้น(อธิบาย) = ได้ ASCII เป็นตัวอักษร ให้สลับเป็นโหมดผังภาพให้เอง
   if (mode === "explain" && /(ผังงาน|ผังภาพ|flowchart|flow\s?chart|algorithm\s*selection)/i.test(question)) mode = "diagram";
   const speed = pickSpeed(req.body?.speed);
+  const history = parseHistory(req.body?.history);
+  const casual = isCasualChat(question);
 
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -556,25 +609,31 @@ router.post("/ask/stream", requireAuth(), async (req: any, res) => {
     const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id } });
     if (!subject) return send("error", { error: "ไม่พบวิชา" }), res.end();
 
-    const cacheKey = `${subjectId}|${difficulty}|${mode}|${speed}|${question.toLowerCase()}`;
+    // ใส่ประวัติใน cache key ด้วย — ถามต่อเนื่องบริบทต่างกันต้องไม่ได้คำตอบเดิม
+    const historyKey = crypto
+      .createHash("sha1")
+      .update(history.map((h) => h.role + ":" + h.content).join("\n"))
+      .digest("hex")
+      .slice(0, 12);
+    const cacheKey = `${subjectId}|${difficulty}|${mode}|${speed}|${casual ? "casual" : "study"}|${question.toLowerCase()}|${historyKey}`;
     const hit = answerCache.get(cacheKey);
     if (hit && Date.now() - hit.at < CACHE_MS) {
       send("sources", { sources: hit.sources });
       send("delta", { text: hit.answer });
-      send("done", { usedModel: true, grounded: hit.grounded, cached: true });
+      send("done", { usedModel: true, grounded: hit.grounded, casual, cached: true });
       return res.end();
     }
 
-    const { materials, ranked } = await retrieve(subjectId, req.user.id, question);
+    const { materials, ranked } = await retrieve(subjectId, req.user.id, retrievalQuery(question, history));
     // ข้อความทักทาย/คุยเล่น ไม่ต้องมีเนื้อหาวิชาก็คุยได้
-    if (!materials.length && !isCasualChat(question)) {
+    if (!materials.length && !casual) {
       send("delta", { text: "วิชานี้ยังไม่มีเนื้อหาใน Knowledge Base กรุณาซิงก์จาก Google Classroom ก่อน" });
-      return send("done", { usedModel: false, grounded: false }), res.end();
+      return send("done", { usedModel: false, grounded: false, casual: false }), res.end();
     }
 
-    const sources = isCasualChat(question) ? [] : toSources(ranked);
+    const sources = casual ? [] : toSources(ranked);
     send("sources", { sources });
-    const { messages, grounded } = buildPrompt(subject, question, mode, difficulty, speed, ranked, materials);
+    const { messages, grounded } = buildPrompt(subject, question, mode, difficulty, speed, ranked, materials, history);
 
     const models = [SPEED[speed].model, process.env.AI_MODEL || "gemini-3.5-flash", ...FALLBACK_MODELS.filter((m) => m !== SPEED[speed].model)];
     let full = "";
@@ -591,7 +650,7 @@ router.post("/ask/stream", requireAuth(), async (req: any, res) => {
       }
     }
     if (!full) {
-      const fallback = isCasualChat(question)
+      const fallback = casual
         ? "สวัสดีครับ! ผมครู AI ของวิชานี้ " + subject.name + " วันนี้ให้ช่วยเรื่องอะไรดี"
         : ranked.length ? ranked.map((r) => r.chunk.content).join("\n\n") : "ยังไม่พบเนื้อหาที่ตรงกับคำถามนี้";
       send("delta", { text: fallback });
@@ -599,7 +658,7 @@ router.post("/ask/stream", requireAuth(), async (req: any, res) => {
     } else {
       answerCache.set(cacheKey, { answer: full, sources, grounded, at: Date.now() });
     }
-    send("done", { usedModel, grounded });
+    send("done", { usedModel, grounded, casual });
     res.end();
   } catch (error) {
     try { send("error", { error: String(error instanceof Error ? error.message : error) }); } catch { }

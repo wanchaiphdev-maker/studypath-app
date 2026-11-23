@@ -130,13 +130,14 @@ export async function tutorTts(text: string) {
 /** ถาม–ตอบแบบสตรีม: ข้อความทยอยกลับมา ผู้ใช้เห็นผลทันที */
 export async function tutorAskStream(
   subjectId: string, question: string, difficulty: string, mode: string, speed: string,
-  handlers: { onSources?: (s: any[]) => void; onDelta?: (t: string) => void; onDone?: (d: any) => void; onError?: (e: string) => void }
+  handlers: { onSources?: (s: any[]) => void; onDelta?: (t: string) => void; onDone?: (d: any) => void; onError?: (e: string) => void },
+  history: { role: "user" | "assistant"; content: string }[] = []
 ) {
   const token = await getToken();
   const res = await fetch(getUrl("/studypath/tutor/ask/stream"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ subjectId, question, difficulty, mode, speed }),
+    body: JSON.stringify({ subjectId, question, difficulty, mode, speed, history: history.slice(-10) }),
   });
   if (!res.ok || !res.body) { handlers.onError?.("เชื่อมต่อ AI ไม่สำเร็จ"); return; }
 

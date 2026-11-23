@@ -593,7 +593,7 @@ function stopSpeak() {
 
 /* ================================================================== */
 
-type Msg = { role: "me" | "ai"; text: string; sources?: any[]; usedModel?: boolean; grounded?: boolean; streaming?: boolean };
+type Msg = { role: "me" | "ai"; text: string; sources?: any[]; usedModel?: boolean; grounded?: boolean; casual?: boolean; streaming?: boolean };
 
 export default function Tutor() {
   const [subjects, setSubjects] = useState<any[]>([]);
@@ -1059,6 +1059,11 @@ export default function Tutor() {
     if (needSubject() || !text.trim()) return;
     const q0 = text.trim();
     const useMode = overrideMode || mode;
+    // ส่งบทสนทนาก่อนหน้าไปด้วย เพื่อให้ถามต่อเนื่องได้เหมือน ChatGPT
+    const history = messages
+      .filter((m) => !m.streaming && m.text.trim())
+      .slice(-8)
+      .map((m) => ({ role: (m.role === "ai" ? "assistant" : "user") as "user" | "assistant", content: m.text.trim().slice(0, 1500) }));
     setMessages((m) => [...m, { role: "me", text: q0 }]);
     setQuestion("");
     setOnboardOff(true);
@@ -1075,12 +1080,12 @@ export default function Tutor() {
         },
         onDone: (d) => {
           setMessages((m) => m.map((x, i) => (i === aiIdx ? {
-            ...x, streaming: false, usedModel: d?.usedModel !== false, grounded: d?.grounded !== false,
+            ...x, streaming: false, usedModel: d?.usedModel !== false, grounded: d?.grounded !== false, casual: !!d?.casual,
           } : x)));
           if (autoSpeak && acc.trim().length > 10) speak(spokenText(acc));
         },
         onError: (e) => setMessages((m) => m.map((x, i) => (i === aiIdx ? { ...x, streaming: false, text: x.text || ("ผิดพลาด: " + e) } : x))),
-      });
+      }, history);
     } catch (e) {
       setMessages((m) => m.map((x, i) => (i === aiIdx ? { ...x, streaming: false, text: "ผิดพลาด: " + String(e) } : x)));
     } finally { setBusy(false); }
@@ -1340,7 +1345,7 @@ export default function Tutor() {
                 <Text style={styles.voiceText}>{speaking === String(i) ? "กำลังโหลดเสียง..." : "อ่านออกเสียง"}</Text>
               </Pressable>
               <Pressable style={styles.voice} onPress={stopSpeak}><Ionicons name="stop-circle-outline" size={14} color="#f59e0b" /><Text style={styles.voiceText}>หยุด</Text></Pressable>
-              {m.grounded === false
+              {m.casual ? null : m.grounded === false
                 ? <Pill text="ความรู้ทั่วไป" color="#f59e0b" />
                 : m.usedModel ? <Pill text="จากไฟล์จริง" color="#34d399" /> : <Pill text="ดึงจากไฟล์" color="#38bdf8" />}
             </View> : null}
