@@ -12,6 +12,7 @@ export default function Community(){
  async function post(){if(!title.trim()||!content.trim())return;setBusy(true);try{await createCommunityPost(title,content);setTitle("");setContent("");await load()}catch(e){Alert.alert("โพสต์ไม่สำเร็จ",String(e))}finally{setBusy(false)}}
  return <ScrollView style={styles.screen} contentContainerStyle={styles.content}><Pressable onPress={()=>(router.canGoBack?.()?router.back():router.replace("/(tabs)"))}><Text style={styles.back}>← กลับ</Text></Pressable><Text style={font.h1}>Community</Text>
  <Card><TextInput value={title} onChangeText={setTitle} placeholder="หัวข้อ" placeholderTextColor={colors.textMuted} style={styles.input}/><TextInput value={content} onChangeText={setContent} multiline placeholder="เขียนคำถามหรือสิ่งที่อยากแบ่งปัน..." placeholderTextColor={colors.textMuted} style={[styles.input,styles.area]}/><Button onPress={post} loading={busy}>โพสต์</Button></Card>
+ {posts.length===0?<Card><Text style={font.title}>ยังไม่มีโพสต์</Text><Text style={[font.body,{marginTop:6}]}>เริ่มแชร์คำถามหรือเทคนิคการเรียนกับเพื่อนคนแรกได้เลย</Text></Card>:null}
  {posts.map(p=><Pressable key={p.id} onPress={()=>router.push(("/community/"+p.id) as any)}><Card><Text style={font.title}>{p.title}</Text><Text style={font.caption}>{p.user?.name||"นักศึกษา"} · {p._count?.comments||0} ความคิดเห็น</Text><Text style={font.body} numberOfLines={3}>{p.content}</Text></Card></Pressable>)}
  </ScrollView>
 }

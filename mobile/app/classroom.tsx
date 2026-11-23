@@ -77,7 +77,12 @@ export default function ClassroomScreen() {
         setSyncMsg(total > 0 ? `อัปเดตแล้ว · ใหม่ ${r.imported} · แก้ไข ${r.updated}` : "อยู่ต่อเนื่อง · ไม่มีไฟล์ใหม่");
         return total > 0 ? load() : undefined;
       })
-      .catch(() => setSyncMsg("ซิงก์รอบนี้ไม่สำเร็จ — ระบบจะลองใหม่อัตโนมัติ"))
+      .catch((e) => setSyncMsg(
+        // 409 = autosync กำลังทำงานอยู่ ไม่ใช่ความล้มเหลว — อย่าทำให้ผู้ใช้ตกใจ
+        /กำลังซิงก์อยู่/.test(String(e))
+          ? "ระบบกำลังซิงก์อยู่ — ผลจะอัปเดตให้อัตโนมัติ"
+          : "ซิงก์รอบนี้ไม่สำเร็จ — ระบบจะลองใหม่อัตโนมัติ",
+      ))
       .finally(() => { clearTimeout(timer); if (!cancelled) setAutoSyncing(false); });
 
     return () => { cancelled = true; clearTimeout(timer); };
@@ -119,7 +124,11 @@ export default function ClassroomScreen() {
       Alert.alert("Sync สำเร็จ", `นำเข้าใหม่ ${result.imported} รายการ · อัปเดต ${result.updated} · ข้าม ${result.skipped} · ไม่รองรับ ${result.unsupported}`);
       await load();
     } catch (e) {
-      Alert.alert("Sync ไม่สำเร็จ", String(e));
+      if (/กำลังซิงก์อยู่/.test(String(e))) {
+        Alert.alert("กำลังซิงก์อยู่", "ระบบกำลังซิงก์จาก Classroom อยู่ รอสักครู่แล้วลองอีกครั้ง");
+      } else {
+        Alert.alert("Sync ไม่สำเร็จ", String(e));
+      }
     } finally {
       setSyncing(false);
     }

@@ -12,6 +12,8 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
   const token = await getToken();
   const response = await fetch(getUrl(path), {
     ...opts,
+    // กันเบราว์เซอร์ตอบ 304 จากแคช (fetch จะมองว่าไม่ ok แล้วข้อมูลหายทั้งหน้า)
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -24,7 +26,10 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
       await removeToken().catch(() => undefined);
     }
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || response.statusText);
+    // ข้อความแนะนำจากเซิร์ฟเวอร์ (hint) ต้องส่งถึงหน้าจอด้วย ไม่งั้นผู้ใช้เห็นแค่ "ดึงไม่ได้" แล้วไปต่อไม่ถูก
+    const err = new Error(body.error || response.statusText) as Error & { hint?: string };
+    if (body && typeof body.hint === "string" && body.hint.trim()) err.hint = body.hint.trim();
+    throw err;
   }
   return response.json();
 }
@@ -35,6 +40,7 @@ export async function isLoggedIn(): Promise<boolean> {
   if (!token) return false;
   try {
     const response = await fetch(getUrl("/studypath/progress"), {
+      cache: "no-store",
       headers: { Authorization: `Bearer ${token}` },
     });
     return response.ok;
@@ -194,10 +200,10 @@ export async function tutorFiles(subjectId: string) {
 }
 
 /** โจทย์ซ้อน: สร้างโจทย์ใหม่จากไฟล์เดียวกัน ให้ลองทำเอง ไม่มีเฉลย */
-export async function tutorProblemVariant(subjectId: string, format: string, baseMaterialId: string) {
+export async function tutorProblemVariant(subjectId: string, format: string, baseMaterialId: string, level = "") {
   return api<any>("/studypath/tutor/diagnose/problem", {
     method: "POST",
-    body: JSON.stringify({ subjectId, format, variant: true, baseMaterialId }),
+    body: JSON.stringify({ subjectId, format, variant: true, baseMaterialId, level }),
   });
 }
 
@@ -209,6 +215,10 @@ export async function tutorCheckAnswer(subjectId: string, problem: string, answe
 /** ขอคำใบ้โหมดฝึกทำรหัสเทียม — ใบ้ทีละขั้น ไม่บอกเฉลย (prev = คำใบ้ที่ได้ไปแล้ว กันซ้ำ/ให้ลึกขึ้น) */
 export async function tutorPracticeHint(subjectId: string, problem: string, answer: string, prev: string[] = []) {
   return api<any>("/studypath/tutor/diagnose/hint", { method: "POST", body: JSON.stringify({ subjectId, problem, answer, prev }) });
+}
+/** ร่างเฉลยโค้ดจากโจทย์ปัจจุบันโดยตรง (ไม่ผ่านบริบทแชตทั่วไป) */
+export async function tutorCodeSolution(subjectId: string, problem: string, answer = "", materialId = "") {
+  return api<any>("/studypath/tutor/diagnose/code-solution", { method: "POST", body: JSON.stringify({ subjectId, problem, answer, materialId }) });
 }
 
 /** วิเคราะห์โจทย์ (Input/Output/Process/ตัวแปร/ค่าเริ่มต้น/รหัสเทียม) — ผู้เรียนกดดูเอง แยกจากตัวโจทย์ */

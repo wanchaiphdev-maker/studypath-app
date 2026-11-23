@@ -10,10 +10,14 @@ import { letterCount, NON_TEXT_CHAR_RE, hasSubstantiveContent, contentQuality, i
 import { buildSubjectTopics } from "./tutor";
 
 /** แยกประโยคที่ยาวพอจะตั้งเป็นโจทย์เติมคำได้ */
+/** เลขหน้า/หัวกระดาษที่ OCR ติดมากับเนื้อหา เช่น "-- 3 of 12 --" — ตัดทิ้งก่อนตั้งโจทย์ */
+const PAGE_MARKER_RE = /[-–—]{0,3}\s*\b\d+\s*of\s*\d+\b\s*[-–—]{0,3}/gi;
+
 function splitSentences(text: string): string[] {
   return String(text || "")
+    .replace(PAGE_MARKER_RE, " ")
     .split(/(?<=[.!?。！？])\s+|\n+/)
-    .map((x) => x.trim())
+    .map((x) => x.replace(/\s{2,}/g, " ").trim())
     .filter((x) => x.length >= 30);
 }
 
@@ -57,6 +61,25 @@ export function isLinkOnly(text: string) {
 }
 
 /**
+ * ขยะจาก OCR: เลขหน้าของไฟล์ PDF หลายหน้าติดกันเป็นประโยคเดียว
+ * เช่น "Chapter 4 -- 1 of 32 -- ... -- 32 of 32 --" (ตัวอักษรเยอะจนผ่านตัวกรองปกติ)
+ * ถ้าตัด marker ออกแล้วเหลือเนื้อหาจริงน้อย = ใช้ตั้งโจทย์ไม่ได้
+ */
+function isPageMarkerNoise(s: string): boolean {
+  const hits = s.match(/\b\d+\s*(?:of|\/)\s*\d+\b/gi) || [];
+  // เจอ "N of M" ตั้งแต่ 3 ครั้งขึ้นไป = เนื้อหาจริงแทบไม่มีทางเป็นแบบนี้ (เป็นเลขหน้าต่อกัน)
+  if (hits.length >= 3) return true;
+  if (hits.length < 2) return false;
+  const rest = s
+    .replace(/\b\d+\s*(?:of|\/)\s*\d+\b/gi, " ")
+    .replace(/[-–—_=.*|]+/g, " ")
+    .replace(/หน้า|page|ตอนที่|บทที่/gi, " ")
+    .trim();
+  const words = rest.split(/\s+/).filter(Boolean);
+  return letterCount(rest) < 60 || words.length < 12;
+}
+
+/**
  * ประโยคที่เอาไปตั้งเป็นโจทย์เติมคำได้จริง
  * ตัด: ตารางตัวเลขล้วน, บรรทัดสั้น, ข้อความที่ไม่มีตัวอักษรพอ
  * (เช่น "5 x 1001 x 1011 x 1023 x 1032 x 104 + + + +" ตัดเลขจากสไลด์)
@@ -64,6 +87,7 @@ export function isLinkOnly(text: string) {
 function usableSentence(s: string): boolean {
   const letters = letterCount(s);
   if (letters < 20) return false;
+  if (isPageMarkerNoise(s)) return false;                   // เลขหน้า PDF/OCR ปนมาหลายหน้า = ขยะ
   if (letters / s.length < 0.4) return false;              // ตัวเลขเยอะเกิน = ตาราง
   if ((s.match(/[+×÷=]/g) || []).length >= 3) return false; // สมการยาวเกิน
   if (/^[\d\s.,+\-*/=%_$#|]+$/.test(s)) return false;       // ไม่มีตัวอักษรเลย

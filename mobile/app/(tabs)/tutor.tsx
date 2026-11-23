@@ -6,10 +6,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, font, spacing } from "../../lib/theme";
 import { Alert } from "../../lib/alert";
 import { Button, Card, GlowCard, Pill } from "../../lib/ui";
+import FlowchartBuilder from "../../components/FlowchartBuilder";
 import MermaidFlow from "../../components/MermaidFlow";
 import {
   BASE_URL, getSubjects, tutorAnalyze, tutorAskStream, tutorCheckAnswer, tutorDiagnose, tutorEvaluate,
-  tutorFiles, tutorOpen, tutorPlan, tutorPracticeHint, tutorProblem, tutorProblemVariant, tutorStudyPlan, tutorTts, tutorTopics,
+  tutorFiles, tutorOpen, tutorPlan, tutorPracticeHint, tutorCodeSolution, tutorProblem, tutorProblemVariant, tutorStudyPlan, tutorTts, tutorTopics,
 } from "../../lib/api";
 
 /* ================================================================== */
@@ -665,6 +666,8 @@ export default function Tutor() {
   const [problem, setProblem] = useState<any>(null);
   const [probBusy, setProbBusy] = useState(false);
   const [probErr, setProbErr] = useState("");
+  // คำแนะนำเพิ่มเติมจากเซิร์ฟเวอร์ (เช่น "วิชานี้ไม่มีแบบฝึกหัด — ลองแปลประโยคหรือเลือกวิชาอื่น")
+  const [probHint, setProbHint] = useState("");
   const [myAnswer, setMyAnswer] = useState("");
   const [picked, setPicked] = useState(-1);
   const [mark, setMark] = useState<any>(null);
@@ -702,6 +705,7 @@ export default function Tutor() {
   // "" = ทั่วไป (ระบบเลือกฟอร์แมตเอง), "code"/"options" = เลือกจากหน้าเลือก
   // "flowchart"/"pseudocode"/"table"/"random" = ตั้งจาก popup เลือกตอนเข้าแท็บข้อสอบ (สุ่มทุกอย่าง)
   const [pullStyle, setPullStyle] = useState<string>("");
+  const [focusedPractice, setFocusedPractice] = useState(false);
 
   const fmt: Fmt = ((problem?.format as Fmt) || "text") as Fmt;
   const fmtMeta = FORMATS.find((f) => f.k === fmt) || FORMATS[0];
@@ -711,8 +715,8 @@ export default function Tutor() {
    * ซ่อนแถบเลือกแนว/ปุ่มสุ่ม/โจทย์ซ้อน/ถาม AI/วิเคราะห์ — เพราะผลวิเคราะห์มีส่วน
    * "รหัสเทียม" ที่เป็นเฉลยข้อนั้น ถ้าเปิดดูได้ตอนฝึก = เห็นเฉลยตั้งแต่ก่อนทำ
    */
-  const practice = pullStyle === "pseudocode";
-  const practiceProb = practice && !!problem && fmt === "pseudocode";
+  const practice = focusedPractice;
+  const pseudoPractice = practice && pullStyle === "pseudocode";
   /**
    * ใบ้แบบ "insert เป็นโครงโค้ด" — เฉลยถูกสอดเข้าไปในช่องโค้ด (myAnswer) จริง
    * ทีละบรรทัด ผู้เรียนแก้/พิมพ์ต่อเองได้ทุกบรรทัด
@@ -731,7 +735,7 @@ export default function Tutor() {
   async function fetchHints() {
     if (!problem) return;
     setHintBusy(true);
-    let acc = "";
+    const taskForHint = problem.problem;
     // ตัด ``` รอบโค้ดแบบหลวม ๆ ใช้ระหว่าง stream เพราะหมวกปิดอาจยังมาไม่ครบ
     const stripLoose = (t: string) =>
       t.replace(/^\s*`{1,3}[a-zA-Z]*\r?\n?/, "").replace(/\s*`{1,3}\s*$/, "");
@@ -792,27 +796,15 @@ export default function Tutor() {
       });
     }, 120);
     try {
-      await tutorAskStream(
-        subjectId,
-        "เขียนโค้ดแก้โจทย์นี้ ตอบเป็นโค้ดเท่านั้นในกล่อง ``` ห้ามมีคำอธิบายใด ๆ นอกกล่อง และห้ามพิมพ์ข้อความทักทาย ถามท้ายคำตอบ หรือสรุปความยาวเหตุผล ให้มีแต่โค้ดล้วน คอมเมนต์ในโค้ดใส่เฉพาะบรรทัดที่จำเป็นจริง ๆ เท่านั้น",
-        "normal", "code", "balanced",
-        {
-          onDelta: (t) => { acc += t; },
-          // เสร็จแล้วเก็บ "ทั้งก้อน" ไว้ใน hintLines แล้วสอด "บรรทัดแรก" เข้าช่องโค้ดก่อน
-          // ที่เหลือค่อยกดปลดล็อกทีละบรรทัด
-          onDone: () => {
-            const m = acc.match(/```[a-zA-Z]*\n([\s\S]*?)```/);
-            const clean = m ? m[1] : acc;
-            // ดึง // ออกจากบรรทัดโค้ด แล้วไปรวมกันไว้ต่อท้ายโค้ด
-            const lines = relocateComments(trimTail(stripLoose(clean)).split("\n"));
-            if (!lines.join("").trim()) { Alert2("ยังร่างไม่ได้", "AI ไม่ส่งโค้ดกลับมา ลองอีกครั้ง"); return; }
-            setHintLines(lines);
-            setHintShown(1); // สอดเข้าช่องแค่บรรทัดแรกก่อน ที่เหลือต้องกดปลดล็อกเอง
-            insertHintLines([lines[0]]);
-          },
-          onError: (e) => Alert2("ยังร่างไม่ได้", e),
-        }
-      );
+      const response = await tutorCodeSolution(subjectId, taskForHint, myAnswer, String(problem.source?.materialId || ""));
+      const rawCode = String(response?.code || "");
+      const block = rawCode.match(/```[a-zA-Z+#]*\s*\n?([\s\S]*?)```/);
+      const clean = block ? block[1] : rawCode;
+      const lines = relocateComments(trimTail(stripLoose(clean)).split("\n"));
+      if (!lines.join("").trim()) throw new Error("ยังสร้างโค้ดสำหรับโจทย์ข้อนี้ไม่ได้ ลองอีกครั้ง");
+      setHintLines(lines);
+      setHintShown(1);
+      insertHintLines([lines[0]]);
     } catch (e: any) {
       Alert2("ยังร่างไม่ได้", String(e?.message || e));
     } finally { setHintBusy(false); }
@@ -881,33 +873,38 @@ export default function Tutor() {
 
   /** "สุ่มทุกอย่าง" — สุ่มฟอร์แมตใหม่ทุกครั้งที่ดึง โค้ด/รหัสเทียมสุ่มได้เฉพาะวิชาที่มีสัญญาณเขียนโปรแกรมจริง */
   function pickRandomFmt(): Fmt {
-    const pool: Fmt[] = ["text", "options", "flowchart", "diagram", "table"];
+    const pool: Fmt[] = ["text", "options"];
+    if (hasDiagramMode) pool.push("flowchart", "diagram");
+    if (hasCompareMode || hasStepsMode) pool.push("table");
+    if (hasLangMode) pool.push("translate");
     if (hasCodeMode) pool.push("code", "pseudocode");
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
   async function loadProblem(forceFmt?: string) {
     if (needSubject()) return;
-    setProbBusy(true); setProbErr(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis(); setPracticeHints([]);
+    setProbBusy(true); setProbErr(""); setProbHint(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis(); setPracticeHints([]);
     try {
       // แนวโจทย์จากหน้าเลือก (pullStyle) มาก่อน — เลือกที่นี่มีผลเฉพาะรอบดึงนี้ ไม่เปลี่ยนโหมดหลัก
       // "random" (สุ่มทุกอย่าง) = สุ่มฟอร์แมตใหม่เองทุกครั้งที่ดึง โค้ด/รหัสเทียมสุ่มได้เฉพาะวิชาที่มีสัญญาณโค้ด
       // ไม่ได้เลือก = ค่อยดูโหมดหลัก (โหมดโค้ดยังดึงโจทย์โค้ดเหมือนเดิม) หรือให้เซิร์ฟเวอร์เลือกเอง
-      const useFmt = forceFmt !== undefined ? forceFmt
-        : pullStyle === "random" ? pickRandomFmt()
-          : (pullStyle || (mode === "code" ? "code" : ""));
+      const requested = forceFmt !== undefined ? forceFmt : pullStyle;
+      const useFmt = requested === "random" ? pickRandomFmt()
+        : forceFmt !== undefined ? requested
+          : practice ? requested : (requested || (mode === "code" ? "code" : ""));
       // focusTopics = หัวข้อที่เลือกไว้ในหน้าเลือกก่อนดึง (ไม่เลือก = ทั้งวิชา)
       // pickFile/pickLevel = ไฟล์ต้นทาง 1 ไฟล์ + ระดับความยาก (ไม่เลือก = ทั้งวิชา / เรียงง่ายก่อน)
       const r = await tutorProblem(subjectId, useFmt, seen, src, focusTopics, { materialId: pickFile, level: pickLevel });
       setProblem(r);
       // rawKey = คีย์จากข้อความดิบที่เซิร์ฟเวอร์เทียบตอนกรองข้อซ้ำ — ใช้ก่อน
       // (โจทย์ที่ AI แต่งใหม่มีคำนำหน้าต่างจากต้นฉบับ เทียบด้วยข้อความบนจอจะไม่ตรงเลย)
-      if (r?.source) setSeen((s) => [...s, r.rawKey || (r.source.materialId + "|" + String(r.problem).slice(0, 40))].slice(-20));
+      if (r?.source) setSeen((s) => [...s, r.rawKey || (r.source.materialId + "|" + String(r.problem).normalize("NFKC").replace(/\s+/g, " ").trim().slice(0, 1200))].slice(-20));
       // สุ่มโจทย์ใหม่ = ต้องเห็นผลลัพธ์ทันที ไม่ใช่ถูกเลื่อนไปเอาท้ายจอ
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
     } catch (e: any) {
       setProblem(null);
       setProbErr(String(e?.message || e).replace(/^Error:\s*/, ""));
+      setProbHint(String(e?.hint || ""));
     } finally { setProbBusy(false); }
   }
 
@@ -915,12 +912,12 @@ export default function Tutor() {
   async function loadVariant() {
     if (needSubject()) return;
     if (!problem?.source?.materialId) { Alert2("ยังไม่มีโจทย์", "กดสุ่มโจทย์ก่อน แล้วค่อยขอโจทย์ซ้อน"); return; }
-    setProbBusy(true); setProbErr(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis(); setPracticeHints([]);
+    setProbBusy(true); setProbErr(""); setProbHint(""); setMark(null); setMyAnswer(""); setPicked(-1); setDoneItems([]); setMissing([]); resetHints(); resetAnalysis(); setPracticeHints([]);
     try {
-      const r = await tutorProblemVariant(subjectId, fmt || "", problem.source.materialId);
+      const r = await tutorProblemVariant(subjectId, fmt || "", problem.source.materialId, pickLevel);
       setProblem(r);
       // โจทย์ซ้อนคนละข้อ = ให้ถือว่ายังไม่เคยเห็น เพื่อไม่ให้ถูกกรองออกตอนสุ่มรอบหน้า
-      if (r?.source) setSeen((s) => [...s, r.source.materialId + "|" + String(r.problem).slice(0, 40)].slice(-20));
+      if (r?.source) setSeen((s) => [...s, r.source.materialId + "|" + String(r.problem).normalize("NFKC").replace(/\s+/g, " ").trim().slice(0, 1200)].slice(-20));
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
     } catch (e: any) {
       Alert2("สุ่มโจทย์ซ้อนไม่สำเร็จ", String(e?.message || e).replace(/^Error:\s*/, ""));
@@ -1007,14 +1004,14 @@ export default function Tutor() {
       };
     });
   }, [opening]);
-  // วิชานี้มีเนื้อหาเขียนโปรแกรมจริงในไฟล์ไหม — ใช้สัญญาณเดียวกับที่ซ่อนหมวด "โค้ด" ในหน้าเลือก
-  // (ไม่เดาจากชื่อวิชา) ใช้ซ่อนแถวโค้ด/รหัสเทียมใน popup และกันการสุ่มฟอร์แมตโค้ดของวิชาทั่วไป
-  const hasCodeMode = (subjectModes.length ? subjectModes : FALLBACK_MODES).some((m) => m.k === "code");
+  // ฟอร์แมตเฉพาะทางในเมนูข้อสอบให้ตรงกับเนื้อหาของวิชาที่ /open วิเคราะห์ได้
+  const hasCodeMode = subjectModes.some((m) => m.k === "code");
+  const hasDiagramMode = subjectModes.some((m) => m.k === "diagram");
+  const hasCompareMode = subjectModes.some((m) => m.k === "compare");
+  const hasStepsMode = subjectModes.some((m) => m.k === "steps");
+  const hasLangMode = subjectModes.some((m) => m.k === "vocab" || m.k === "grammar");
   // สัญญาณอื่น ๆ ของวิชา — ใช้กรองแถวใน popup "จะเลือกทำอะไร?" ให้เห็นเฉพาะแนวที่เกี่ยวกับวิชานั้น
   // (มาจากรายการโหมดของ /open ที่เซิร์ฟเวอร์อ่านเนื้อหาไฟล์จริงแล้ว ไม่เดาจากชื่อวิชา)
-  const hasDiagramMode = (subjectModes.length ? subjectModes : FALLBACK_MODES).some((m) => m.k === "diagram");
-  const hasCompareMode = subjectModes.some((m) => m.k === "compare");
-  const hasLangMode = subjectModes.some((m) => m.k === "vocab" || m.k === "grammar");
   // ถ้าโหมดที่เลือกไว้ไม่อยู่ในรายการของวิชานี้ ให้เด้งกลับเป็นอันแรก
   useEffect(() => {
     if (!subjectModes.length) return;
@@ -1115,6 +1112,8 @@ export default function Tutor() {
   async function startQuizFocused(list?: string[]) {
     if (needSubject()) return;
     // เริ่มข้อสอบ = ไปหน้า "วินิจฉัยอัตโนมัติ" เสมอ (ไม่ว่าจะกดมาจากแท็บไหน)
+    setFocusedPractice(false);
+    setPullStyle("");
     setTab("diag");
     setDiagStage("quiz");
     const focus = list?.length ? list : focusTopics;
@@ -1165,7 +1164,7 @@ export default function Tutor() {
           </View>
         </Pressable>
         <Pressable style={styles.levelHit} onPress={() => setOptOpen(true)}>
-          <Pill text={`ระดับ: ${levelMeta.label}`} color={levelMeta.color} />
+          <Pill text={`คำอธิบาย: ${levelMeta.label}`} color={levelMeta.color} />
         </Pressable>
         <Pressable style={styles.changeBtn} onPress={() => setPickerOpen(true)}>
           <Text style={styles.changeText}>เปลี่ยน</Text>
@@ -1190,15 +1189,6 @@ export default function Tutor() {
 
           {stage === "want" ? <>
             <Text style={font.h2}>👋 {opening.greeting}</Text>
-            <View style={styles.wantGrid}>
-              {(opening.choices || []).map((c: any, i: number) => <Pressable key={i} style={styles.wantCard}
-                onPress={() => ask(c.prompt, c.key as Mode)}>
-                <View style={[styles.wantIcon, { backgroundColor: (modeMeta.color || "#a78bfa") + "22" }]}>
-                  <Ionicons name={c.icon as any} size={19} color={modeMeta.color || "#a78bfa"} />
-                </View>
-                <Text style={styles.wantLabel}>{c.label}</Text>
-              </Pressable>)}
-            </View>
             <Pressable style={styles.ghostBtn} onPress={() => setStage("weak")}>
               <Text style={styles.ghostText}>ไม่แน่ใจ → ให้ช่วยประเมินจุดอ่อนให้</Text>
             </Pressable>
@@ -1451,22 +1441,24 @@ export default function Tutor() {
           </Button>
         </Card> : null}
 
-        {/* โหมดฝึกทำรหัสเทียม — ยังไม่มีข้อของแนวรหัสเทียม (หรือมีค้างจากแนวอื่น) = เริ่มที่ข้อแรก */}
-        {practice && !practiceProb ? <Card style={styles.panel}>
+        {/* หน้าแบบฝึกแต่ละรูปแบบ — สร้างข้อแรกทันทีเมื่อเลือกเมนู */}
+        {practice && !problem ? <Card style={styles.panel}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Ionicons name="terminal-outline" size={19} color="#818cf8" />
-            <Text style={font.h2}>ฝึกทำรหัสเทียม</Text>
+            <Ionicons name={(FORMATS.find((f) => f.k === pullStyle)?.icon || "school-outline") as any} size={19} color="#818cf8" />
+            <Text style={font.h2}>ฝึกทำ{FORMATS.find((f) => f.k === pullStyle)?.label || "โจทย์"}</Text>
           </View>
           {/* เลือกไฟล์ต้นทาง + ระดับก่อนเริ่มฝึก — ไม่เลือก = ทั้งวิชา + เรียงง่ายก่อน */}
           <FileLevelPick
             files={fileList} busy={fileBusy}
             pickFile={pickFile} onFile={setPickFile}
             pickLevel={pickLevel} onLevel={setPickLevel}
+            codeMode={pullStyle === "code" || mode === "code"}
             stepStart={1} compact
           />
-          <Button onPress={() => loadProblem()} loading={probBusy} icon="play-outline">
-            {problem ? "สุ่มข้อใหม่ในแนวรหัสเทียม" : "เริ่มฝึกทำข้อแรก"}
+          <Button onPress={() => loadProblem(pullStyle)} loading={probBusy} icon="play-outline">
+            ลองเตรียมโจทย์อีกครั้ง
           </Button>
+          <Pressable style={styles.ghostBtn} onPress={() => setExamPick(true)}><Text style={styles.ghostText}>เปลี่ยนรูปแบบ</Text></Pressable>
         </Card> : null}
 
         {/* ===== หน้าเลือกก่อนดึง — กด "ดึงโจทย์" แล้วขึ้นตรงนี้:
@@ -1523,6 +1515,7 @@ export default function Tutor() {
             files={fileList} busy={fileBusy}
             pickFile={pickFile} onFile={setPickFile}
             pickLevel={pickLevel} onLevel={setPickLevel}
+            codeMode={pullStyle === "code" || mode === "code"}
             stepStart={3}
           /> : null}
 
@@ -1537,16 +1530,22 @@ export default function Tutor() {
         {probErr ? <Card style={styles.panel}>
           <Text style={[font.h2, { color: "#f59e0b" }]}>ยังดึงโจทย์ไม่ได้</Text>
           <Text style={font.caption}>{probErr}</Text>
+          {probHint ? <Text style={[font.caption, { marginTop: 6, color: "#c4b5fd" }]}>{probHint}</Text> : null}
+          <View style={{ marginTop: 12 }}>
+            <Button onPress={() => setPickerOpen(true)} variant="secondary" icon="swap-horizontal-outline">เปลี่ยนวิชา</Button>
+            {practice ? null : <Button onPress={() => setPickStage(true)} variant="ghost" icon="folder-open-outline">เลือกไฟล์ / ระดับความยาก</Button>}
+          </View>
         </Card> : null}
 
-        {problem && (!practice || fmt === "pseudocode") ? <Card style={styles.panel}>
+        {problem ? <Card style={styles.panel}>
           {/* โหมดฝึก — เปลี่ยนไฟล์/ระดับได้ระหว่างทำ (ไม่เกี่ยวกับเฉลย ไม่ปลดล็อกอะไร) */}
-          {practice ? <FileLevelPick
+          <FileLevelPick
             files={fileList} busy={fileBusy}
             pickFile={pickFile} onFile={setPickFile}
             pickLevel={pickLevel} onLevel={setPickLevel}
+            codeMode={fmt === "code"}
             stepStart={1} compact
-          /> : null}
+          />
           <View style={styles.probHead}>
             <Pill text={fmtMeta.label} color="#4ade80" />
             <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
@@ -1563,8 +1562,13 @@ export default function Tutor() {
             <Text style={styles.probCount}>{problem.totalProblems} โจทย์{pickFile ? "ในไฟล์นี้" : "ในวิชานี้"}</Text>
           </View>
 
+          {practice ? <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+            <Text style={[font.caption, { flex: 1 }]}>แบบฝึก{fmtMeta.label} · วิชานี้</Text>
+            <Pressable style={styles.ghostBtn} onPress={() => setExamPick(true)}><Text style={styles.ghostText}>เปลี่ยนรูปแบบ</Text></Pressable>
+          </View> : null}
+
           {/* ไม่เจอข้อระดับที่เลือกในไฟล์นี้ — AI ต่อยอดข้อนี้ให้ตรงระดับแทน (แจ้งเบา ๆ ไม่ขวางการทำ) */}
-          {problem.levelFallback ? <Text style={styles.levelNote}>ไม่เจอข้อระดับนี้ในไฟล์ — AI ปรับข้อนี้ให้ตรงระดับที่เลือกให้แล้ว</Text> : null}
+          {problem.levelFallback ? <Text style={styles.levelNote}>{fmt === "code" ? "ไม่มีโจทย์โค้ดในระดับนี้พอดี — เลือกโจทย์จากไฟล์ที่ใกล้ระดับที่สุด โดยคงเนื้อหาตามไฟล์เรียน" : "ไม่เจอข้อระดับนี้ในไฟล์ — ปรับโจทย์ตามระดับที่เลือก"}</Text> : null}
 
 
           {/* โจทย์ — แสดงผ่าน RichText เพื่อให้มีสี/กล่องเหมือนโค้ดและผังภาพ */}
@@ -1663,7 +1667,7 @@ export default function Tutor() {
               <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                 <Pressable style={styles.ghostBtn} onPress={() => setMyAnswer("")}><Text style={styles.ghostText}>ล้าง</Text></Pressable>
                 {/* โหมดฝึกทำ — ขอคำใบ้ AI: ใบ้ทีละขั้น ไม่บอกเฉลย ไม่แทรกอะไรลงช่องคำตอบ */}
-                {practice ? <Pressable style={[styles.ghostBtn, psuHintBusy && { opacity: 0.5 }]} disabled={psuHintBusy}
+                {pseudoPractice ? <Pressable style={[styles.ghostBtn, psuHintBusy && { opacity: 0.5 }]} disabled={psuHintBusy}
                   onPress={fetchPracticeHint}>
                   <Text style={styles.ghostText}>
                     {psuHintBusy ? "กำลังคิดคำใบ้..." : practiceHints.length ? "ขอคำใบ้เพิ่ม" : "ติด? ขอคำใบ้"}
@@ -1684,6 +1688,25 @@ export default function Tutor() {
                 ))}
               </View> : null}
             </View>
+            : fmt === "flowchart" || fmt === "diagram" ? <FlowchartBuilder
+              key={`${subjectId}:${problem.source?.materialId || ""}:${problem.problem}`}
+              question={problem.problem}
+              feedback={mark ? typeof mark === "string" ? mark : typeof mark.feedback === "string" ? mark.feedback : mark.feedback?.fix || (mark.correct === true ? "ตรวจแล้ว: ถูกต้อง" : mark.correct === false ? "ตรวจแล้ว: ลองแก้ผังงานอีกครั้ง" : "") : ""}
+              busy={markBusy || probBusy}
+              onChange={setMyAnswer}
+              onCheck={checkMyAnswer}
+              onNext={() => loadProblem(pullStyle)}
+              onBack={() => { setFocusedPractice(false); setExamPick(true); }}
+            />
+            : fmt === "table" ? <View style={{ marginTop: 12, gap: 8 }}>
+              <Text style={font.caption}>กรอกคำตอบเป็นตาราง Markdown แล้วดูตัวอย่างได้ทันที</Text>
+              <TextInput
+                value={myAnswer} onChangeText={setMyAnswer} multiline
+                placeholder={'| หัวข้อ | รายละเอียด |\n| --- | --- |\n| ... | ... |'}
+                placeholderTextColor={colors.textMuted} style={styles.ansInput}
+              />
+              {myAnswer.trim() ? <RichText text={myAnswer} tone="dark" /> : null}
+            </View>
             : <TextInput
               value={myAnswer} onChangeText={setMyAnswer} multiline
               placeholder="พิมพ์คำตอบของคุณ..."
@@ -1696,8 +1719,9 @@ export default function Tutor() {
             {/* โหมดฝึกทำรหัสเทียม — ตรวจ "ถูก" แล้วค่อยไปข้อถัดไป (สุ่มข้อใหม่จากไฟล์ ไม่ซ้ำเดิม)
                  ส่วนโจทย์ซ้อน/ถาม AI ถูกซ่อนตามที่ผู้ใช้สั่งให้หน้านี้มีแค่การฝึกล้วน */}
             {practice && typeof mark === "object" && mark?.correct === true
-              ? <Button onPress={() => loadProblem()} loading={probBusy} icon="arrow-forward-outline">ข้อถัดไป</Button>
+              ? <Button onPress={() => loadProblem(pullStyle)} loading={probBusy} icon="arrow-forward-outline">โจทย์ถัดไป · {fmtMeta.label}</Button>
               : null}
+            {practice && !pseudoPractice ? <Button onPress={() => loadProblem(pullStyle)} loading={probBusy} variant="secondary" icon="shuffle-outline">ข้ามไปโจทย์ถัดไป</Button> : null}
             {/* ตอบผิด = ทำอีกครั้ง: ปิดผลตรวจเพื่อกลับไปแก้คำตอบเดิมในช่อง (คำตอบไม่ถูล้าง) แล้วส่งตรวจใหม่ */}
             {practice && typeof mark === "object" && mark?.correct === false
               ? <Button onPress={() => { setMark(null); setMissing([]); }} variant="secondary" icon="refresh-outline">ทำอีกครั้ง</Button>
@@ -1846,7 +1870,7 @@ export default function Tutor() {
           <View style={styles.popCol}>
             {TABS.map((t) => {
               const on = tab === t.k && tab !== "chat";
-              return <Pressable key={t.k} onPress={() => { setTab(t.k); setOptOpen(false); if (t.k === "diag") { setDiagStage("pull"); setExamPick(true); } }}
+              return <Pressable key={t.k} onPress={() => { setTab(t.k); setOptOpen(false); if (t.k === "diag") { setFocusedPractice(false); setPullStyle(""); setDiagStage("pull"); setExamPick(true); } }}
                 style={[styles.popItem, on && { borderColor: colors.accent, backgroundColor: colors.accent + "26" }]}>
                 <Ionicons name={t.icon as any} size={15} color={on ? colors.accent : colors.textSecondary} />
                 <Text style={[styles.popItemText, on && { color: "#fff" }]}>{t.label}</Text>
@@ -1901,7 +1925,7 @@ export default function Tutor() {
           <View style={styles.popDivider} />
 
           {/* ระดับความยาก */}
-          <Text style={styles.popHead}>ระดับ</Text>
+          <Text style={styles.popHead}>ความลึกคำอธิบาย</Text>
           <View style={styles.popCol}>
             {LEVELS.map((l) => {
               const on = level === l.k;
@@ -1997,21 +2021,16 @@ export default function Tutor() {
             <Pressable onPress={() => setExamPick(false)}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
           </View>
 
-          {/* แถวแนวข้อสอบ — กดแล้ว "ตั้งแนวไว้ให้" แล้วไปหน้าดึงโจทย์ให้ผู้ใช้กดดึงเอง
-               แถวกลาง (ตัวเลือก/สุ่มทุกอย่าง/ดึงโจทย์/วินิจฉัย) ขึ้นทุกวิชา
-               แถวเฉพาะทางขึ้นเฉพาะวิชาที่มีสัญญาณจริงจากเนื้อหาไฟล์:
-               โค้ด/รหัสเทียม = hasCodeMode, ผังภาพ = สัญญาณผัง, ตารางเทียบ = สัญญาณเปรียบเทียบ,
-               แปลประโยค = วิชาภาษา (คำศัพท์/ไวยากรณ์)
-               ผังภาพ/รหัสเทียม/ตารางเทียบ/สุ่มทุกอย่าง มีเฉพาะใน popup นี้ ห้ามเพิ่มในหน้าเลือก */}
+          {/* ทุกแนวเปิดเป็นหน้าแบบฝึกทันที และใช้เนื้อหาของวิชาที่เลือก */}
           <ScrollView style={{ maxHeight: 470 }} showsVerticalScrollIndicator={false}>
             {([
-              ...(hasCodeMode ? [{ k: "code", label: "ข้อสอบโค้ด", hint: "โจทย์แนวเขียน/อ่านโค้ด มีช่องโค้ดให้ตอบ พร้อมใบ้ทีละบรรทัด", icon: "code-slash-outline", color: "#34d399" }] : []),
+              ...(hasCodeMode ? [{ k: "code", label: "ข้อสอบโค้ด", hint: "โจทย์จากวิชา พร้อมช่องเขียนโค้ด", icon: "code-slash-outline", color: "#34d399" }] : []),
               { k: "options", label: "ตัวเลือกแบบช้อยส์", hint: "โจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง) เลือกแล้วเฉลยทันที", icon: "list-outline", color: "#fbbf24" },
-              ...(hasDiagramMode ? [{ k: "flowchart", label: "ผังภาพ", hint: "ตอบเป็นผังงาน flowchart เรียงลูกศรให้อ่านง่าย", icon: "git-branch-outline", color: "#38bdf8" }] : []),
+              ...(hasDiagramMode ? [{ k: "flowchart", label: "ผังภาพ", hint: "โจทย์จากวิชา พร้อมช่องวาดผังงานเป็นขั้นตอน", icon: "git-branch-outline", color: "#38bdf8" }] : []),
               ...(hasCodeMode ? [{ k: "pseudocode", label: "รหัสเทียม", hint: "ตอบเป็นขั้นตอน pseudocode ไม่ต้องเป็นภาษาโปรแกรมจริง", icon: "terminal-outline", color: "#818cf8" }] : []),
-              ...(hasCompareMode ? [{ k: "table", label: "ตารางเทียบ", hint: "จัดคำตอบเป็นตารางเทียบข้อมูล", icon: "grid-outline", color: "#f472b6" }] : []),
-              ...(hasLangMode ? [{ k: "translate", label: "แปลประโยค", hint: "แปลประโยคจริงจากเนื้อหาในวิชา ไทย ↔ อังกฤษ", icon: "language-outline", color: "#2dd4bf" }] : []),
-              { k: "random", label: "สุ่มทุกอย่าง", hint: "ระบบสุ่มรูปแบบใหม่ทุกครั้งที่ดึง (โค้ด/รหัสเทียมสุ่มเฉพาะวิชาที่เขียนโปรแกรม)", icon: "shuffle-outline", color: "#fb923c" },
+              ...(hasCompareMode || hasStepsMode ? [{ k: "table", label: "ตารางเทียบ", hint: "จัดคำตอบเป็นตารางเทียบข้อมูล", icon: "grid-outline", color: "#f472b6" }] : []),
+              ...(hasLangMode ? [{ k: "translate", label: "แปลประโยค", hint: "แปลข้อความจากเนื้อหาในวิชา ไทย ↔ อังกฤษ", icon: "language-outline", color: "#2dd4bf" }] : []),
+              { k: "random", label: "สุ่มทุกอย่าง", hint: "สุ่มเฉพาะรูปแบบที่เหมาะกับวิชานี้", icon: "shuffle-outline", color: "#fb923c" },
               { k: "", label: "ดึงโจทย์ (ระบบเลือกให้เอง)", hint: "สุ่มโจทย์จากไฟล์ในวิชา แล้วให้ระบบเลือกรูปแบบคำตอบเอง", icon: "document-text-outline", color: "#4ade80" },
               { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "สอบ 5 ข้อ แล้วระบบบอกว่าหัวข้อไหนต้องเน้น หัวข้อไหนข้ามได้", icon: "checkmark-done-outline", color: "#a78bfa" },
             ] as { k: string; label: string; hint: string; icon: string; color: string }[]).map((s) => {
@@ -2020,10 +2039,15 @@ export default function Tutor() {
               const on = isQuiz ? diagStage === "quiz" : diagStage === "pull" && pullStyle === s.k;
               return <Pressable key={s.k || "system"} onPress={() => {
                   setExamPick(false);
-                  if (isQuiz) { setDiagStage("quiz"); return; }
-                  // แนวข้อสอบ = ตั้ง pullStyle ไว้ก่อน แล้วให้ผู้ใช้กดดึงเองจากหน้าดึงโจทย์ (ยังเปลี่ยนแนวได้ในหน้าเลือก)
+                  if (isQuiz) { startQuizFocused(); return; }
+                  // เลือกแนวแล้วเปิดหน้าแบบฝึกทันที พร้อมดึงโจทย์ให้ตรงกับฟอร์แมต
                   setDiagStage("pull");
+                  setTab("diag");
                   setPullStyle(s.k);
+                  setFocusedPractice(true);
+                  setPickStage(false);
+                  setProblem(null); setMark(null); setMyAnswer(""); setPicked(-1);
+                  void loadProblem(s.k);
                 }}
                 style={[styles.row, on && { backgroundColor: s.color + "26", borderWidth: 1, borderColor: s.color }]}>
                 <View style={[styles.wantIcon, { backgroundColor: s.color + "22", marginBottom: 0 }]}>
@@ -2058,7 +2082,7 @@ export default function Tutor() {
             {g.list.map((s: any) => {
               const on = s.id === subjectId;
               return <Pressable key={s.id} style={[styles.row, on && styles.rowOn]}
-                onPress={() => { setSubjectId(s.id); resetOnboarding(); setFocusTopics([]); setPlan(null); setPickerOpen(false); setPickStage(false); setPullStyle(""); }}>
+                onPress={() => { setSubjectId(s.id); resetOnboarding(); setFocusTopics([]); setPlan(null); setPickerOpen(false); setPickStage(false); setPullStyle(""); setFocusedPractice(false); setProblem(null); }}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.rowName, on && { color: "#fff" }]} numberOfLines={2}>{s.name}</Text>
                   <Text style={[styles.rowMeta, on && { color: "#ede9fe" }]}>{s._count?.materials || 0} ไฟล์</Text>
@@ -2093,35 +2117,40 @@ function FileLevelPick(props: {
   files: any[]; busy: boolean;
   pickFile: string; onFile: (id: string) => void;
   pickLevel: "" | "easy" | "medium" | "hard"; onLevel: (l: "" | "easy" | "medium" | "hard") => void;
+  codeMode?: boolean;
   /** เลขขั้นแรก — หน้าดึงโจทย์เริ่มจาก 3 (มีแนว + หัวข้อนำอยู่), หน้าฝึกเริ่มจาก 1 */
   stepStart?: number;
   /** กระชับ = ใช้ในหน้าโจทย์ระหว่างฝึก (รายการไฟล์สั้นลง) */
   compact?: boolean;
 }) {
-  const { files, busy, pickFile, onFile, pickLevel, onLevel, stepStart = 1, compact = false } = props;
+  const { files, busy, pickFile, onFile, pickLevel, onLevel, codeMode = false, stepStart = 1, compact = false } = props;
+  const [expanded, setExpanded] = useState(false);
+  const visibleFiles = codeMode ? files.filter((file: any) => Number(file.codeCount || 0) > 0) : files;
+  const selectedFile = visibleFiles.find((file: any) => file.id === pickFile);
+  const levelLabel = pickLevel === "easy" ? "ง่าย" : pickLevel === "medium" ? "กลาง" : pickLevel === "hard" ? "ยาก" : "เรียงง่ายก่อน";
+  const fileCountLabel = (file: any) => codeMode ? `${Number(file.codeCount || 0)} โจทย์โค้ด` : `${Number(file.count || 0)} โจทย์`;
+  const fileLevelName = (file: any) => {
+    const value = codeMode ? file.codeLevel : file.level;
+    return value === "easy" ? "ง่าย" : value === "medium" ? "กลาง" : value === "hard" ? "ยาก" : "";
+  };
   return <>
-    <Text style={styles.stepLabel}>{stepStart}. ไฟล์ต้นทาง — เลือกได้ 1 ไฟล์ (ไม่เลือก = ทั้งวิชา)</Text>
-    {busy ? <Text style={font.caption}>กำลังโหลดรายชื่อไฟล์...</Text>
-      : !files.length ? <Text style={font.caption}>ยังไม่มีไฟล์ในวิชานี้</Text>
-        : <ScrollView style={{ maxHeight: compact ? 112 : 190 }} showsVerticalScrollIndicator={false}>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
-            {files.map((f: any) => {
-              const on = pickFile === f.id;
-              const lc = levelColor(f.level);
-              return <Pressable key={f.id} style={[styles.chip, on && styles.chipOn]} onPress={() => onFile(on ? "" : f.id)}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 215 }}>
-                  {/* จุดสี = ระดับของไฟล์ตามลำดับใน Classroom (เขียว=ง่าย ส้ม=กลาง แดง=ยาก) */}
-                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: on ? "#ffffff" : lc }} />
-                  <Text style={[styles.chipText, on && { color: "#ffffff" }, { flexShrink: 1 }]} numberOfLines={1}>{f.title}</Text>
-                  <Text style={[styles.chipCount, on && { color: "#ffffff" }]}>{f.count}</Text>
-                </View>
-              </Pressable>;
-            })}
+    <Pressable onPress={() => setExpanded(true)} style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt }}>
+      <Ionicons name="options-outline" size={18} color="#7c5ce7" />
+      <View style={{ flex: 1 }}><Text style={{ fontWeight: "900", color: colors.text }}>ตัวเลือกโจทย์</Text><Text numberOfLines={1} style={font.caption}>{selectedFile?.title || "ทุกไฟล์ในวิชา"} · {levelLabel}</Text></View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </Pressable>
+    <Modal visible={expanded} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setExpanded(false)}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <View style={{ padding: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderColor: colors.border }}><View><Text style={font.caption}>ตั้งค่าโจทย์ · ขั้น {stepStart}</Text><Text style={font.h2}>ไฟล์และระดับความยาก</Text></View><Pressable onPress={() => setExpanded(false)}><Ionicons name="close" size={24} color={colors.text} /></Pressable></View>
+        <ScrollView contentContainerStyle={{ padding: 18, gap: 18 }}>
+          <View style={{ padding: 14, borderRadius: 16, backgroundColor: colors.surface, gap: 10 }}>
+            <Text style={font.h2}>ไฟล์ต้นทาง</Text><Text style={font.caption}>เลือกไฟล์เดียว หรือใช้ทุกไฟล์ในวิชา</Text>
+            {busy ? <Text style={font.caption}>กำลังโหลดรายชื่อไฟล์...</Text> : <View style={{ gap: 8 }}>
+              <Pressable style={[styles.chip, !pickFile && styles.chipOn]} onPress={() => onFile("")}><Text style={[styles.chipText, !pickFile && { color: "#fff" }]}>ทุกไฟล์ในวิชา</Text></Pressable>
+              {visibleFiles.length ? visibleFiles.map((f: any) => { const on = pickFile === f.id; const difficulty = fileLevelName(f); return <Pressable key={f.id} style={[styles.chip, on && styles.chipOn]} onPress={() => onFile(on ? "" : f.id)}><Text numberOfLines={2} style={[styles.chipText, on && { color: "#fff" }]}>{f.title} · {fileCountLabel(f)}{difficulty ? ` · ${difficulty}` : ""}</Text></Pressable>; }) : <Text style={font.caption}>ยังไม่มีไฟล์ที่มีโจทย์โค้ดชัดเจนในวิชานี้</Text>}
+            </View>}
           </View>
-        </ScrollView>}
-
-    <Text style={styles.stepLabel}>{stepStart + 1}. ระดับความยาก — ไม่เลือก = เรียงง่ายก่อน</Text>
-    <View style={styles.pickRow}>
+          <View style={{ padding: 14, borderRadius: 16, backgroundColor: colors.surface, gap: 10 }}><Text style={font.h2}>ระดับความยาก</Text><Text style={font.caption}>ไม่เลือก = เรียงง่ายก่อน</Text><View style={styles.pickRow}>
       {([["easy", "ง่าย"], ["medium", "กลาง"], ["hard", "ยาก"]] as const).map(([k, label]) => {
         const on = pickLevel === k;
         const lc = levelColor(k);
@@ -2130,7 +2159,11 @@ function FileLevelPick(props: {
           <Text style={[styles.srcChipText, on && { color: lc }]}>{label}</Text>
         </Pressable>;
       })}
-    </View>
+          </View></View>
+        </ScrollView>
+        <Pressable onPress={() => setExpanded(false)} style={{ margin: 16, padding: 14, borderRadius: 14, backgroundColor: colors.accent, alignItems: "center" }}><Text style={{ color: "white", fontWeight: "900" }}>เสร็จสิ้น</Text></Pressable>
+      </View>
+    </Modal>
   </>;
 }
 

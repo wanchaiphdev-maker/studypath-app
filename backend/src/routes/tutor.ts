@@ -661,14 +661,24 @@ type AnswerFormat = "text" | "options" | "code" | "flowchart" | "diagram" | "tab
 const FORMATS: Record<AnswerFormat, { label: string; hint: string; instruction: string }> = {
   text: { label: "ข้อความ", hint: "เขียนตอบเป็นข้อความ", instruction: "แสดงโจทย์เป็นข้อความอ่านง่าย ใช้หัวข้อย่อยและ bullet" },
   options: { label: "ตัวเลือก", hint: "A B C D", instruction: "แสดงโจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง) พร้อมเฉลยอธิบาย" },
-  code: { label: "โค้ด", hint: "เขียนเป็นโปรแกรม", instruction: "แสดงโจทย์เป็นโจทย์แบบเติมโค้ดให้ครบ (code completion) ใส่โค้ดในกล่อง ``` พร้อมชื่อภาษา และเติมให้สมบูรณ์ตามโจทย์" },
-  flowchart: { label: "ผังภาพ", hint: "flowchart", instruction: "วาด flowchart ขั้นตอนการแก้ปัญหานี้ ในกล่อง ``` ใช้อักขระ ─│┌┐└┘├┤▼▲→ ให้เรียงตรงหลัก" },
-  diagram: { label: "แผนผัง", hint: "ผังงาน/โครงสร้าง", instruction: "วาดแผนผังโครงสร้างข้อมูลหรือผังงานของโจทย์นี้ ใช้กล่อง ``` และอักขระขอบกล่อง" },
+  code: { label: "โค้ด", hint: "เขียนเป็นโปรแกรม", instruction: "เขียนโจทย์ภาษาไทยให้ผู้เรียนเขียนโปรแกรมเพื่อแก้ปัญหาจากเนื้อหานี้ โดยบอกข้อมูลนำเข้าและผลลัพธ์ที่ต้องการ ห้ามแสดงโค้ดเฉลยหรือโค้ดที่เติมเสร็จแล้ว" },
+  flowchart: { label: "ผังภาพ", hint: "flowchart", instruction: "เขียนโจทย์ภาษาไทยให้ผู้เรียนวาด flowchart เพื่อหาคำตอบ โดยคงข้อมูลและเงื่อนไขจากต้นทางครบ ห้ามวาดผังเฉลยให้" },
+  diagram: { label: "แผนผัง", hint: "ผังงาน/โครงสร้าง", instruction: "เขียนโจทย์ภาษาไทยให้ผู้เรียนสร้างแผนผังโครงสร้างหรือความสัมพันธ์ตามเนื้อหา โดยคงข้อมูลต้นทางครบ ห้ามแสดงแผนผังเฉลยให้" },
   table: { label: "ตาราง", hint: "เทียบข้อมูล", instruction: "แสดงโจทย์พร้อมตารางข้อมูลที่ต้องใช้ (ถ้ามี) ในกล่อง ``` จัดคอลัมน์ให้ตรงกัน" },
   pseudocode: { label: "รหัสเทียม", hint: "pseudocode", instruction: "แสดงโจทย์เป็นโจทย์เขียนรหัสเทียม (pseudocode) — เรียงขั้นตอนเป็นบรรทัด ๆ ด้วยคำสั่งภาษาอังกฤษง่าย ๆ เช่น BEGIN / IF / ELSE / WHILE / FOR / END ห้ามเป็นภาษาโปรแกรมจริง ห้ามใส่ชื่อฟังก์ชันหรือไวยากรณ์ของภาษาโปรแกรม" },
   // แนวสำหรับวิชาภาษา — หยิบประโยค/ข้อความจริงจากไฟล์ในวิชา มาให้แปลไทย<->อังกฤษเอง
   translate: { label: "แปลประโยค", hint: "ไทย ↔ อังกฤษ", instruction: "แสดงโจทย์เป็นการแปลภาษา — คัดประโยคหรือข้อความสั้น ๆ ที่มีจริงในเนื้อหาวิชานี้มา 1 ข้อ แล้วขึ้นต้นด้วยคำสั่งว่า \"แปลข้อความต่อไปนี้เป็น...\" โดยเลือกทิศทางให้ตรงกับต้นทาง (ต้นทางเป็นอังกฤษ = แปลเป็นไทย, ต้นทางเป็นไทย = แปลเป็นอังกฤษ) เว้นบรรทัดว่างใต้คำสั่งให้ผู้เรียนพิมพ์คำตอบแปลเอง ห้ามใส่คำแปลหรือเฉลยในโจทย์เด็ดขาด" },
 };
+
+const CODE_TASK_RULES =
+  "โหมดนี้สร้างเฉพาะโจทย์เขียนโปรแกรมจากหัวข้อในไฟล์เรียน ห้ามใช้โจทย์คณิตศาสตร์ที่ไม่ได้สั่งให้เขียนโปรแกรม " +
+  "ตัดโจทย์ที่มีเพียงการคำนวณนิพจน์หรือหาค่าตัวเลขโดยไม่ต้องเขียนโปรแกรมออก " +
+  "เขียนภาษาไทยตรงและเข้าใจง่าย โดยจัดเป็นหัวข้อ งานที่ต้องทำ / ข้อมูลนำเข้า / เงื่อนไข / ผลลัพธ์ เมื่อมีข้อมูลในต้นฉบับ " +
+  "ระบุค่าหรือข้อความที่ต้องแสดงให้ชัดถ้าต้นฉบับระบุไว้ ห้ามแต่งข้อความผลลัพธ์ภาษาอังกฤษหรือตัวอย่างข้อมูลเพิ่มเอง " +
+  "ถ้าไฟล์มีกรณีเงื่อนไขจริง/เท็จหรือกรณีผิดพลาด ให้คงผลลัพธ์ของทุกกรณีไว้ในโจทย์ ห้ามตัดเงื่อนไขทิ้ง " +
+  "อธิบายคำศัพท์ยากสั้น ๆ เมื่อจำเป็น แต่ห้ามเพิ่มข้อกำหนด ชนิดข้อมูล ตัวเลข หรือตัวอย่างที่ไม่มีในต้นฉบับ " +
+  "ห้ามเขียนหัวข้อโจทย์ซ้ำท้ายคำถาม ห้ามใส่ประโยคเกริ่นลอย ๆ เช่น ‘ถ้าระบบรับค่าเข้ามา’ เมื่อบอกข้อมูลนำเข้าได้ตรง ๆ " +
+  "ห้ามใส่ URL ชื่อวิดีโอ ชื่อไฟล์เป็นโจทย์ โค้ดเฉลย หรือเนื้อหาอื่นที่ไม่ใช่โจทย์.\n";
 /**
  * รูปแบบที่ผู้ใช้เลือกเอง
  * คืน "" เมื่อไม่ได้เลือก -> ให้ระบบเลือกรูปแบบที่เหมาะกับโจทย์เอง
@@ -761,7 +771,7 @@ const PSEUDO_QUESTION_RULES =
   "(4) คงตัวเลขและเงื่อนไขครบตามต้นฉบับ ห้ามตัดออก\ ";
 
 /** ให้ AI จัดรูปแบบโจทย์ (คืน problem/formats/deliverables) */
-async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat | "", skip: string[]) {
+async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat | "", skip: string[], requestedLevel = "") {
   let format = wanted;
   const hasCode = analyzeSubjectSignals(subject?.materials || []).code >= EXTRA_MIN.code;
   const picked = pickFormats(subject.name, rawText, hasCode);
@@ -770,9 +780,9 @@ async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat
   // ไม่ได้เลือกเอง -> ใช้รูปแบบที่ตรงกับโจทย์ที่สุด
   if (!wanted) format = picked.recommended;
   else if (!formats.some((f) => f.format === format)) format = formats[0]?.format || "text";
-  // โจทย์ต้นทางเป็นโค้ดจริง -> บังคับแนว "โค้ด" เสมอ แม้จะเลือกแนวอื่นไว้ (ตาราง/ผังภาพ)
-  // เว้นแต่ผู้ใช้เลือก "รหัสเทียม" ไว้: ให้ AI แต่งข้อโค้ดเป็นโจทย์รหัสเทียมแทน (บังคับแล้วหน้าฝึกจะไม่ขึ้น)
-  if (wanted !== "pseudocode" && isRealCodeProblem(rawText, hasCode)) {
+  // ถ้าผู้ใช้เลือกรูปแบบเอง ให้เคารพตัวเลือกนั้น แม้โจทย์ต้นทางจะมีโค้ดจริง
+  // เลือกโค้ดอัตโนมัติเฉพาะเมื่อไม่ได้ระบุรูปแบบ
+  if (!wanted && isRealCodeProblem(rawText, hasCode)) {
     format = "code";
     if (!formats.some((f) => f.format === "code")) formats = [...formats, { format: "code", why: "โจทย์ต้นทางเป็นโค้ดจริง" }];
   }
@@ -789,6 +799,8 @@ async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat
         {
           role: "system",
           content:
+            (requestedLevel && format !== "code" ? levelEscalationRule(requestedLevel) : "") +
+            (format === "code" ? CODE_TASK_RULES + "จัดโจทย์เพียงข้อเดียว ห้ามรวมหลายข้อเป็นงานชุดเดียว และห้ามนำข้อมูลจากข้ออื่นมาเติม\n" : "") +
             (pseudoPractice
               ? PSEUDO_QUESTION_RULES
               : "คุณคืออาจารย์ AI หน้าที่จัดโจทย์ให้อ่านง่ายเท่านั้น " +
@@ -822,6 +834,12 @@ async function renderProblem(subject: any, rawText: string, wanted: AnswerFormat
     console.warn("จัดรูปแบบโจทย์ไม่สำเร็จ ใช้ข้อความดิบ", String(error));
   }
 
+  if (format === "code") {
+    rendered = cleanCodeQuestion(rendered);
+    if (!isProgrammingTask(rendered)) rendered = cleanCodeQuestion(rawText);
+    // โหมดโค้ดตรวจและส่งเฉพาะโปรแกรม ไม่ยก pseudocode/ผังงานจากเอกสารต้นทางเป็นงานที่ต้องส่งเพิ่ม
+    deliverables = ["โปรแกรมที่ทำตามโจทย์"];
+  }
   if (!deliverables.length) deliverables = detectDeliverables(rendered);
   // กันบทวิเคราะห์หลุดเข้าโจทย์ — ถ้ามีโจทย์จริงก่อนส่วนวิเคราะห์ ตัดออก (ว่างเปล่า = คงเดิม ไม่ลบโจทย์)
   const strippedRendered = stripAnalysis(rendered);
@@ -860,17 +878,26 @@ const PROBLEM_HINTS = [
 /* ------------------------------------------------------------------ */
 /** บรรทัดหัวข้อของ "บทวิเคราะห์โจทย์" (Input/Output/Process/รหัสเทียม ฯลฯ) */
 const ANALYSIS_HDR =
-  /^(input|output|process|inputs?|outputs?|pseudocode|variables?|data ?types?|ตัวแปร(อื่น\s*ๆ)?|ค่าเริ่มต้น|รหัสเทียม|ขั้นตอน(?:การ(?:ทำ|แก้ปัญหา))?|วิเคราะห์\s*โจทย์)\s*[:：]?$/i;
+  /^(input|output|process|inputs?|outputs?|pseudocode|variables?|data ?types?|ตัวแปร(อื่น\s*ๆ)?|กำหนดค่าตัวแปร|ค่าเริ่มต้น|รหัสเทียม|ผังงาน|flowchart|ขั้นตอน(?:วิธี|การ(?:ทำ|แก้ปัญหา))?|วิเคราะห์\s*โจทย์)\s*[:：]?$/i;
+
+function normalizeAnalysisHeader(line: string): string {
+  return String(line || "").trim()
+    .replace(/^#{1,6}\s*/, "")
+    .replace(/^\d+\s*[.)]\s*/, "")
+    .replace(/^[-•*]\s*/, "")
+    .replace(/^\*\*|\*\*$/g, "")
+    .trim();
+}
 
 function isAnalysisHeader(line: string): boolean {
-  return ANALYSIS_HDR.test(line.trim());
+  return ANALYSIS_HDR.test(normalizeAnalysisHeader(line));
 }
 
 /** ข้อความนี้เป็น "บทวิเคราะห์ล้วน" ไหม — พบหัวข้อบทวิเคราะห์อย่างน้อย 3 หัวข้อ */
 function isAnalysisBody(text: string): boolean {
   const found = new Set<string>();
   for (const l of text.split("\n")) {
-    const t = l.trim();
+    const t = normalizeAnalysisHeader(l);
     if (ANALYSIS_HDR.test(t)) found.add(t.toLowerCase().replace(/[:：]\s*$/, ""));
   }
   return found.size >= 3;
@@ -1036,11 +1063,323 @@ function findSectionTitleBefore(full: string, pos: number): string {
   return "";
 }
 
-function extractProblems(materials: any[], limit = 8, perFileCap = 2) {
+function isProgrammingTask(text: string): boolean {
+  const s = String(text || "");
+  const directThaiPrompt =
+    /(?:จง|ให้|โปรด)\s*(?:เขียน|สร้าง|พัฒนา|แก้ไข|เติม)\s*(?:โปรแกรม|โค้ด|รหัสโปรแกรม|ฟังก์ชัน)/i.test(s) ||
+    /(?:^|\n)\s*(?:(?:\d+[.)]|(?:ตัวอย่าง|example)(?:\s*ที่)?\s*[\dA-Za-z.-]+)\s*)?(?:เขียน|สร้าง|พัฒนา|แก้ไข|เติม)\s*(?:โปรแกรม|โค้ด|รหัสโปรแกรม|ฟังก์ชัน)/im.test(s);
+  const directEnglishPrompt = /\b(?:write|implement|create|complete|debug)\s+(?:an?\s+)?(?:program|code|source\s*code|function|script)\b/i.test(s);
+  // ข้อความอธิบายว่า “ต้องการสร้างโปรแกรม” ไม่ใช่คำสั่งให้ผู้เรียนเขียนโค้ด
+  // โหมดโค้ดรับเฉพาะโจทย์ที่สั่งให้เขียน/แก้โปรแกรมโดยตรง
+  return directThaiPrompt || directEnglishPrompt;
+}
+
+function problemKey(materialId: string, text: string): string {
+  const normalized = String(text || "").normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim();
+  // เก็บข้อความโจทย์ให้พอแยกข้อย่อยที่มีหัวนำเดียวกัน
+  return `${materialId}|${normalized.slice(0, 1200)}`;
+}
+
+type CodeLessonMaterial = { id: string; title: string; textContent: string };
+
+/** Exclude lesson rows whose opening identifies a different course number. */
+function materialMatchesSubject(subjectName: string, material: { title?: string | null; textContent?: string | null }): boolean {
+  const subjectCode = String(subjectName || "").match(/\b\d{7}\b/)?.[0];
+  if (!subjectCode) return true;
+
+  const opening = String(material.textContent || "")
+    .slice(0, 2400)
+    .replace(/\b(\d{4})\s+(\d{3})\b/g, "$1$2");
+  const codes = [...opening.matchAll(/\b\d{7}\b/g)].map((match) => match[0]);
+  if (!codes.length || codes.every((code) => code === subjectCode)) return true;
+
+  const ownIndex = codes.indexOf(subjectCode);
+  const firstCode = codes[0];
+  const foreignCount = codes.filter((code) => code !== subjectCode).length;
+  // ไฟล์ที่เปิดมาด้วยรหัสวิชาอื่น หรือมีแต่รหัสวิชาอื่น ถูกแนบผิด/ชื่อไม่ตรงเนื้อหา
+  return ownIndex >= 0 && firstCode === subjectCode && foreignCount < 2;
+}
+
+function materialsForSubject(subject: { name: string; materials?: any[] }) {
+  return (subject.materials || []).filter((material: any) => materialMatchesSubject(subject.name, material));
+}
+
+function codeLessonChunks(text: string): string[] {
+  const clean = String(text || "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/^\s*(?:วิดีโอ\s+)?YouTube\s*:\s*.*$/gim, "")
+    .trim();
+  if (!clean) return [];
+  const pages = clean.split(/(?=^\s*--\s*\d+\s+of\s+\d+\s*--\s*$)/gim);
+  const chunks: string[] = [];
+  for (const page of pages) {
+    const normalized = page.trim();
+    if (!normalized) continue;
+    if (normalized.length <= 1400) {
+      chunks.push(normalized);
+      continue;
+    }
+    let current = "";
+    for (const line of normalized.split(/\r?\n/)) {
+      if (current.length + line.length > 1100 && current.trim()) {
+        chunks.push(current.trim());
+        current = "";
+      }
+      current += `${line}\n`;
+    }
+    if (current.trim()) chunks.push(current.trim());
+  }
+  return chunks;
+}
+
+function codeLessonRelevance(problem: string, excerpt: string): number {
+  const q = String(problem || "").toLocaleLowerCase();
+  const s = String(excerpt || "").toLocaleLowerCase();
+  const stop = new Set(["the", "and", "for", "with", "from", "this", "that", "program", "write", "จง", "เขียน", "โปรแกรม", "ข้อมูล", "แสดง", "ทำงาน"]);
+  const words = (q.match(/[a-z_][a-z0-9_+#]{2,}/g) || []).filter((w) => !stop.has(w));
+  let score = 0;
+  for (const word of new Set(words)) if (s.includes(word)) score += word.includes("_") ? 6 : 2;
+  const thaiRuns = q.match(/[\u0E00-\u0E7F]{4,}/g) || [];
+  const grams = new Set<string>();
+  for (const run of thaiRuns) for (let i = 0; i + 3 <= run.length; i += 2) grams.add(run.slice(i, i + 3));
+  let thaiHits = 0;
+  for (const gram of grams) if (s.includes(gram)) thaiHits++;
+  score += Math.min(12, thaiHits * 0.4);
+  const numericValues = q.match(/\b\d+(?:\.\d+)?\b/g) || [];
+  for (const value of new Set(numericValues)) if (s.includes(value)) score += 1;
+  return score;
+}
+
+function buildCodeLessonReference(materials: CodeLessonMaterial[], materialId: string, problem: string) {
+  const ordered = sortByTitle(materials);
+  const sourceIndex = ordered.findIndex((material) => material.id === materialId);
+  const source = sourceIndex >= 0 ? ordered[sourceIndex] : undefined;
+  if (!source) return { language: "C", reference: "" };
+
+  const sourceText = String(source.textContent || "");
+  const previous = ordered.slice(0, sourceIndex);
+  const cScore = (sourceText.match(/\b(?:scanf|printf)\b|stdio\.h/gi) || []).length;
+  const cppScore = (sourceText.match(/\b(?:cin|cout)\b|iostream/gi) || []).length;
+  const priorText = previous.map((material) => material.textContent || "").join("\n");
+  const priorC = (priorText.match(/\b(?:scanf|printf)\b|stdio\.h/gi) || []).length;
+  const priorCpp = (priorText.match(/\b(?:cin|cout)\b|iostream/gi) || []).length;
+  const language = cScore > cppScore || (cScore === cppScore && priorC >= priorCpp) ? "C" : "C++";
+  const ioPattern = language === "C" ? /\b(?:scanf|printf)\b/i : /\b(?:cin|cout)\b|iostream/i;
+  const incompatiblePattern = language === "C"
+    ? /\b(?:cin|cout)\b|iostream|using\s+namespace\s+std|std::/i
+    : /\b(?:scanf|printf)\b|stdio\.h/i;
+  const codePattern = /\b(?:scanf|printf|cin|cout|for|while|if|int|float|double|char)\b|\b\w+\s*\[[^\]]+\]/i;
+
+  const sourceChunks = codeLessonChunks(sourceText);
+  const questionContext = sourceChunks
+    .map((excerpt) => ({ excerpt, score: codeLessonRelevance(problem, excerpt) }))
+    .sort((a, b) => b.score - a.score)
+    .filter((item) => item.score > 0)
+    .slice(0, 2)
+    .map((item) => item.excerpt);
+  const codeExamples = sourceChunks
+    .filter((excerpt) => codePattern.test(excerpt) && !incompatiblePattern.test(excerpt))
+    .map((excerpt) => ({ excerpt, score: codeLessonRelevance(problem, excerpt) }))
+    .sort((a, b) => b.score - a.score)
+    .filter((item) => item.score > 0)
+    .slice(0, 2)
+    .map((item) => item.excerpt);
+
+  const relatedExamples = ordered
+    .filter((material) => material.id !== source.id)
+    .flatMap((material) => codeLessonChunks(material.textContent)
+      .filter((excerpt) => ioPattern.test(excerpt) && codePattern.test(excerpt) && !incompatiblePattern.test(excerpt))
+      .map((excerpt) => ({ title: material.title, excerpt, score: codeLessonRelevance(problem, excerpt) })))
+    .sort((a, b) => b.score - a.score)
+    .filter((item) => item.score > 0)
+    .slice(0, 2)
+    .map((item) => `${item.title}: ${item.excerpt}`);
+
+  const prerequisite = [...previous].reverse().find((material) =>
+    ioPattern.test(String(material.textContent || "")) && codePattern.test(String(material.textContent || "")) && !incompatiblePattern.test(String(material.textContent || ""))
+  );
+  const prerequisiteExamples = prerequisite
+    ? codeLessonChunks(prerequisite.textContent)
+        .filter((excerpt) => ioPattern.test(excerpt) && codePattern.test(excerpt) && !incompatiblePattern.test(excerpt))
+        .slice(0, 2)
+        .map((excerpt) => `${prerequisite.title}: ${excerpt}`)
+    : [];
+
+  const sections = [
+    ...questionContext.map((excerpt) => `ส่วนที่ตรงกับโจทย์ในไฟล์ ${source.title}:\n${excerpt}`),
+    ...codeExamples.map((excerpt) => `ตัวอย่างคำสั่งในไฟล์ ${source.title}:\n${excerpt}`),
+    ...relatedExamples.map((excerpt) => `ตัวอย่างภาษาและหัวข้อที่เกี่ยวข้องจากไฟล์ในวิชาเดียวกัน (ใช้เฉพาะคำสั่ง): ${excerpt}`),
+    ...prerequisiteExamples.map((excerpt) => `ตัวอย่างภาษาที่เรียนมาก่อน: ${excerpt}`),
+  ];
+  const uniqueSections = [...new Set(sections)];
+  let reference = "";
+  for (const section of uniqueSections) {
+    if (reference.length >= 6500) break;
+    reference += `${reference ? "\n\n" : ""}${section.slice(0, Math.max(0, 6500 - reference.length))}`;
+  }
+  return { language, reference };
+}
+
+function cleanCodeQuestion(text: string): string {
+  const withoutSourceAnalysis = stripAnalysis(String(text || "")) || String(text || "");
+  const lines = withoutSourceAnalysis
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim()
+      .replace(/^\d{1,3}\s+(?=(?:แบบที่\s*\d+|(?:Example|ตัวอย่าง)(?:\s*ที่)?\s*[\dA-Za-z.-]+))/i, "")
+      .replace(/^(?:แบบที่\s*\d+|(?:Example|ตัวอย่าง)(?:\s*ที่)?\s*[\dA-Za-z.-]+)\s*(?=(?:จง|ให้|โปรด|เขียน|สร้าง|พัฒนา))/i, ""))
+    .filter((line) => !/^\s*(?:วิดีโอ\s+)?YouTube\s*:/i.test(line) && !/^\s*(?:ลิงก์|URL|แหล่งที่มา)\s*[:：]/i.test(line));
+
+  const usable: string[] = [];
+  let followsExampleHeading = false;
+  for (const line of lines) {
+    if (!line || /^--\s*\d+\s+of\s+\d+\s*--$/i.test(line)) continue;
+    if (/^(?:Example|ตัวอย่าง)(?:\s*ที่)?\s*\d+(?:[.-]\d+)?(?:\s*\(ต่อ\))?$|^แบบที่\s*\d+$/i.test(line)) {
+      followsExampleHeading = true;
+      continue;
+    }
+    if (followsExampleHeading && /^\d{1,3}$/.test(line)) {
+      followsExampleHeading = false;
+      continue;
+    }
+    followsExampleHeading = false;
+    if (/^(?:Input|Process|Output|สิ่งที่โจทย์ต้องการ|งานที่ต้องทำ|ข้อมูลนำเข้า|เงื่อนไข|ผลลัพธ์)\s*[:：]?$/i.test(line)) continue;
+    if (/^(?:(?:วิชา|รายวิชา|course)\s*)?\d{7}\s*(?:[-–:]|[A-Za-z])/i.test(line)) continue;
+    usable.push(line);
+  }
+
+  // PDF/OCR มักตัดประโยคเดียวเป็นหลายบรรทัด ให้ต่อเฉพาะบรรทัดที่เป็นการตัดคำ
+  // คงรายการและหัวข้อเงื่อนไขไว้คนละบรรทัดเพื่อให้อ่านง่าย
+  const paragraphs: string[] = [];
+  let current = "";
+  const flush = () => { if (current) paragraphs.push(current); current = ""; };
+  for (const line of usable) {
+    const structural = /^(?:[-•*]\s|\d+[.)]\s|(?:งานที่ต้องทำ|ข้อมูลนำเข้า|เงื่อนไข|ผลลัพธ์|เงื่อนไขเพิ่มเติมจากโจทย์ในไฟล์เรียน)\s*[:：])/i.test(line);
+    if (structural) {
+      flush();
+      paragraphs.push(line);
+    } else {
+      current = current ? `${current} ${line}` : line;
+    }
+  }
+  flush();
+  return clarifySourceCodeQuestion(normalizeThaiOcr(paragraphs.join("\n").replace(/[ \t]{2,}/g, " ").trim()));
+}
+
+/** Correct common Thai OCR substitutions in extracted coding exercises without changing their facts. */
+function normalizeThaiOcr(text: string): string {
+  return String(text || "")
+    .replace(/ต\s+่ำ/g, "ต่ำ")
+    .replace(/นิสิตจำก/g, "นิสิตจาก")
+    .replace(/อ่ำน/g, "อ่าน")
+    .replace(/ค่ำ/g, "ค่า")
+    .replace(/ควำม/g, "ความ")
+    .replace(/กว้ำง/g, "กว้าง")
+    .replace(/ผืนผ้ำ/g, "ผืนผ้า")
+    .replace(/หำ/g, "หา")
+    .replace(/ที่\s+ได้/g, "ที่ได้")
+    .replace(/กำร/g, "การ")
+    .replace(/ถ้ำ/g, "ถ้า")
+    .replace(/มำก/g, "มาก")
+    .replace(/กว่ำ/g, "กว่า")
+    .replace(/เท่ำ/g, "เท่า")
+    .replace(/ถือว่ำ/g, "ถือว่า")
+    .replace(/ผ่ำน/g, "ผ่าน")
+    .replace(/ไม่ผ่ำน/g, "ไม่ผ่าน")
+    .replace(/รำคำ/g, "ราคา")
+    .replace(/สินค้ำ/g, "สินค้า")
+    .replace(/จ่ำย/g, "จ่าย")
+    .replace(/หำส่วนลด/g, "หาส่วนลด")
+    .replace(/คำนวณหำ/g, "คำนวณหา")
+    .replace(/\s+([,.:;])/g, "$1")
+    .replace(/ {2,}/g, " ");
+}
+
+/** Make the source's pass/fail threshold explicit while preserving its exact threshold and outcomes. */
+function clarifySourceCodeQuestion(text: string): string {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  const isPassFailThreshold =
+    /เขียนโปรแกรม/.test(normalized) &&
+    /(?:มากกว่าหรือเท่ากับ|ตั้งแต่)\s*50/.test(normalized) &&
+    /ผ่าน/.test(normalized) &&
+    /ต่ำกว่า/.test(normalized) &&
+    /ไม่ผ่าน/.test(normalized);
+  if (!isPassFailThreshold) return text;
+
+  return [
+    "จงเขียนโปรแกรมรับคะแนนสอบของนิสิต แล้วแสดงผลการสอบตามเงื่อนไขต่อไปนี้:",
+    "- คะแนนตั้งแต่ 50 คะแนนขึ้นไป ให้แสดงว่า ผ่าน",
+    "- คะแนนต่ำกว่า 50 คะแนน ให้แสดงว่า ไม่ผ่าน",
+  ].join("\n");
+}
+
+function codeTaskAlreadyIncluded(problem: string, sourceTask: string): boolean {
+  const normalize = (value: string) => String(value || "")
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, "");
+  const rendered = normalize(problem);
+  const source = normalize(sourceTask);
+  if (!source || source.length < 18) return true;
+  // OCR มักสลับสระ/วรรณยุกต์ตอนท้าย ทำให้เช็ค 40 ตัวอักษรแบบตรงตัว
+  // แล้วเติมคำสั่งโจทย์ซ้ำทั้งประโยค ให้ยืนยันจากส่วนหัวที่จำเพาะแทน
+  const distinctPrefixLength = Math.min(22, source.length);
+  return rendered.includes(source.slice(0, distinctPrefixLength));
+}
+
+function splitNumberedProgrammingTasks(text: string): string[] {
+  // OCR often joins "แบบที่ 1", "แบบที่ 2" examples into one paragraph.
+  const markers = [...text.matchAll(/(?:^|\s)((?:ข้อ\s*\d+|แบบที่\s*\d+|(?:ตัวอย่าง|example)(?:\s*ที่)?\s*[\dA-Za-z.-]+)\s*[:：.]?)\s*/gim)];
+  if (markers.length < 2) return [text];
+  const first = markers[0].index ?? 0;
+  const header = text.slice(0, first).trim().replace(/^\d{1,3}$/, "")
+    .replace(/จง\s*เขียนโปรแกรม(?:เพื่อ)?แก้ปัญหาจากโจทย์(?:ทั้ง\s*\d+\s*ข้อ)?(?:ดังต่อไปนี้|ต่อไปนี้)?/i, "จงเขียนโปรแกรมแก้โจทย์ย่อยต่อไปนี้")
+    .replace(/ตามเงื่อนไขของแต่ละข้อ/gi, "ตามเงื่อนไขของโจทย์ย่อยแต่ละข้อ");
+  return markers.map((marker, i) => {
+    const start = (marker.index ?? 0) + marker[0].length;
+    const end = i + 1 < markers.length ? (markers[i + 1].index ?? text.length) : text.length;
+    const body = text.slice(start, end).trim();
+    return `${header ? `${header}\n` : ""}${marker[1]} ${body}`.trim();
+  }).filter(Boolean);
+}
+
+function addCodeTaskRequirements(fullText: string, taskText: string, startAt: number): string {
+  const tail = String(fullText || "").slice(Math.max(0, startAt));
+  const boundary = /(?:^|\n)\s*(?:(?:ตัวอย่าง(?:\s*ที่)?|example|exercise)\s*[\dA-Za-z]+(?:[.-][\dA-Za-z]+)?|แบบฝึกหัด\s*(?:ที่\s*)?\d+)/gim;
+  const headings = [...tail.matchAll(boundary)];
+  const currentHeading = headings[0] && (headings[0].index ?? 0) < 300 ? headings[0] : null;
+  const sectionStart = currentHeading ? (currentHeading.index ?? 0) : 0;
+  const sectionText = tail.slice(sectionStart);
+  const sectionHeadings = [...sectionText.matchAll(boundary)];
+  const nextHeading = currentHeading ? sectionHeadings[1] : sectionHeadings[0];
+  const sectionEnd = nextHeading?.index ?? Math.min(sectionText.length, 5000);
+  const section = sectionText.slice(0, sectionEnd).slice(0, 5000);
+  const processMatch = /(?:^|\n)\s*Process\s*(?:\r?\n)/i.exec(section);
+  if (!processMatch) return taskText;
+
+  const processAt = processMatch.index ?? 0;
+  const inputMatches = [...section.slice(0, processAt).matchAll(/(?:^|\n)\s*Input\s*(?:\r?\n)/gim)];
+  const start = inputMatches.length ? (inputMatches[inputMatches.length - 1].index ?? processAt) : processAt;
+  const requirements = section.slice(start).split(/\r?\n/).filter((rawLine) => {
+    const line = rawLine.trim();
+    if (!line || /^--\s*\d+\s+of\s+\d+\s*--$/i.test(line) || /^\d+$/.test(line)) return false;
+    if (/^(?:1204\s*\d{3}|Input|Process|Output)\b.*$/i.test(line) && !/^(?:Input|Process|Output)$/i.test(line)) return false;
+    if (/^(?:start|stop|read\b|print\b|if\s*\(|else\b|endif\b|return\b|#include\b|(?:int|float|double|char)\s+\w+|\w+\s*=\s*[^=]+;)/i.test(line)) return false;
+    return /[\u0E00-\u0E7F]|^(?:Input|Process|Output)$/i.test(line);
+  }).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (requirements.length < 15) return taskText;
+  return `${taskText.trim()}\n\nเงื่อนไขเพิ่มเติมจากโจทย์ในไฟล์เรียน:\n${requirements.slice(0, 1400)}`;
+}
+
+function extractProblems(materials: any[], limit = 8, perFileCap = 2, codeOnly = false) {
   const scored: { text: string; source: any; score: number }[] = [];
 
   for (const m of materials) {
-    const full = String(m.textContent || "").trim();
+    const full = String(m.textContent || "")
+      .replace(/^\s*(?:วิดีโอ\s+)?YouTube\s*:\s*/gim, "")
+      .replace(/^\s*(?:ลิงก์|Link|URL)\s*[:：].*$/gim, "")
+      .trim();
     if (full.length < 60) continue;
 
     // ตัดเป็นย่อหน้า แล้วให้คะแนนย่อหน้าที่ดูเป็นโจทย์
@@ -1056,7 +1395,8 @@ function extractProblems(materials: any[], limit = 8, perFileCap = 2) {
     segs.push({ text: full.slice(last), pos: last });
 
     for (const seg of segs) {
-      const b = seg.text.trim();
+      const rawBlock = seg.text.replace(/https?:\/\/\S+/gi, "").trim();
+      for (const b of codeOnly ? splitNumberedProgrammingTasks(rawBlock) : [rawBlock]) {
       if (b.length < 40 || b.length > 700) continue;
       // ไม่ใช่โจทย์: คำอธิบายรายวิชา / วัตถุประสงค์ / ผลลัพธ์การเรียนรู้ — ข้ามทุกวิชา
       if (/คำอธิบายรายวิชา|ผลลัพธ์การเรียนรู้|รายละเอียดรายวิชา|วัตถุประสงค์รายวิชา|ขอบเขตเนื้อหา|ชื่อวิชา\s*[:：]|การเรียนการสอน/.test(b)) continue;
@@ -1094,7 +1434,15 @@ function extractProblems(materials: any[], limit = 8, perFileCap = 2) {
           const title = findSectionTitleBefore(full, segStart);
           if (title && !text.includes(title.slice(0, 25))) text = title + "\n" + text;
         }
+        // โจทย์ที่นำเสนอได้ต้องมีคำสั่ง/คำถามจริง ไม่ใช้ชื่อวิดีโอ ลิงก์ หรือชื่อบทแทนโจทย์
+        if (!hasTaskLike(text)) continue;
+        if (codeOnly && !isProgrammingTask(text)) continue;
+        if (codeOnly && splitNumberedProgrammingTasks(rawBlock).length === 1) {
+          const segStart = seg.pos + (seg.text.length - seg.text.trimStart().length);
+          text = addCodeTaskRequirements(full, text, segStart);
+        }
         scored.push({ text, source: { materialId: m.id, title: m.title, sourceLabel: m.sourceLabel, updatedAt: m.externalUpdatedAt, url: m.externalUrl }, score });
+      }
       }
     }
   }
@@ -1107,6 +1455,43 @@ function extractProblems(materials: any[], limit = 8, perFileCap = 2) {
     perFile[k] = (perFile[k] || 0) + 1;
     return perFile[k] <= perFileCap;
   }).slice(0, limit);
+}
+
+/**
+ * วิชาภาษา (อังกฤษ/ไทย): ไฟล์มักมีแต่บทบรรยาย/บทความ ไม่มี "แบบฝึกหัด" ให้ดึง
+ * แต่ยังฝึก "แปลประโยค" ได้โดยใช้ประโยคจริงจากไฟล์เท่านั้น (ห้าม AI แต่งประโยคใหม่)
+ * คืนรายการพร้อม source เพื่อให้ไหลไปเข้า renderProblem ตามปกติ
+ */
+function translateSentencePool(materials: any[], limit = 40) {
+  const out: { text: string; source: any; score: number }[] = [];
+  const seen = new Set<string>();
+  for (const m of materials) {
+    const body = String(m.textContent || "")
+      .replace(/^\s*(?:วิดีโอ\s+)?YouTube\s*:\s*.*$/gim, "")
+      .replace(/^\s*(?:ลิงก์|Link|URL)\s*[:：].*$/gim, "");
+    for (const raw of body.split(/[\r\n]+|(?<=[.!?])\s+/)) {
+      const s = raw.replace(/\s+/g, " ").trim().replace(/^\s*\d+[.)]\s*/, "");
+      if (s.length < 40 || s.length > 220) continue;
+      if (seen.has(s)) continue;
+      if (/,\s*,/.test(s)) continue;                                // แถว CSV มีช่องว่าง
+      if ((s.match(/\d/g) || []).length > s.length * 0.2) continue; // แถวรหัสนิสิต/ตัวเลข
+      if (/@|https?:\/\/|www\./i.test(s)) continue;
+      if (/^[^\n:]{2,45}:/.test(s)) continue;                       // ป้ายหัวข้อ "Instructors:..." / "Audio file links: ..."
+      if (/\(\d\)/.test(s)) continue;                               // รายการอ้างอิง "(1) ... (2) ..."
+      const letters = (s.match(/[A-Za-z\u0E00-\u0E7F]/g) || []).length;
+      if (letters < 30 || letters / s.length < 0.6) continue;
+      if (s.split(/\s+/).length < 7 && !/[\u0E00-\u0E7F]/.test(s)) continue;
+      seen.add(s);
+      const thai = (s.match(/[\u0E00-\u0E7F]/g) || []).length > letters * 0.5;
+      out.push({
+        text: (thai ? "แปลข้อความต่อไปนี้เป็นภาษาอังกฤษ" : "แปลข้อความต่อไปนี้เป็นภาษาไทย") + "\n\n" + s,
+        source: { materialId: m.id, title: m.title, sourceLabel: m.sourceLabel, updatedAt: m.externalUpdatedAt, url: m.externalUrl },
+        // ประโยคที่ลงท้ายด้วยจุด/คำถาม = ประโยคสมบูรณ์ ให้เลือกก่อนประโยคตัดท่อน
+        score: letters + (/[.!?。！？]$/.test(s) ? 200 : 0),
+      });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 /** สุ่มเลือกโจทย์ เพื่อไม่ให้ถามซ้ำเดิมทุกครั้ง */
@@ -1209,7 +1594,7 @@ function levelEscalationRule(level: string): string {
   if (!LEVEL_TH[level]) return "";
   return (
     "ปรับระดับความยาก: ผู้เรียนเลือกระดับ" + LEVEL_TH[level] +
-    "แต่ไฟล์ต้นทางไม่มีข้อระดับนี้ ให้ต่อยอดโจทย์ข้อนี้โดย " +
+    "ให้ปรับโจทย์ข้อนี้ตามระดับที่เลือกโดย " +
     (level === "hard"
       ? "เพิ่มเงื่อนไขซ้อน กรณีพิเศษ หรือจำนวนขั้นตอนให้คิดหลายขั้น ให้ซับซ้อนและยากขึ้น"
       : level === "medium"
@@ -1225,18 +1610,26 @@ router.get("/diagnose/files", requireAuth(), async (req: any, res) => {
     const subjectId = String(req.query?.subjectId || "").trim();
     const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id }, include: { materials: true } });
     if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
-    const sorted = sortByTitle(subject.materials || []);
+    const sorted = sortByTitle(materialsForSubject(subject));
     // นับโจทย์แบบเพดาน 10 ข้อ/ไฟล์ — ตรงกับเพดานตอนดึงจากไฟล์ที่เลือก (จำนวนตรงกับที่เห็นบนจอ)
     // (extractProblems ปกติจำกัด 2 ข้อ/ไฟล์สำหรับการสุ่มทั่วไป)
     const raw = extractProblems(sorted, 100000, 10);
+    const codeRaw = extractProblems(sorted, 100000, 10, true);
     const counts: Record<string, number> = {};
+    const codeCounts: Record<string, number> = {};
     for (const p of raw) counts[p.source.materialId] = (counts[p.source.materialId] || 0) + 1;
+    for (const p of codeRaw) codeCounts[p.source.materialId] = (codeCounts[p.source.materialId] || 0) + 1;
+    const codeFiles = sorted.filter((material: any) => codeCounts[material.id]);
+    const codeLevels = new Map<string, "easy" | "medium" | "hard">();
+    codeFiles.forEach((material: any, index: number) => codeLevels.set(material.id, fileLevel(index, codeFiles.length)));
     res.json({
       files: sorted.map((m: any, i: number) => ({
         id: m.id,
         title: m.title,
         count: counts[m.id] || 0,
         level: fileLevel(i, sorted.length),
+        codeCount: codeCounts[m.id] || 0,
+        codeLevel: codeLevels.get(m.id) || "",
       })),
     });
   } catch (error) {
@@ -1262,13 +1655,13 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id }, include: { materials: true } });
     if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
 
+    const usableSubject = { ...subject, materials: materialsForSubject(subject) };
+
     // hasCode = ดูจากเนื้อหาไฟล์จริงของวิชา — วิชาที่ไม่มีเขียนโค้ดจะไม่ถูกยกฟอร์แมต "โค้ด" มาให้เลือก
     // และใช้คัดโจทย์ใน "โหมดฝึกทำรหัสเทียม" ให้มีเฉพาะข้อที่ตอบเป็นรหัสเทียมได้จริง
-    const hasCode = analyzeSubjectSignals(subject.materials || []).code >= EXTRA_MIN.code;
-    // กันฝั่งเซิร์ฟเวอร์ด้วย (แถวแนวในแอปกรองไปแล้ว): วิชาที่ไฟล์ไม่มีสัญญาณโค้ดจริง
-    // ไม่มีแนวรหัสเทียมให้ฝึก — ปล่อยให้ระบบเลือกฟอร์แมตเองแทนที่จะค้างเป็นรหัสเทียม
-    if (wanted === "pseudocode" && !hasCode) { wanted = ""; format = ""; }
-
+    const hasCode = analyzeSubjectSignals(usableSubject.materials || []).code >= EXTRA_MIN.code;
+    // ป้องกันคำขอจาก client รุ่นเก่าหรือการเรียกตรง: วิชาที่ไม่มีเนื้อหาโค้ดจะไม่เข้าโหมดโค้ด/รหัสเทียม
+    if (!hasCode && (wanted === "code" || wanted === "pseudocode")) { wanted = ""; format = ""; }
     // แหล่งที่มา: ไฟล์ในวิชา (ค่าเริ่มต้น) หรืองานที่นักเรียนเคยส่งไป
     if (String(req.body?.source || "") === "submission") {
       const rows = await prisma.submission.findMany({
@@ -1298,10 +1691,13 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
         });
       }
       // ข้อโค้ดจริงไม่ถูกกรองทิ้งแล้ว — AI จะแต่งข้อโค้ดให้เป็นคำถามได้ทุกแนว (รวมโหมดฝึก)
-      const pool = filterByTopics(extractProblems(items as any[], 8), onlyTopics);
+      const pool = filterByTopics(extractProblems(items as any[], 8, wanted === "code" ? 10 : 2, wanted === "code"), onlyTopics);
+      if (wanted === "code" && !pool.length) {
+        return res.status(404).json({ error: "ยังไม่พบโจทย์เขียนโปรแกรมในงานที่ส่ง", hint: "เลือกไฟล์บทเรียนที่มีเนื้อหาการเขียนโปรแกรมแทน" });
+      }
       const usable = pool.length ? pool : items.slice(0, 6);
       const picked = pickRandom(usable) || usable[0];
-      const rendered = await renderProblem(subject, picked.text, wanted, skip);
+      const rendered = await renderProblem(usableSubject, picked.text, wanted, skip, requestedLevel);
       return res.json({
         ...rendered,
         source: picked.source,
@@ -1312,46 +1708,94 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
 
     // ข้อโค้ดจริงไม่ถูกกรองทิ้งแล้ว — เอาข้อโค้ดมาให้ AI แต่งเป็นโจทย์ตามแนวที่เลือกเองได้ (รวมโหมดฝึก)
     // ระดับความยากอิง "ลำดับไฟล์ใน Classroom" (เรียงตามบท/สัปดาห์) — ไฟล์ต้น = ง่าย ไฟล์ท้าย = ยาก
-    const sortedMats = sortByTitle(subject.materials || []);
+    const sortedMats = sortByTitle(usableSubject.materials || []);
     const matOrder = new Map<string, number>();
     sortedMats.forEach((m: any, i: number) => matOrder.set(m.id, i));
     const matTotal = Math.max(1, sortedMats.length);
     const orderIdx = (p: any) => matOrder.get(p?.source?.materialId) ?? 1e9;
+    const allCodeCandidates = wanted === "code"
+      ? filterByTopics(extractProblems(sortedMats, 100000, 10, true), onlyTopics)
+      : [];
+    // Difficulty is ranked over files that actually contain programming tasks.
+    // Counting empty files or unrelated notices made every early code task look "medium".
+    const codeTaskFiles = sortedMats.filter((material: any) =>
+      allCodeCandidates.some((candidate: any) => candidate.source.materialId === material.id)
+    );
+    const codeLevelByMaterial = new Map<string, "easy" | "medium" | "hard">();
+    codeTaskFiles.forEach((material: any, index: number) => {
+      codeLevelByMaterial.set(material.id, fileLevel(index, codeTaskFiles.length));
+    });
+    const sourceLevel = (problem: any): "easy" | "medium" | "hard" => wanted === "code"
+      ? codeLevelByMaterial.get(problem?.source?.materialId) || fileLevel(orderIdx(problem), matTotal)
+      : fileLevel(orderIdx(problem), matTotal);
 
     // แหล่งโจทย์: ไฟล์ที่เลือก / ไฟล์ระดับที่เลือก / ทั้งวิชา
     // (ดึงเยอะพอให้เรียงง่ายก่อนได้จริง — เดิมจำกัด 8 ข้อจากสูงสุดทำให้ไฟล์ที่เลือก/ระดับที่ขอไม่อยู่ในกองเลย)
-    let poolMaterials: any[] = subject.materials || [];
-    if (onlyMaterial) {
+    let poolMaterials: any[] = usableSubject.materials || [];
+    if (onlyMaterial && wanted !== "code") {
       poolMaterials = poolMaterials.filter((m: any) => m.id === onlyMaterial);
-    } else if (requestedLevel) {
+    } else if (requestedLevel && wanted !== "code") {
       const lv = sortedMats.filter((m: any, i: number) => fileLevel(i, sortedMats.length) === requestedLevel);
       if (lv.length) poolMaterials = lv;
     }
     let levelFallback = false;
-    let all = filterByTopics(extractProblems(poolMaterials, 60, onlyMaterial ? 10 : 2), onlyTopics);
+    let all: any[];
+    if (wanted === "code") {
+      const selectedMaterialTasks = onlyMaterial
+        ? allCodeCandidates.filter((candidate: any) => candidate.source.materialId === onlyMaterial)
+        : allCodeCandidates;
+      if (onlyMaterial) {
+        all = selectedMaterialTasks;
+      } else if (requestedLevel) {
+        all = selectedMaterialTasks.filter((candidate: any) => sourceLevel(candidate) === requestedLevel);
+        if (!all.length && selectedMaterialTasks.length) {
+          all = selectedMaterialTasks;
+          levelFallback = true;
+        }
+      } else {
+        all = selectedMaterialTasks;
+      }
+    } else {
+      all = filterByTopics(extractProblems(poolMaterials, 60, onlyMaterial ? 10 : 2, false), onlyTopics);
+    }
     // เลือกไฟล์ไว้แต่ไฟล์นั้นดึงโจทย์ไม่ได้ -> บอกตรง ๆ ให้เลือกไฟล์อื่น
     if (onlyMaterial && !all.length) {
       return res.status(404).json({
-        error: "ไฟล์ที่เลือกยังไม่มีโจทย์ที่ดึงได้",
-        hint: "ลองเลือกไฟล์อื่นในรายชื่อ หรือกดซิงก์ Classroom เพื่ออัปเดตไฟล์",
+        error: wanted === "code" ? "ไฟล์ที่เลือกยังไม่มีโจทย์เขียนโปรแกรมที่ดึงได้" : "ไฟล์ที่เลือกยังไม่มีโจทย์ที่ดึงได้",
+        hint: wanted === "code" ? "เลือกไฟล์บทเรียนที่มีแบบฝึกเขียนโปรแกรม" : "ลองเลือกไฟล์อื่นในรายชื่อ หรือกดซิงก์ Classroom เพื่ออัปเดตไฟล์",
       });
     }
-    // ระดับที่เลือกไม่มีโจทย์เลย -> ใช้ทั้งวิชา แล้วให้ AI ต่อยอดข้อที่มีให้ตรงระดับแทน (levelFallback)
-    if (!all.length && requestedLevel && !onlyMaterial) {
-      all = filterByTopics(extractProblems(subject.materials, 60, 2), onlyTopics);
+    // ระดับที่เลือกไม่มีโจทย์เลย -> ใช้โจทย์จริงจากไฟล์ที่ใกล้ระดับที่สุด ห้ามสร้างเงื่อนไขใหม่
+    if (!all.length && requestedLevel && !onlyMaterial && wanted !== "code") {
+      all = filterByTopics(extractProblems(usableSubject.materials, 60, 2, false), onlyTopics);
       levelFallback = !!all.length;
     }
+    // วิชาภาษา: ไม่มี "แบบฝึกหัด" ในไฟล์ แต่ยังฝึกแปลประโยคจริงจากเนื้อหาได้
+    if (!all.length && format === "translate") {
+      all = translateSentencePool(poolMaterials.length ? poolMaterials : usableSubject.materials);
+    }
     if (!all.length) {
+      // แยกสาเหตุให้ตรงจริง: ไฟล์ว่าง/เป็นลิงก์ กับ ไฟล์มีเนื้อหาแต่ไม่มีแบบฝึกหัด
+      const textChars = (usableSubject.materials || [])
+        .reduce((sum: number, m: any) => sum + String(m.textContent || "").trim().length, 0);
       return res.status(404).json({
-        error: "ยังไม่พบโจทย์ในไฟล์ของวิชานี้",
-        hint: "ต้องมีข้อความอย่างน้อยในไฟล์ เช่น ใบงาน แบบฝึกหัด หรือประกาศใน Classroom — ลองซิงก์ใหม่",
+        error: textChars < 200 ? "ไฟล์ในวิชานี้ยังไม่มีข้อความให้ดึงโจทย์" : "ไฟล์ในวิชานี้เป็นบทบรรยาย/ประกาศ ไม่มีแบบฝึกหัดให้ดึง",
+        hint: textChars < 200
+          ? "ไฟล์อาจเป็นวิดีโอหรือลิงก์ — ลองซิงก์ Classroom ใหม่ หรือเลือกวิชาอื่น"
+          : wanted === "code"
+            ? "ลองเลือกวิชาที่มีแบบฝึกเขียนโปรแกรม หรือเลือกไฟล์ช่วงต้นที่มีตัวแปร อาร์เรย์ เงื่อนไข หรือลูป"
+            : "วิชาภาษาใช้ \"แปลประโยค\" ได้ · วิชาอื่นลองเลือกไฟล์อื่นในรายชื่อ หรือเพิ่มไฟล์แบบฝึกหัดใน Classroom",
       });
     }
 
     // เรียง "ง่ายก่อน" เสมอ — ตามลำดับไฟล์ในวิชา (บทแรก/สัปดาห์แรกอยู่ก่อน)
-    const candidates = all.slice().sort((a, b) => orderIdx(a) - orderIdx(b));
+    const levelRank: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
+    const levelDistance = (p: any) => requestedLevel
+      ? Math.abs(levelRank[sourceLevel(p)] - levelRank[requestedLevel])
+      : 0;
+    const candidates = all.slice().sort((a, b) => levelDistance(a) - levelDistance(b) || orderIdx(a) - orderIdx(b));
     // เลือกไฟล์ + ระดับพร้อมกัน: ไฟล์ที่เลือกไม่ได้อยู่ระดับที่ขอ -> คงข้อที่มี แล้วให้ AI ต่อยอดให้ตรงระดับ
-    if (onlyMaterial && requestedLevel && fileLevel(orderIdx(candidates[0]), matTotal) !== requestedLevel) {
+    if (onlyMaterial && requestedLevel && sourceLevel(candidates[0]) !== requestedLevel) {
       levelFallback = true;
     }
 
@@ -1359,15 +1803,16 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     // โจทย์ซ้อน = ดึงจากไฟล์เดียวกับที่กำลังทำอยู่ เพื่อให้โครงสร้างตรงกัน
     const baseId = String(req.body?.baseMaterialId || "");
     const sameAsCurrent = baseId ? all.find((p: any) => p.source.materialId === baseId) : null;
-    const fresh = candidates.filter((p) => !skip.includes(p.source.materialId + "|" + p.text.slice(0, 40)));
+    const fresh = candidates.filter((p) => !skip.includes(problemKey(p.source.materialId, p.text)));
     // เรียงง่ายก่อน = เอาข้อใหม่ "ระดับล่างสุด" ที่ยังไม่เคยทำ (สุ่มภายในไฟล์นั้น กันซ้ำจำเจ)
-    const pickEasyFirst = (list: any[], fallback: any[]) => {
+    const pickBySourceLevel = (list: any[], fallback: any[]) => {
       if (!list.length) return pickRandom(fallback)!;
-      let min = Infinity;
-      for (const p of list) min = Math.min(min, orderIdx(p));
-      return pickRandom(list.filter((p) => orderIdx(p) === min))!;
+      const closestDistance = Math.min(...list.map(levelDistance));
+      const closest = list.filter((p) => levelDistance(p) === closestDistance);
+      const firstFile = Math.min(...closest.map(orderIdx));
+      return pickRandom(closest.filter((p) => orderIdx(p) === firstFile))!;
     };
-    const chosen = sameAsCurrent || pickEasyFirst(fresh, candidates);
+    const chosen = sameAsCurrent || pickBySourceLevel(fresh, candidates);
 
     // รูปแบบที่ใช้ได้จริงกับโจทย์นี้ — คำนวณจากโจทย์ดิบ แล้วเลือกอันที่ตรงที่สุดให้เอง
     // (hasCode คำนวณไว้ด้านบนแล้ว — โหมดรหัสเทียมคัดข้อโค้ดจริงทิ้งไปก่อนถึงตรงนี้)
@@ -1378,12 +1823,8 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     }
     if (!wanted) format = pickedF.recommended;
     else if (!formats.some((f) => f.format === format)) format = formats[0]?.format || "text";
-    // โจทย์ต้นทางเป็นโค้ดจริง (เช่น scanf/printf/for ในสไลด์) -> บังคับแนว "โค้ด" เสมอ
-    // แม้ผู้ใช้จะเลือกแนวอื่นไว้ (สุ่มทุกอย่าง/ตาราง) เพราะนี่คือโค้ด ไม่ใช่รหัสเทียม
-    // วิชาที่ไม่มีหลักฐานโค้ดในไฟล์ (hasCode=false) จะไม่โดนบังคับ กันวิชาภาษาเป็นโค้ด
-    // เว้นแต่ผู้ใช้เลือกแนว "รหัสเทียม" ไว้: ข้อโค้ดจะถูก AI แต่งเป็นโจทย์รหัสเทียมแทน
-    // (บังคับเป็นโค้ด = ฟอร์แมตไม่ตรงกับหน้าฝึก ทำให้โจทย์ไม่ขึ้นบนจอเลย)
-    if (wanted !== "pseudocode" && isRealCodeProblem(chosen.text, hasCode)) {
+    // เคารพแนวที่ผู้ใช้เลือกไว้; เลือกโค้ดอัตโนมัติเฉพาะเมื่อไม่ได้เลือกแนว
+    if (!wanted && isRealCodeProblem(chosen.text, hasCode)) {
       format = "code";
       if (!formats.some((f) => f.format === "code")) {
         formats = [...formats, { format: "code", why: "โจทย์ต้นทางเป็นโค้ดจริง" }];
@@ -1397,7 +1838,7 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     // โหมดฝึกทำรหัสเทียม — ให้ AI แต่งโจทย์ใหม่เป็นคำถามล้วน (ไม่ใช่คำตอบ/โค้ดสำเร็จรูปจากไฟล์)
     const pseudoPractice = wanted === "pseudocode" && format === "pseudocode" && !isVariant;
     // ไม่เจอข้อระดับที่เลือกในไฟล์ -> สั่ง AI ต่อยอดข้อที่มีให้ตรงระดับ (ยากขึ้น/ง่ายขึ้น)
-    const levelRule = levelFallback ? levelEscalationRule(requestedLevel) : "";
+    const levelRule = levelFallback && format !== "code" ? levelEscalationRule(requestedLevel) : "";
     let aiRendered = false;
 
     try {
@@ -1406,6 +1847,7 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
           {
             role: "system",
             content:
+              (format === "code" ? CODE_TASK_RULES + "เลือกและจัดรูปแบบเพียงโจทย์เดียว ห้ามรวมหลายข้อเป็นงานชุดเดียว หรือย้ายข้อมูลจากข้ออื่นมาใส่ข้อนี้\n" : "") +
               (isVariant
                 ? "คุณคืออาจารย์ AI หน้าที่สร้างโจทย์ซ้อนให้นักเรียนลองทำเอง " +
                   "ต้องสร้างโจทย์ใหม่ที่โครงสร้างเหมือนโจทย์ต้นทาง แต่เปลี่ยนตัวเลข ชื่อ หรือค่าให้ต่างออกไป " +
@@ -1482,7 +1924,7 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
 
       // คำสั่งโจทย์ท้ายสุด ("จงเขียนโปรแกรม...") ห้ามหาย — AI บางรอบตัดทิ้ง = โจทย์ไม่รู้ว่าให้ทำอะไร
       const rawTaskLine = findTaskLine(chosen.text);
-      if (rawTaskLine && !rendered.includes(rawTaskLine.slice(0, 40))) {
+      if (rawTaskLine && !codeTaskAlreadyIncluded(rendered, rawTaskLine)) {
         rendered = rendered.trim() + "\n\n" + rawTaskLine;
       }
       // worked example ไม่มีบรรทัด "จง..." — task จริงอยู่ที่หัวข้อ เช่น "ตัวอย่างที่ 3.2 เขียนโปรแกรม..."
@@ -1523,6 +1965,17 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       rendered = safeRaw.slice(0, 2000);
     }
 
+    if (format === "code") {
+      // โจทย์โค้ดต้องมาจากไฟล์จริงโดยตรง ห้ามให้โมเดลแต่งตัวอย่าง/ตัวเลข/ผลลัพธ์เพิ่ม
+      const sourceQuestion = cleanCodeQuestion(chosen.text);
+      rendered = isProgrammingTask(sourceQuestion) ? sourceQuestion : cleanCodeQuestion(rendered);
+      if (!isProgrammingTask(rendered)) rendered = cleanCodeQuestion(chosen.text);
+      if (!isProgrammingTask(rendered)) {
+        return res.status(422).json({ error: "โจทย์ต้นทางไม่ใช่โจทย์เขียนโปรแกรมที่ชัดเจน", hint: "เลือกไฟล์ช่วงต้นที่มีแบบฝึกเขียนโปรแกรม ตัวแปร และคำสั่งรับ/แสดงผล" });
+      }
+      deliverables = ["โปรแกรมที่ทำตามโจทย์"];
+    }
+
     // ถ้า AI ไม่ได้แยกให้ ให้เดาจากคำในโจทย์เอง
     if (!deliverables.length) deliverables = detectDeliverables(rendered);
 
@@ -1535,8 +1988,10 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       source: chosen.source,
       // คีย์จาก "ข้อความดิบ" ต้นฉบับ — ลูกค้าส่งกลับมาใน seen เพื่อกันข้อซ้ำ
       // (โจทย์ที่ AI แต่งใหม่คนละคำนำหน้ากับต้นฉบับ ถ้าเทียบด้วยข้อความที่แสดงจะไม่ตรงเลย)
-      rawKey: chosen.source.materialId + "|" + chosen.text.slice(0, 40),
-      totalProblems: candidates.length,
+      rawKey: problemKey(chosen.source.materialId, chosen.text),
+      totalProblems: wanted === "code"
+        ? onlyMaterial ? allCodeCandidates.filter((candidate: any) => candidate.source.materialId === onlyMaterial).length : allCodeCandidates.length
+        : candidates.length,
       generatedByAi: rendered !== chosen.text,
       variant: !!req.body?.variant,
       // true = ไม่เจอข้อระดับที่เลือกในไฟล์นี้ -> AI ต่อยอดข้อที่มีให้ตรงระดับแทน (แจ้งผู้ใช้เบา ๆ บนจอ)
@@ -1616,10 +2071,14 @@ router.post("/diagnose/answer", requireAuth(), async (req: any, res) => {
     const subjectId = String(req.body?.subjectId || "").trim();
     const problem = String(req.body?.problem || "").slice(0, 3000);
     const answer = String(req.body?.answer || "").slice(0, 3000);
-    const deliverables: string[] = Array.isArray(req.body?.deliverables) ? req.body.deliverables.map(String).slice(0, 8) : [];
-    const done: string[] = Array.isArray(req.body?.done) ? req.body.done.map(String) : [];
-    // แนวคำตอบที่ผู้เรียนใช้ตอบ — รหัสเทียมต้องตรวจคนละแบบกับโค้ดจริง
     const answerFmt = String(req.body?.format || "");
+    const deliverables: string[] = answerFmt === "code"
+      ? ["โปรแกรมที่ทำตามโจทย์"]
+      : Array.isArray(req.body?.deliverables) ? req.body.deliverables.map(String).slice(0, 8) : [];
+    const done: string[] = answerFmt === "code"
+      ? deliverables
+      : Array.isArray(req.body?.done) ? req.body.done.map(String) : [];
+    // แนวคำตอบที่ผู้เรียนใช้ตอบ — รหัสเทียมต้องตรวจคนละแบบกับโค้ดจริง
     if (!subjectId || !problem) return res.status(400).json({ error: "ข้อมูลไม่ครบ" });
 
     let feedback: any = {
@@ -1640,7 +2099,11 @@ router.post("/diagnose/answer", requireAuth(), async (req: any, res) => {
                 (answerFmt === "pseudocode"
                   ? "คำตอบเป็นรหัสเทียม (pseudocode) — ตรวจลำดับขั้นตอนและตรรกะ (การรับข้อมูล/ประมวลผล/แสดงผล, จุดเริ่มต้น-จุดจบ, IF/ELSE, WHILE/FOR, ตัวแปร) เทียบกับวิธีที่ถูกต้อง ไม่ต้องติดไวยากรณ์ของภาษาโปรแกรมจริง " +
                     "รหัสเทียมที่ถูกต้องต้องขึ้นต้นด้วย start (จุดเริ่มต้น) และลงท้ายด้วย stop (จุดสิ้นสุด) ถ้าขาดหรือผิดลำดับให้ระบุเป็นจุดที่ต้องแก้ "
-                  : "ถ้าเป็นโค้ด ให้เทียบกับเฉลยเชิงตรรกะ ไม่ต้องเทียบรูปแบบการเขียน ") +
+                  : answerFmt === "code"
+                    ? "คำตอบเป็นโปรแกรม ให้ตรวจเฉพาะว่าโค้ดทำงานตามโจทย์ รับข้อมูล/ประมวลผล/แสดงผลตรงตามที่ระบุหรือไม่ ห้ามเรียก pseudocode ผังงาน ขั้นตอนวิธี หรือคำอธิบายที่อยู่ในเอกสารต้นทางว่าเป็นสิ่งที่ผู้เรียนต้องส่งเพิ่ม เพราะกำลังตรวจโหมดโค้ด " +
+                      "ไม่เทียบรูปแบบการเขียนหรือชื่อไลบรารี ยอมรับ cout/cin แทน printf/scanf เมื่อรับและแสดงผลถูกต้องเหมือนกัน ห้ามบังคับเปลี่ยนเป็น printf เว้นแต่โจทย์ระบุชัดว่าต้องใช้ printf โดยเฉพาะ " +
+                      "ถ้าโค้ดครบตามข้อกำหนดและผลลัพธ์ถูกต้อง ต้องให้คะแนนผ่าน แม้เลือกวิธีเขียนต่างจากตัวอย่าง"
+                    : "คำตอบเป็นข้อความ ให้เทียบเนื้อหากับโจทย์และยอมรับคำตอบที่ถูกต้องแม้ใช้คำอธิบายต่างกัน") +
                 (deliverables.length
                   ? "โจทย์นี้สั่งให้ส่ง " + deliverables.length + " ส่วน ต้องครบทุกส่วนถึงจะถือว่าถูก: " + deliverables.join(" / ") + "\n"
                   : "") +
@@ -1682,6 +2145,55 @@ router.post("/diagnose/answer", requireAuth(), async (req: any, res) => {
     res.json({ feedback, missing, doneCount: done.length, deliverableCount: deliverables.length, checkedAt: new Date().toISOString() });
   } catch (error) {
     res.status(400).json({ error: String(error instanceof Error ? error.message : error) });
+  }
+});
+
+/* สร้างโค้ดตามโจทย์ปัจจุบัน ไม่อาศัยประวัติแชตที่อาจเป็นคนละข้อ */
+router.post("/diagnose/code-solution", requireAuth(), async (req: any, res) => {
+  try {
+    const subjectId = String(req.body?.subjectId || "").trim();
+    const problem = String(req.body?.problem || "").trim().slice(0, 3000);
+    const studentCode = String(req.body?.answer || "").trim().slice(0, 5000);
+    const materialId = String(req.body?.materialId || "").trim();
+    if (!subjectId || problem.length < 12) return res.status(400).json({ error: "ไม่พบโจทย์ที่ต้องการช่วยเขียนโค้ด" });
+    const subject = await prisma.subject.findFirst({
+      where: { id: subjectId, userId: req.user.id },
+      select: {
+        id: true,
+        name: true,
+        materials: { select: { id: true, title: true, textContent: true } },
+      },
+    });
+    if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
+    const validMaterials = materialsForSubject(subject);
+    const lesson = materialId ? validMaterials.find((material) => material.id === materialId) : null;
+    if (!lesson) return res.status(404).json({ error: "ไม่พบไฟล์เรียนจริงของโจทย์นี้ จึงยังไม่สร้างโค้ดจากแหล่งอื่น" });
+    const lessonContext = buildCodeLessonReference(validMaterials, materialId, problem);
+    if (!lessonContext.reference) return res.status(422).json({ error: "ไม่พบตัวอย่างคำสั่งที่เกี่ยวข้องในไฟล์เรียนของโจทย์นี้" });
+    const languageRule = lessonContext.language === "C"
+      ? "ไฟล์บทเรียนนี้ใช้ภาษา C และสไตล์ stdio; ให้เขียน C99 โดยใช้เฉพาะรูปแบบที่เห็นในตัวอย่าง (เช่น scanf/printf เมื่อมีการรับหรือแสดงผล) ห้ามใช้ cin, cout, iostream, using namespace std หรือไวยากรณ์ C++"
+      : "ไฟล์บทเรียนนี้ใช้ภาษา C++; ให้เขียน C++ ตามรูปแบบที่เห็นในตัวอย่าง ห้ามสลับไปใช้ภาษา/ไลบรารีที่ไม่ได้สอน";
+    const result: any = await llm([
+      { role: "system", content: "คุณเป็นผู้ช่วยเขียนโปรแกรมสำหรับผู้เรียน ตอบ JSON ที่มี code เป็นสตริงเดียวเท่านั้น. " +
+        "เขียนโปรแกรมที่แก้โจทย์ที่แนบมาโดยตรง ห้ามอาศัยโจทย์หรือบริบทจากข้ออื่น. " +
+        "อ่านทุกเงื่อนไขและค่าตัวเลขก่อนเขียน ต้องรับข้อมูลและแสดงผลตรงตามโจทย์. " +
+        "ห้ามเดาหรือแต่งข้อความแสดงผลที่โจทย์ไม่ระบุ ถ้าโจทย์บอกเพียงแนวคิด ให้ใช้คำสั้น ๆ ในภาษาเดียวกับโจทย์. " +
+        "Use only the data types, variables, and commands demonstrated in the attached lesson excerpts and earlier prerequisite lesson excerpts; do not introduce libraries or algorithms absent from them. " +
+        languageRule + " ประกาศตัวแปรทุกตัวก่อนใช้ เลือกชนิดและขนาดอาร์เรย์ตรงกับโจทย์. " +
+        "ตัวอย่างในบทเรียนเป็นหลักฐานเฉพาะเรื่องไวยากรณ์/คำสั่ง ห้ามคัดลอกโจทย์ ตัวเลข ผลลัพธ์ หรือตัวแปรของตัวอย่างอื่นมาใช้ เว้นแต่โจทย์ปัจจุบันระบุเหมือนกัน. " +
+        "ตรวจโค้ดกับตัวอย่าง Input/Output ในโจทย์ก่อนส่ง. โค้ดต้องสมบูรณ์ ไม่มี URL markdown fence หรือคำอธิบายปนใน code. " +
+        "ถ้ามีโค้ดที่ผู้เรียนเขียนมา ให้ตรวจและแก้ให้ตรงโจทย์ ไม่เขียนซ้ำจากงานคนละข้อ. รูปแบบ: {\"code\":\"...\"}" },
+      { role: "user", content: `วิชา: ${subject.name}\nโจทย์ปัจจุบัน (ข้อกำหนดที่ต้องทำตาม):\n${problem}\n\nข้อความที่คัดจากไฟล์เรียนจริงและบทเรียนพื้นฐานก่อนหน้า (ใช้ดูเฉพาะไวยากรณ์และคำสั่งที่สอน):\n${lessonContext.reference}\n\nโค้ดที่ผู้เรียนมี:\n${studentCode || "(ยังไม่มี)"}` },
+    ], { json: true, temperature: 0.1, model: SPEED.balanced.model });
+    const code = String(result?.code || "").trim().replace(/^```[a-zA-Z+#]*\s*/, "").replace(/\s*```$/, "").trim();
+    if (code.length < 20) return res.status(502).json({ error: "ยังสร้างโค้ดที่ใช้ได้สำหรับโจทย์นี้ไม่ได้ ลองอีกครั้ง" });
+    if (lessonContext.language === "C" && /\b(?:cin|cout)\b|iostream|using\s+namespace\s+std|std::/.test(code)) {
+      return res.status(502).json({ error: "โค้ดที่สร้างไม่ตรงกับภาษา C ที่สอนในไฟล์นี้ ลองขอคำใบ้ใหม่อีกครั้ง" });
+    }
+    res.json({ code });
+  } catch (error) {
+    console.warn("สร้างโค้ดตามโจทย์ไม่สำเร็จ", String(error));
+    res.status(502).json({ error: "สร้างโค้ดตามโจทย์ไม่สำเร็จ ลองอีกครั้ง" });
   }
 });
 

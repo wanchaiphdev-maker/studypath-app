@@ -15,6 +15,9 @@ app.use(cors({ origin: allowedOrigin ? allowedOrigin.split(",").map((x) => x.tri
 app.use(express.json({ limit: "2mb" }));
 app.disable("x-powered-by");
 app.use((_req, res, next) => {
+  // API เป็นข้อมูลสดรายผู้ใช้ — ห้ามให้เบราว์เซอร์แคชแล้วตอบ 304
+  // (fetch ฝั่งแอปถือว่า 304 = ไม่ ok ทำให้ข้อมูลทั้งหน้าหาย เช่น "ยังไม่ได้เข้าสู่ระบบ")
+  res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
