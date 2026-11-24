@@ -5,6 +5,17 @@ import { BASE_URL } from "./api";
 /** Client ID สาธารณะ (ปลอดภัยที่จะอยู่ในแอป) เก็บในไฟล์ .env */
 export const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
+/**
+ * แสดง/ซ่อนปุ่ม "เข้าสู่ระบบด้วย Google"
+ * - เวอร์ชันปกติ (เครื่องเรา/เดสก์ท็อป) แสดงไว้
+ * - เวอร์ชันแชร์สาธารณะ build ด้วย EXPO_PUBLIC_GOOGLE_LOGIN=0 เพื่อไม่ให้เพื่อนเจอหน้า
+ *   "Google hasn't verified this app / ไปที่ ... (unsafe)" และ dead-end ที่ localhost
+ * เปิดกลับได้ทันทีเมื่อลงทะเบียน redirect URI ของโดเมนนั้นใน Google Cloud Console แล้ว
+ */
+export function isGoogleLoginEnabled() {
+  return process.env.EXPO_PUBLIC_GOOGLE_LOGIN !== "0";
+}
+
 /** จุดที่ Google จะ redirect มาหลังผู้ใช้กดยินยอม — ชี้ไป backend ของเรา (แลก code ฝั่ง server) */
 
 /** ที่อยู่ให้ backend ส่ง token กลับมาที่แอป (mobile:///login ตอนใช้ APK / exp://…/--/login ตอนใช้ Expo Go) */

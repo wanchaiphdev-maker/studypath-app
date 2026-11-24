@@ -7,9 +7,10 @@ import * as WebBrowser from "expo-web-browser";
 import {Ionicons} from "@expo/vector-icons";
 import {getToken,setToken} from "../../lib/storage";
 import {login} from "../../lib/api";
-import {appReturnUrl,buildGoogleAuthUrl,parseAuthCallback} from "../../lib/googleAuth";
+import {appReturnUrl,buildGoogleAuthUrl,isGoogleLoginEnabled,parseAuthCallback} from "../../lib/googleAuth";
 import {colors,spacing} from "../../lib/theme";
 export default function LoginScreen(){
+ const showGoogle=isGoogleLoginEnabled();
  const[email,setEmail]=useState(""),[password,setPassword]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[googleBusy,setGoogleBusy]=useState(false);
  useEffect(()=>{getToken().then(t=>t&&router.replace("/(tabs)")).catch(()=>undefined)},[]);
  async function submit(){setBusy(true);setError("");try{await login(email.trim(),password);router.replace("/(tabs)")}catch(e){setError(e instanceof Error?e.message:"เข้าสู่ระบบไม่สำเร็จ")}finally{setBusy(false)}}
@@ -21,8 +22,8 @@ export default function LoginScreen(){
    <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="รหัสผ่าน" placeholderTextColor="#8a8da5" style={styles.input} onSubmitEditing={submit}/>
    {error?<Text style={styles.error}>{error}</Text>:null}
    <Pressable onPress={submit} disabled={busy||!email||!password} style={[styles.primary,(busy||!email||!password)&&{opacity:.5}]}>{busy?<ActivityIndicator color="#fff"/>:<><Text style={styles.primaryText}>เข้าสู่ระบบ</Text><Ionicons name="arrow-forward" size={18} color="#fff"/></>}</Pressable>
-   <View style={styles.divider}><View style={styles.line}/><Text style={styles.or}>หรือ</Text><View style={styles.line}/></View>
-   <Pressable onPress={google} disabled={googleBusy} style={styles.social}>{googleBusy?<ActivityIndicator color={colors.text}/>:<><Text style={styles.google}>G</Text><Text style={styles.socialText}>เข้าสู่ระบบด้วย Google</Text></>}</Pressable>
+   {showGoogle?<><View style={styles.divider}><View style={styles.line}/><Text style={styles.or}>หรือ</Text><View style={styles.line}/></View>
+   <Pressable onPress={google} disabled={googleBusy} style={styles.social}>{googleBusy?<ActivityIndicator color={colors.text}/>:<><Text style={styles.google}>G</Text><Text style={styles.socialText}>เข้าสู่ระบบด้วย Google</Text></>}</Pressable></>:null}
    <Pressable onPress={()=>router.push("/(auth)/register")}><Text style={styles.signup}>ยังไม่มีบัญชี? <Text style={{fontWeight:"900"}}>สมัครสมาชิก</Text></Text></Pressable>
   </View>
  </ScrollView></KeyboardAvoidingView>

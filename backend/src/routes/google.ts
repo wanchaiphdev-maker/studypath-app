@@ -21,27 +21,61 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/drive.readonly",
 ];
 
-function redirectUri() {
-  const base = process.env.PUBLIC_BASE_URL?.trim() || `http://localhost:${process.env.PORT || 3000}`;
-  return base.replace(/\/$/, "") + "/auth/google/callback";
+/** host ที่ผู้ใช้เปิดอยู่จริง — รองรับทั้ง localhost และโดเมนที่แชร์ผ่าน proxy/tunnel */
+function requestHost(req: any) {
+  return String(req?.headers?.["x-forwarded-host"] || req?.headers?.host || "").split(",")[0].trim();
 }
 
-function safeReturnUrl(value: string) {
+function requestBase(req: any) {
+  const proto = String(req?.headers?.["x-forwarded-proto"] || req?.protocol || "http").split(",")[0].trim();
+  const host = requestHost(req);
+  const isLocal = !host || /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+  const env = process.env.PUBLIC_BASE_URL?.trim();
+  // PUBLIC_BASE_URL มีไว้เป็นค่าตั้งต้นของเครื่องนี้ (local) เท่านั้น
+  // ถ้าผู้ใช้เข้าผ่านโดเมนจริง/ลิงก์แชร์ ต้องใช้ host ที่เขาเปิด เพื่อให้ redirect_uri ตรงกับที่ลงทะเบียนไว้
+  if (isLocal && env) return env.replace(/\/$/, "");
+  return `${proto}://${host || `localhost:${process.env.PORT || 3000}`}`;
+}
+
+function redirectUri(req?: any) {
+  return requestBase(req) + "/auth/google/callback";
+}
+
+function safeReturnUrl(value: string, req?: any) {
   try {
     const u = new URL(value);
-    return ["http:", "https:"].includes(u.protocol) && ["localhost", "127.0.0.1"].includes(u.hostname)
-      || ["exp:", "mobile:", "studypath:"].includes(u.protocol);
+    if (["exp:", "mobile:", "studypath:"].includes(u.protocol)) return true;
+    if (!["http:", "https:"].includes(u.protocol)) return false;
+    const allowed = new Set(["localhost", "127.0.0.1"]);
+    for (const h of String(process.env.APP_ALLOWED_HOSTS || "").split(",")) {
+      const v = h.trim().toLowerCase();
+      if (v) allowed.add(v);
+    }
+    // โดเมนที่ผู้ใช้กำลังเปิดแอปอยู่นี้เอง (เช่นลิงก์ที่แชร์) — ไม่ใช่ปลายทางภายนอกที่เดามั่ว
+    const host = requestHost(req).toLowerCase();
+    if (host) { allowed.add(host); allowed.add(host.split(":")[0]); }
+    return allowed.has(u.hostname.toLowerCase()) || allowed.has(u.host.toLowerCase());
   } catch {
     return false;
   }
 }
 
-function verifyState(state: string | undefined): { returnUrl: string; userId?: string } {
-  const fallback = process.env.EXPO_PUBLIC_APP_RETURN_URL || "http://localhost:8081/login";
+/** ปลายทางกลับหน้าเว็บเมื่อ state ใช้ไม่ได้ — ต้องไม่ใช่ localhost บนเครื่องผู้ใช้ที่เข้าผ่านลิงก์แชร์ */
+function fallbackReturnUrl(req?: any) {
+  const env = process.env.EXPO_PUBLIC_APP_RETURN_URL?.trim();
+  if (env) return env;
+  const host = requestHost(req);
+  const isLocal = !host || /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+  if (isLocal) return "http://localhost:8081/login";
+  return requestBase(req) + "/login";
+}
+
+function verifyState(state: string | undefined, req?: any): { returnUrl: string; userId?: string } {
+  const fallback = fallbackReturnUrl(req);
   if (!state) return { returnUrl: fallback };
   try {
     const payload = jwt.verify(state, process.env.JWT_SECRET!) as { returnUrl?: string; userId?: string };
-    return { returnUrl: payload.returnUrl && safeReturnUrl(payload.returnUrl) ? payload.returnUrl : fallback, userId: payload.userId };
+    return { returnUrl: payload.returnUrl && safeReturnUrl(payload.returnUrl, req) ? payload.returnUrl : fallback, userId: payload.userId };
   } catch {
     return { returnUrl: fallback };
   }
@@ -97,9 +131,9 @@ router.post("/google/url", requireAuth(), (req: any, res) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     if (!clientId) return res.status(500).json({ error: "Google OAuth ยังไม่ได้ตั้งค่า" });
     const requestedReturn = typeof req.body?.returnUrl === "string" ? req.body.returnUrl : "";
-    const returnUrl = requestedReturn && safeReturnUrl(requestedReturn) ? requestedReturn : (process.env.EXPO_PUBLIC_APP_RETURN_URL || "http://localhost:8081/login");
+    const returnUrl = requestedReturn && safeReturnUrl(requestedReturn, req) ? requestedReturn : fallbackReturnUrl(req);
     const state = jwt.sign({ returnUrl, userId: req.user.id, nonce: crypto.randomBytes(16).toString("hex") }, process.env.JWT_SECRET!, { expiresIn: "10m" });
-    const params = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri(), response_type: "code", scope: GOOGLE_SCOPES.join(" "), state, access_type: "offline", include_granted_scopes: "true", prompt: "consent" });
+    const params = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri(req), response_type: "code", scope: GOOGLE_SCOPES.join(" "), state, access_type: "offline", include_granted_scopes: "true", prompt: "consent" });
     res.json({ url: GOOGLE_AUTH + "?" + params.toString() });
   } catch (error) { res.status(500).json({ error: String(error instanceof Error ? error.message : error) }); }
 });
@@ -109,11 +143,11 @@ router.get("/google/start", (req, res) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     if (!clientId) return res.status(500).send("Google OAuth ยังไม่ได้ตั้งค่า");
     const requestedReturn = typeof req.query.returnUrl === "string" ? req.query.returnUrl : "";
-    const returnUrl = requestedReturn && safeReturnUrl(requestedReturn) ? requestedReturn : (process.env.EXPO_PUBLIC_APP_RETURN_URL || "http://localhost:8081/login");
+    const returnUrl = requestedReturn && safeReturnUrl(requestedReturn, req) ? requestedReturn : fallbackReturnUrl(req);
     const state = jwt.sign({ returnUrl, nonce: crypto.randomBytes(16).toString("hex") }, process.env.JWT_SECRET!, { expiresIn: "10m" });
     const params = new URLSearchParams({
       client_id: clientId,
-      redirect_uri: redirectUri(),
+      redirect_uri: redirectUri(req),
       response_type: "code",
       scope: GOOGLE_SCOPES.join(" "),
       state,
@@ -128,7 +162,7 @@ router.get("/google/start", (req, res) => {
 });
 
 router.get("/google/callback", async (req, res) => {
-  const oauthState = verifyState(typeof req.query.state === "string" ? req.query.state : undefined);
+  const oauthState = verifyState(typeof req.query.state === "string" ? req.query.state : undefined, req);
   const returnUrl = oauthState.returnUrl;
   const fail = (message: string) => res.redirect(returnUrl + (returnUrl.includes("?") ? "&" : "?") + "error=" + encodeURIComponent(message));
 
@@ -148,7 +182,7 @@ router.get("/google/callback", async (req, res) => {
         code,
         client_id: clientId,
         client_secret: clientSecret,
-        redirect_uri: redirectUri(),
+        redirect_uri: redirectUri(req),
         grant_type: "authorization_code",
       }),
     });
