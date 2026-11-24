@@ -413,7 +413,9 @@ const diagramTextStyle: any = { ...MONO, color: "#e9d5ff", fontSize: 11, lineHei
 /** แปลง markdown ระดับบรรทัด: **หนา**, *เอียง*, `โค้ด`, หัวข้อ #, bullet, เลข, checkbox */
 const Inline = ({ s, tone }: { s: string; tone?: "dark" | "light" }) => {
   const dark = tone === "dark";
-  const parts = String(s).split(/(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`|\$[^$\n]+\$)/g).filter((x) => x !== "");
+  // ดอกจันเดี่ยวใช้เป็นตัวเอียงได้ แต่ต้องไม่ใช่เครื่องหมายคูณในโค้ด (เช่น `price * 0.10`)
+  // จึงกำหนดว่าเปิดด้วย * ที่ตามหลังด้วยอักขระจริง (ไม่ใช่ช่องว่าง) และปิดด้วย * ที่ตามด้วยอักขระที่ไม่ใช่คำ
+  const parts = String(s).split(/(\*\*[^*]+\*\*|\*(?!\s)[^*\n]*?[^\s*]\*|`[^`]+`|\$[^$\n]+\$)/g).filter((x) => x !== "");
   return <>{parts.map((p, i) => {
     if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) return <Text key={i} style={[styles.mdBold, dark && { color: "#0f172a" }]}>{p.slice(2, -2)}</Text>;
     if (p.length > 2 && p.startsWith("`") && p.endsWith("`")) return <Text key={i} style={[styles.mdCode, dark && { backgroundColor: "#e2e8f0", color: "#1d4ed8" }]}>{p.slice(1, -1)}</Text>;

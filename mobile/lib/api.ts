@@ -22,7 +22,9 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
   });
   if (!response.ok) {
     // token หมดอายุ/ใช้ไม่ได้ — ล้างทิ้งให้หน้าจอรู้ว่าต้องล็อกอินใหม่ ไม่ใช่เงียบ ๆ แล้วค้าง
-    if (response.status === 401 || response.status === 403) {
+    // แต่ถ้าคำขอนี้ไม่ได้แนบ token ไป (เช่น เพิ่งเปิดแอปแล้วยังอ่าน token ไม่ทัน) อย่าเพิ่งลบทิ้ง
+    // ไม่งั้นผู้ใช้จะถูกล็อกเอาต์ทั้งที่ token ยังดีอยู่
+    if ((response.status === 401 || response.status === 403) && token) {
       await removeToken().catch(() => undefined);
     }
     const body = await response.json().catch(() => ({}));
