@@ -41,6 +41,50 @@ function redirectUri(req?: any) {
   return requestBase(req) + "/auth/google/callback";
 }
 
+/* ------------------------------------------------------------------ */
+/*  ตรวจว่า redirect URI ของโดเมนนี้ลงทะเบียนใน Google Console แล้วหรือยัง */
+/*  Google เป็นผู้บังคับ (security) — โค้ดเดาแทนไม่ได้ แต่เช็กให้ผู้ใช้ได้    */
+/*  ถ้าลงทะเบียนแล้ว Google จะพาไปหน้า sign-in (ไม่ใช่หน้า error)           */
+/*  ผลลัพธ์แคช 5 นาที เพื่อไม่ยิง Google ทุกครั้งที่เปิดหน้า login          */
+/* ------------------------------------------------------------------ */
+const readyCache = new Map<string, { ready: boolean; at: number }>();
+
+async function googleRedirectReady(req: any) {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) return false;
+  const uri = redirectUri(req);
+  const cached = readyCache.get(uri);
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.ready;
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: uri,
+    response_type: "code",
+    scope: GOOGLE_SCOPES.join(" "),
+    access_type: "offline",
+    include_granted_scopes: "true",
+    prompt: "consent",
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(GOOGLE_AUTH + "?" + params.toString(), {
+      redirect: "manual",
+      signal: controller.signal,
+      headers: { "user-agent": "StudyPath/1.0 (+oauth-readiness-check)" },
+    });
+    const location = String(response.headers.get("location") || "");
+    // Google ตอบ 302 ไป /signin/oauth/error เมื่อ redirect URI ไม่ตรงกับที่ลงทะเบียน
+    const ready = response.status < 400 && !/signin\/oauth\/error|oauth\/error/i.test(location);
+    readyCache.set(uri, { ready, at: Date.now() });
+    return ready;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function safeReturnUrl(value: string, req?: any) {
   try {
     const u = new URL(value);
@@ -136,6 +180,14 @@ router.post("/google/url", requireAuth(), (req: any, res) => {
     const params = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri(req), response_type: "code", scope: GOOGLE_SCOPES.join(" "), state, access_type: "offline", include_granted_scopes: "true", prompt: "consent" });
     res.json({ url: GOOGLE_AUTH + "?" + params.toString() });
   } catch (error) { res.status(500).json({ error: String(error instanceof Error ? error.message : error) }); }
+});
+
+router.get("/google/ready", async (req, res) => {
+  try {
+    res.json({ ready: await googleRedirectReady(req) });
+  } catch {
+    res.json({ ready: false });
+  }
 });
 
 router.get("/google/start", (req, res) => {

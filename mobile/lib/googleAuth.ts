@@ -16,6 +16,30 @@ export function isGoogleLoginEnabled() {
   return process.env.EXPO_PUBLIC_GOOGLE_LOGIN !== "0";
 }
 
+/**
+ * ถามเซิร์ฟเวอร์ว่า redirect URI ของโดเมนที่เปิดอยู่ลงทะเบียนใน Google Console แล้วหรือยัง
+ * - true  = กดปุ่ม Google ได้จริง (จะไม่เจอหน้า redirect_uri_mismatch)
+ * - false = ยังไม่ลงทะเบียน → ซ่อนปุ่มไว้ก่อน ดีกว่าปล่อยให้ผู้ใช้ไปตันที่หน้า error ของ Google
+ * ตรวจผ่าน API เพื่อให้ปุ่มโผล่เองทันทีหลังลงทะเบียน โดยไม่ต้อง build แอปใหม่
+ */
+export async function googleLoginReady(): Promise<boolean> {
+  const flag = process.env.EXPO_PUBLIC_GOOGLE_LOGIN;
+  if (flag === "0") return false;
+  if (flag === "1") return true;
+  if (!BASE_URL) return false;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch(`${BASE_URL}/auth/google/ready`, { signal: controller.signal, cache: "no-store" as any });
+    clearTimeout(timer);
+    if (!response.ok) return true; // เช็กไม่ได้ → คงพฤติกรรมเดิม (แสดงปุ่ม)
+    const data: any = await response.json();
+    return !!data?.ready;
+  } catch {
+    return true;
+  }
+}
+
 /** จุดที่ Google จะ redirect มาหลังผู้ใช้กดยินยอม — ชี้ไป backend ของเรา (แลก code ฝั่ง server) */
 
 /** ที่อยู่ให้ backend ส่ง token กลับมาที่แอป (mobile:///login ตอนใช้ APK / exp://…/--/login ตอนใช้ Expo Go) */

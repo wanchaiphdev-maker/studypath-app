@@ -7,11 +7,12 @@ import * as WebBrowser from "expo-web-browser";
 import {Ionicons} from "@expo/vector-icons";
 import {getToken,setToken} from "../../lib/storage";
 import {login} from "../../lib/api";
-import {appReturnUrl,buildGoogleAuthUrl,isGoogleLoginEnabled,parseAuthCallback} from "../../lib/googleAuth";
+import {appReturnUrl,buildGoogleAuthUrl,googleLoginReady,parseAuthCallback} from "../../lib/googleAuth";
 import {colors,spacing} from "../../lib/theme";
 export default function LoginScreen(){
- const showGoogle=isGoogleLoginEnabled();
+ const[showGoogle,setShowGoogle]=useState(false);
  const[email,setEmail]=useState(""),[password,setPassword]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[googleBusy,setGoogleBusy]=useState(false);
+ useEffect(()=>{let alive=true;googleLoginReady().then(v=>{if(alive)setShowGoogle(v)}).catch(()=>undefined);return()=>{alive=false}},[]);
  useEffect(()=>{getToken().then(t=>t&&router.replace("/(tabs)")).catch(()=>undefined)},[]);
  async function submit(){setBusy(true);setError("");try{await login(email.trim(),password);router.replace("/(tabs)")}catch(e){setError(e instanceof Error?e.message:"เข้าสู่ระบบไม่สำเร็จ")}finally{setBusy(false)}}
  async function google(){setGoogleBusy(true);setError("");try{if(Platform.OS==="web"){window.location.assign(buildGoogleAuthUrl());return;}const r=await WebBrowser.openAuthSessionAsync(buildGoogleAuthUrl(),appReturnUrl());if(r.type==="success"){const c=parseAuthCallback(r.url);if(c?.token){await setToken(c.token);router.replace("/(tabs)")}else if(c?.error)setError(c.error)}}catch(e){setError(e instanceof Error?e.message:"Google login ไม่สำเร็จ")}finally{setGoogleBusy(false)}}
