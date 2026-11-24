@@ -1080,6 +1080,11 @@ export default function Tutor() {
           acc += t;
           setMessages((m) => m.map((x, i) => (i === aiIdx ? { ...x, text: x.text + t } : x)));
         },
+        onReset: () => {
+          // เซิร์ฟเวอร์เปลี่ยนโมเดลกลางทาง — ล้างข้อความที่พิมพ์ค้างไว้ก่อนเริ่มใหม่
+          acc = "";
+          setMessages((m) => m.map((x, i) => (i === aiIdx ? { ...x, text: "" } : x)));
+        },
         onDone: (d) => {
           setMessages((m) => m.map((x, i) => (i === aiIdx ? {
             ...x, streaming: false, usedModel: d?.usedModel !== false, grounded: d?.grounded !== false, casual: !!d?.casual,
@@ -1325,8 +1330,8 @@ export default function Tutor() {
                       color={openable ? "#a78bfa" : s.hasFile ? "#38bdf8" : "#94a3b8"}
                     />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.srcName} numberOfLines={1}>{s.title}</Text>
-                      <Text style={styles.srcMeta} numberOfLines={1}>{s.sourceLabel || ""}{s.updatedAt ? " · " + new Date(s.updatedAt).toLocaleDateString("th-TH") : ""}</Text>
+                      <Text style={styles.srcName} numberOfLines={1}>[{j + 1}] {s.title}</Text>
+                      <Text style={styles.srcMeta} numberOfLines={1}>{s.sourceLabel || ""}{s.chunk ? " · ตอนที่ " + s.chunk : ""}{s.updatedAt ? " · " + new Date(s.updatedAt).toLocaleDateString("th-TH") : ""}</Text>
                     </View>
                     {openable ? <Ionicons name="open-outline" size={14} color={colors.textMuted} /> : null}
                   </>

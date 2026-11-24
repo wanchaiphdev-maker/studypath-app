@@ -25,3 +25,6 @@ backend/_*.json
 backend/tools/_*
 
 mobile/web-share/
+mobile/web-share-next/
+*.tmp.ts
+*.tmp.js

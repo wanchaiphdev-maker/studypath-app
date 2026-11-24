@@ -6,6 +6,7 @@ import { prisma, requireAuth } from "../auth";
 import { tidyProblem } from "../lib/tidy-problem";
 import { SUBJECT_SUFFIXES, detectSubjectTag, scanTopics, gateBySubject, buildTopicPrompt, mergeTopics, topicsFromTitles, looksLikeAnnouncement, stripProgrammingTopics, TOPIC_CATALOG } from "./topics";
 import { sortByTitle } from "../lib/natural-sort";
+import { cosine, decodeVector, embedQuery } from "../lib/embeddings";
 
 const router = Router();
 
@@ -20,7 +21,8 @@ const router = Router();
 async function llmStream(
   model: string,
   messages: { role: string; content: string }[],
-  onChunk: (delta: string) => void
+  onChunk: (delta: string) => void,
+  opts?: { timeoutMs?: number; temperature?: number }
 ): Promise<string> {
   const endpoint = process.env.AI_BASE_URL?.replace(/\/$/, "");
   const key = process.env.AI_API_KEY;
@@ -28,8 +30,8 @@ async function llmStream(
   const response = await fetch(endpoint + "/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-    body: JSON.stringify({ model, temperature: 0.4, stream: true, messages }),
-    signal: AbortSignal.timeout(35000),
+    body: JSON.stringify({ model, temperature: opts?.temperature ?? 0.4, stream: true, messages }),
+    signal: AbortSignal.timeout(opts?.timeoutMs ?? 30000),
   });
   if (!response.ok || !response.body) {
     const t = await response.text().catch(() => "");
@@ -70,7 +72,7 @@ const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.
 async function llmOnce(
   model: string,
   messages: { role: string; content: string }[],
-  opts?: { temperature?: number; json?: boolean }
+  opts?: { temperature?: number; json?: boolean; timeoutMs?: number }
 ) {
   const endpoint = process.env.AI_BASE_URL?.replace(/\/$/, "");
   const key = process.env.AI_API_KEY;
@@ -83,7 +85,7 @@ async function llmOnce(
       temperature: opts?.temperature ?? 0.4,
       messages,
     }),
-    signal: AbortSignal.timeout(90000),
+    signal: AbortSignal.timeout(opts?.timeoutMs ?? 90000),
   });
   if (!response.ok) {
     const t = await response.text();
@@ -95,17 +97,24 @@ async function llmOnce(
   return String(body?.choices?.[0]?.message?.content || "").trim() || null;
 }
 
-/** เรียก LLM พร้อมลองซ้ำและสลับโมเดลสำรองเมื่อคิวแน่น (503/429) */
+/** เรียก LLM พร้อมลองซ้ำและสลับโมเดลสำรองเมื่อคิวแน่น (503/429)
+ *  deadline = เวลาสิ้นสุด (epoch ms) — กันคำขอค้างนานเป็นนาทีจน tunnel/proxy ตัดการเชื่อมต่อ */
 async function llm(
   messages: { role: string; content: string }[],
-  opts?: { temperature?: number; json?: boolean; model?: string }
+  opts?: { temperature?: number; json?: boolean; model?: string; deadline?: number }
 ) {
   const primary = opts?.model || process.env.AI_MODEL || "gemini-3.5-flash";
   const models = [primary, ...FALLBACK_MODELS.filter((m) => m !== primary)];
   let lastError: any = null;
   for (let i = 0; i < models.length; i++) {
+    const remaining = opts?.deadline ? opts.deadline - Date.now() : 90000;
+    if (remaining < 3000) break;
     try {
-      const raw = await llmOnce(models[i], messages, opts);
+      const raw = await llmOnce(models[i], messages, {
+        temperature: opts?.temperature,
+        json: opts?.json,
+        timeoutMs: Math.min(90000, remaining),
+      });
       if (!raw) return null;
       if (!opts?.json) return raw;
       // ดึง JSON ออกจากข้อความ (บางครั้งโมเดลจะห่อด้วย ``` หรือมีข้อความนำหน้า)
@@ -236,52 +245,77 @@ function tokenize(text: string) {
     .filter((x) => x.length > 1);
 }
 
+/** ค้นเนื้อหาจาก Knowledge Base: ผสม "คำตรงกัน" กับ "ความหมายใกล้กัน" (embedding)
+ *  - keyword: เดิม (นับคำที่ตรง + prefix ไทย) — แม่นเมื่อผู้ใช้ใช้คำเดียวกับไฟล์
+ *  - semantic: cosine ระหว่างเวกเตอร์คำถามกับเวกเตอร์ chunk — แม่นเมื่อใช้คำต่างกัน
+ *  ถ้ายังไม่มีเวกเตอร์ (เพิ่งซิงก์/กำลัง backfill) จะถอยไปใช้ keyword อย่างเดียวโดยอัตโนมัติ
+ */
 async function retrieve(subjectId: string, userId: string, query: string, limit = 8) {
-  const materials = await prisma.material.findMany({
-    where: { subjectId, userId, status: "COMPLETED" },
-    include: { chunks: true },
-  });
+  const [materials, qvec] = await Promise.all([
+    prisma.material.findMany({
+      where: { subjectId, userId, status: "COMPLETED" },
+      include: { chunks: true },
+    }),
+    embedQuery(query).catch(() => null),
+  ]);
   const terms = new Set(tokenize(query));
   const scored = materials.flatMap((m) =>
     m.chunks.map((chunk) => {
       const words = tokenize(chunk.content);
-      let score = 0;
-      for (const w of words) if (terms.has(w)) score++;
+      let hits = 0;
+      for (const w of words) if (terms.has(w)) hits++;
       // บูรณ์คำไทยแบบเดียว: "วนธรรมดา" ควรเจอคำว่า "วน"
       if (terms.size) {
         for (const t of terms) {
-          if (t.length > 3 && chunk.content.toLowerCase().includes(t.slice(0, 3))) score += 0.4;
+          if (t.length > 3 && chunk.content.toLowerCase().includes(t.slice(0, 3))) hits += 0.4;
         }
       }
-      return { m, chunk, score };
+      const keyword = Math.min(1, hits / Math.max(3, Math.min(8, terms.size)));
+      const vector = decodeVector(chunk.embedding);
+      const semantic = qvec && vector ? cosine(qvec, vector) : 0;
+      const score = qvec && vector ? 0.55 * semantic + 0.45 * keyword : keyword;
+      return { m, chunk, keyword, semantic, score, hasVector: !!vector };
     })
   );
   scored.sort((a, b) => b.score - a.score);
-  const picked = scored.filter((x) => x.score > 0).slice(0, limit);
-  return { materials, ranked: picked };
+
+  const semMode = !!qvec && scored.some((x) => x.hasVector);
+  const picked = scored
+    .filter((x) => (semMode ? x.semantic >= 0.55 || x.keyword >= 0.5 : x.score > 0))
+    .slice(0, limit);
+
+  // ดึง chunk ก่อน/หลังของผลที่ติดมาด้วย — คำอธิบายในสไลด์มักต่อเนื่องกันคนละหน้า
+  const byMaterial = new Map<string, any[]>();
+  for (const m of materials) byMaterial.set(m.id, [...m.chunks].sort((a, b) => a.chunkIndex - b.chunkIndex));
+  const ranked: typeof picked = [];
+  const seen = new Set<string>();
+  for (const hit of picked) {
+    const list = byMaterial.get(hit.m.id) || [];
+    const idx = list.findIndex((c) => c.id === hit.chunk.id);
+    for (const offset of [0, -1, 1]) {
+      const chunk = list[idx + offset];
+      if (!chunk || seen.has(chunk.id)) continue;
+      seen.add(chunk.id);
+      ranked.push(offset === 0 ? hit : { ...hit, chunk, score: hit.score * 0.9 });
+    }
+  }
+  return { materials, ranked: ranked.slice(0, limit + 4), semantic: semMode };
 }
 
 function toSources(ranked: { m: any; chunk: any }[]) {
-  const seen = new Set<string>();
-  const out: any[] = [];
-  for (const r of ranked) {
-    if (seen.has(r.m.id)) continue;
-    seen.add(r.m.id);
-    out.push({
-      materialId: r.m.id,
-      title: r.m.title,
-      fileName: r.m.fileName,
-      mimeType: r.m.mimeType,
-      url: r.m.externalUrl,
-      sourceLabel: r.m.sourceLabel,
-      updatedAt: r.m.externalUpdatedAt,
-      chunk: r.chunk.chunkIndex + 1,
-      excerpt: String(r.chunk.content || "").slice(0, 260),
-      hasFile: !!r.m.filePath,
-    });
-    if (out.length >= 5) break;
-  }
-  return out;
+  // ต้องเรียง 1:1 กับหลักฐาน [1] [2] ... ที่ส่งให้โมเดล ไม่งั้นเลขอ้างอิงในคำตอบจะชี้ผิดไฟล์
+  return ranked.slice(0, 6).map((r) => ({
+    materialId: r.m.id,
+    title: r.m.title,
+    fileName: r.m.fileName,
+    mimeType: r.m.mimeType,
+    url: r.m.externalUrl,
+    sourceLabel: r.m.sourceLabel,
+    updatedAt: r.m.externalUpdatedAt,
+    chunk: r.chunk.chunkIndex + 1,
+    excerpt: String(r.chunk.content || "").slice(0, 260),
+    hasFile: !!r.m.filePath,
+  }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -338,6 +372,18 @@ function retrievalQuery(question: string, history: ChatTurn[]) {
   return (lastUser.slice(0, 200) + " " + question).trim();
 }
 
+/** คำตอบสำรองเมื่อผู้ให้บริการ AI ใช้งานไม่ได้ (โควตาเต็ม/เน็ตหลุด)
+ *  ต้องบอกผู้ใช้ตรง ๆ ว่าเป็นข้อความจากไฟล์ ไม่ใช่คำตอบที่ AI เรียบเรียงแล้ว */
+function fallbackAnswer(ranked: { m: any; chunk: any }[], casual: boolean, subjectName: string) {
+  if (casual) return "สวัสดีครับ! ผมครู AI ของวิชา " + subjectName + " วันนี้ให้ช่วยเรื่องอะไรดี";
+  if (!ranked.length) return "ยังไม่พบเนื้อหาที่ตรงกับคำถามนี้ ลองถามด้วยชื่อหัวข้อหรือคำสำคัญที่อยู่ในไฟล์ครับ";
+  const top = ranked
+    .slice(0, 3)
+    .map((r, i) => `[${i + 1}] ${r.m.title}\n${String(r.chunk.content).replace(/\s+/g, " ").slice(0, 600)}`)
+    .join("\n\n");
+  return "ตอนนี้ผู้ให้บริการ AI ไม่พร้อมชั่วคราว (โควตารายวันเต็ม) — นี่คือเนื้อหาที่เกี่ยวข้องจากไฟล์ของคุณ:\n\n" + top + "\n\nลองถามอีกครั้งภายหลังเพื่อรับคำอธิบายฉบับเต็มครับ";
+}
+
 /** สร้าง prompt ชุดเดียวกัน ใช้ได้ทั้งแบบ stream และแบบรอผลเต็ม */
 function buildPrompt(
   subject: { name: string; description?: string | null },
@@ -367,9 +413,19 @@ function buildPrompt(
     };
   }
 
-  const grounded = ranked.length > 0;
+  // หลักฐาน "แข็ง" พอหรือไม่ — ถ้าความหมายใกล้เคียงต่ำมาก แปลว่าเนื้อหาที่เจอไม่เกี่ยวกับคำถามจริง
+  // ปล่อยให้ตอบจากความรู้ทั่วไปพร้อมกำกับ ดีกว่าปฏิเสธทั้งคำถาม (ผู้ใช้จะรู้สึกว่า AI ไม่เก่ง)
+  const top: any = ranked[0];
+  const strong = !!top && ((Number(top.semantic) || 0) >= 0.6 || (Number(top.keyword) || 0) >= 0.5);
+  const grounded = ranked.length > 0 && strong;
+  const evidence = grounded ? ranked.slice(0, 6) : [];
   const context = grounded
-    ? ranked.slice(0, 5).map((r) => `[${r.m.sourceLabel || "เอกสาร"} | ${r.m.title}]\n${String(r.chunk.content).slice(0, 900)}`).join("\n\n")
+    ? evidence
+        .map(
+          (r, i) =>
+            `[${i + 1}] ${r.m.title}${r.chunk ? ` (ตอนที่ ${r.chunk.chunkIndex + 1})` : ""}\n${String(r.chunk.content).slice(0, 1000)}`
+        )
+        .join("\n\n")
     : materials.slice(0, 12).map((m) => `- ${m.title}`).join("\n");
 
   const system =
@@ -384,6 +440,9 @@ function buildPrompt(
     (grounded ? "" : "6) ถ้าตอบจากความรู้ทั่วไป (ไม่ได้อยู่ในไฟล์) ให้ขึ้นบรรทัดแรกว่า 'ความรู้ทั่วไป (ไม่ได้อยู่ในไฟล์ที่ซิงก์)'\n") +
     "7) ถ้าเกี่ยวกับการเขียนโปรแกรม ให้ใส่โค้ดในกล่อง ``` พร้อมชื่อภาษา แล้วอธิบายเฉพาะจุดสำคัญ\n" +
     "8) ไม่ต้องปิดท้ายด้วยคำถามทุกครั้ง — ถ้าจะถามต่อ ให้ถามเฉพาะเมื่อมีประโยชน์จริง\n" +
+    (grounded
+      ? "9) ทุกข้อความที่ดึงมาจากหลักฐาน ให้ต่อท้ายด้วยเลขอ้างอิงในวงเล็บเหลี่ยม เช่น [1] หรือ [2][3] โดยใช้เลขเดียวกับหลักฐานที่ให้มาเท่านั้น (ห้ามอ้างเลขที่ไม่มีอยู่) ถ้าหลักฐานมีบางส่วน ให้ตอบส่วนที่มีก่อนแล้วบอกว่าส่วนที่เหลือไม่มีในไฟล์ — ไม่ต้องปฏิเสธทั้งคำถาม\n"
+      : "") +
     "โหมดที่สั่ง: " + MODES[mode].instruction + "\n" +
     "ระดับความยาก: " + DIFFICULTY[difficulty].instruction + "\n" +
     "สไตล์การตอบ: " + SPEED[speed].instruction;
@@ -552,17 +611,13 @@ router.post("/ask", requireAuth(), async (req: any, res) => {
     const { messages, grounded } = buildPrompt(subject, question, mode, difficulty, speed, ranked, materials, history);
     let answer: string | null = null;
     try {
-      answer = await llm(messages, { temperature: SPEED[speed].temperature, model: SPEED[speed].model });
+      answer = await llm(messages, { temperature: SPEED[speed].temperature, model: SPEED[speed].model, deadline: Date.now() + 45000 });
     } catch (error) {
       console.warn("AI provider ใช้ไม่ได้ ใช้การค้นเนื้อหาแทน", String(error));
     }
 
     if (!answer) {
-      answer = casual
-        ? "สวัสดีครับ! ผมครู AI ของวิชานี้ " + subject.name + " วันนี้ให้ช่วยเรื่องอะไรดี"
-        : ranked.length
-          ? ranked.map((r) => r.chunk.content).join("\n\n")
-          : "ยังไม่พบเนื้อหาที่ตรงกับคำถามนี้ ลองถามด้วยคำในชื่อหัวข้อครับ";
+      answer = fallbackAnswer(ranked, casual, subject.name);
     }
 
     res.json({
@@ -571,7 +626,7 @@ router.post("/ask", requireAuth(), async (req: any, res) => {
       usedModel: !!answer && ranked.length > 0,
       mode, difficulty, speed,
       answer,
-      sources: casual ? [] : toSources(ranked),
+      sources: casual || !grounded ? [] : toSources(ranked),
       evidenceCount: ranked.length,
       materialCount: materials.length,
     });
@@ -602,7 +657,23 @@ router.post("/ask/stream", requireAuth(), async (req: any, res) => {
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
-  const send = (event: string, data: any) => { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
+  let closed = false;
+  res.on("close", () => { closed = true; });
+  const send = (event: string, data: any) => {
+    if (closed || res.writableEnded) return false;
+    try {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      return true;
+    } catch {
+      closed = true;
+      return false;
+    }
+  };
+  // heartbeat: ระหว่างรอโมเดลตัวแรกอาจเงียบเกิน 15 วิ ทำให้ proxy/tunnel ตัดการเชื่อมต่อ
+  // (อาการที่ผู้ใช้เห็น: คำตอบหายกลางทาง / ขึ้นว่าเชื่อมต่อไม่สำเร็จ)
+  const heartbeat = setInterval(() => send("ping", { t: Date.now() }), 15000);
+  const stopHeartbeat = () => clearInterval(heartbeat);
+  res.on("close", stopHeartbeat);
 
   try {
     if (!subjectId || !question) return send("error", { error: "กรุณาเลือกวิชาและพิมพ์คำถาม" }), res.end();
@@ -631,37 +702,52 @@ router.post("/ask/stream", requireAuth(), async (req: any, res) => {
       return send("done", { usedModel: false, grounded: false, casual: false }), res.end();
     }
 
-    const sources = casual ? [] : toSources(ranked);
-    send("sources", { sources });
     const { messages, grounded } = buildPrompt(subject, question, mode, difficulty, speed, ranked, materials, history);
+    const sources = casual || !grounded ? [] : toSources(ranked);
+    send("sources", { sources });
 
     const models = [SPEED[speed].model, process.env.AI_MODEL || "gemini-3.5-flash", ...FALLBACK_MODELS.filter((m) => m !== SPEED[speed].model)];
     let full = "";
     let usedModel = false;
+    // เวลารวมของทั้งคำขอ: ไม่ปล่อยให้ค้างข้ามนาที (tunnel ตัดการเชื่อมต่อก่อนที่ผู้ใช้จะได้อะไร)
+    const deadline = Date.now() + 55000;
     for (const model of models) {
+      if (closed) break;
+      if (Date.now() > deadline - 3000) break;
+      let streamed = false;
       try {
-        full = await llmStream(model, messages, (delta) => send("delta", { text: delta }));
+        full = await llmStream(
+          model,
+          messages,
+          (delta) => { streamed = true; send("delta", { text: delta }); },
+          { temperature: SPEED[speed].temperature, timeoutMs: Math.min(30000, Math.max(5000, deadline - Date.now())) }
+        );
         if (full) { usedModel = true; break; }
       } catch (error: any) {
         const isTimeout = error?.name === "TimeoutError" || error?.name === "AbortError";
         const transient = isTimeout || [408, 429, 500, 502, 503, 504].includes(Number(error?.status));
         console.warn(`[stream] ${model} ล้มเหลว (${error?.status || error?.name || "?"})`);
+        full = "";
+        // โมเดลนี้พิมพ์ข้อความออกไปแล้วแต่ขาดกลางทาง → สั่งให้ฝั่งแอปล้างข้อความนั้น
+        // ไม่งั้นคำตอบของโมเดลถัดไปจะต่อท้ายกันเป็นข้อความซ้ำ/มั่ว
+        if (streamed) send("reset", { reason: transient ? "retry" : "error" });
         if (!transient) break;
       }
     }
+    if (closed) { stopHeartbeat(); return; }
     if (!full) {
-      const fallback = casual
-        ? "สวัสดีครับ! ผมครู AI ของวิชานี้ " + subject.name + " วันนี้ให้ช่วยเรื่องอะไรดี"
-        : ranked.length ? ranked.map((r) => r.chunk.content).join("\n\n") : "ยังไม่พบเนื้อหาที่ตรงกับคำถามนี้";
+      const fallback = fallbackAnswer(ranked, casual, subject.name);
       send("delta", { text: fallback });
       usedModel = false;
     } else {
       answerCache.set(cacheKey, { answer: full, sources, grounded, at: Date.now() });
     }
     send("done", { usedModel, grounded, casual });
+    stopHeartbeat();
     res.end();
   } catch (error) {
-    try { send("error", { error: String(error instanceof Error ? error.message : error) }); } catch { }
+    stopHeartbeat();
+    send("error", { error: String(error instanceof Error ? error.message : error) });
     res.end();
   }
 });
@@ -2770,7 +2856,7 @@ router.post("/open", requireAuth(), async (req: any, res) => {
           },
           { role: "user", content: "วิชา: " + subject.name + "\nเอกสาร:\n" + rows.map((r: any) => `- ${r.title} (${r.kind})\n  ${r.snippet}`).join("\n") },
         ],
-        { json: true, temperature: 0.5 }
+        { json: true, temperature: 0.5, deadline: Date.now() + 40000 }
       );
     } catch (error) {
       console.warn("สรุปหัวข้อไม่สำเร็จ ใช้รายการเอกสารแทน", String(error));

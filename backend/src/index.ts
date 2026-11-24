@@ -7,9 +7,19 @@ import googleAuth from "./routes/google";
 import classroom from "./routes/classroom";
 import tutor from "./routes/tutor";
 import { startAutosync } from "./autosync";
+import { startEmbeddingWorker } from "./lib/embeddings";
 
 const app = express();
 const allowedOrigin = process.env.CORS_ORIGIN?.trim();
+
+// กันเซิร์ฟเวอร์ตายทั้งตัวจาก error ที่หลุดออกมา (เช่น promise ใน autosync/interval)
+// ถ้าไม่ดักไว้ ผู้ใช้ทุกคนจะโดน "เชื่อมต่อไม่สำเร็จ" จนกว่าจะมีคนมารีสตาร์ท
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason instanceof Error ? reason.message : reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("[uncaughtException]", error?.message || error);
+});
 
 app.use(cors({ origin: allowedOrigin ? allowedOrigin.split(",").map((x) => x.trim()) : true }));
 app.use(express.json({ limit: "2mb" }));
@@ -83,9 +93,35 @@ app.get("/me/learning", requireAuth(), async (req: any, res) => {
   res.json({ subjects, progress, dueReviews, planner });
 });
 
-app.listen(process.env.PORT || 3000);
+// API ที่ไม่รู้จักต้องตอบ JSON ไม่ใช่หน้า HTML ของ Express
+app.use((req, res, next) => {
+  if (!/^\/(studypath|auth|me|health)(\/|$)/.test(req.path)) return next();
+  res.status(404).json({ error: "ไม่พบ API นี้: " + req.method + " " + req.path });
+});
+
+// error handler กลาง: ตอบ JSON ที่ฝั่งแอป parse ได้เสมอ (ไม่ปล่อยหน้า HTML 500 กลับไป)
+app.use((err: any, req: any, res: any, _next: any) => {
+  const status = Number(err?.status || err?.statusCode) || 500;
+  console.error("[api]", req.method, req.originalUrl, "→", err?.message || err);
+  if (res.headersSent) {
+    try { res.end(); } catch { /* ปิดไปแล้ว */ }
+    return;
+  }
+  res.status(status >= 400 && status <= 599 ? status : 500).json({
+    error: String(err?.message || "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์"),
+  });
+});
+
+const server = app.listen(process.env.PORT || 3000);
+// ค่า default ของ Node (5 วิ) สั้นกว่า proxy/tunnel (60-90 วิ) → proxy อาจหยิบ connection
+// ที่เพิ่งปิดไปแล้วมาใช้ = เจอ 502/คำขอหลุดเป็นครั้งคราว ต้องตั้งให้ยาวกว่าฝั่ง proxy
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 125000;
 
 // ซิงก์ Google Classroom อัตโนมัติ (ดึงเป็นระยะ เพราะ Classroom ไม่มี webhook)
 if (process.env.AUTOSYNC_ENABLED !== "false") {
   startAutosync();
 }
+
+// เติมเวกเตอร์ให้เนื้อหาที่เพิ่งซิงก์/ยังไม่มี embedding เพื่อให้ค้นด้วยความหมายได้
+startEmbeddingWorker();

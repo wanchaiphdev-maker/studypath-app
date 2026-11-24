@@ -1,6 +1,39 @@
+import { Platform } from "react-native";
 import { getToken, removeToken, setToken } from "./storage";
 
-export const BASE = process.env.EXPO_PUBLIC_API_URL;
+/**
+ * ฐาน URL ของ API
+ * - แอปมือถือ/เดฟ: ใช้ EXPO_PUBLIC_API_URL ตามเดิม
+ * - เว็บที่แชร์ลิงก์: ใช้โดเมนที่ผู้ใช้เปิดอยู่จริง (window.location.origin)
+ *   เพราะลิงก์ tunnel เปลี่ยนทุกครั้งที่รีสตาร์ท ถ้าฝัง URL เก่าไว้ใน build แอปจะพังทั้งแอป
+ *   (อาการ: เปิดบน iPhone/เครื่องอื่นแล้ว error เพราะยิงไปโดเมนที่ตายแล้ว)
+ */
+function resolveBase(): string | undefined {
+  const env = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "");
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.location?.origin) {
+    const origin = window.location.origin;
+    // dev server (metro) — API อยู่คนละพอร์ต ต้องใช้ค่าจาก .env
+    if (/:(8081|19000|19006)$/.test(origin)) return env;
+    if (!env) return origin;
+    try {
+      const url = new URL(env);
+      const envHost = url.host;
+      const envName = url.hostname;
+      const pageIsLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+      const envIsLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(envName);
+      // build ที่ฝัง localhost ไว้ (ค่าจาก .env ตอน export) แต่เปิดผ่านโดเมนจริง
+      // → ต้องยิงไปโดเมนที่ผู้ใช้เปิดอยู่ ไม่งั้น iPhone/เครื่องอื่นจะเจอ "เชื่อมต่อไม่สำเร็จ"
+      if (envIsLocal && !pageIsLocal) return origin;
+      // build ที่ฝังโดเมน tunnel เก่าไว้ → ใช้โดเมนปัจจุบันแทนอัตโนมัติ
+      if (/\.trycloudflare\.com$/i.test(envHost) && envHost !== window.location.host) return origin;
+    } catch {
+      return origin;
+    }
+  }
+  return env;
+}
+
+export const BASE = resolveBase();
 export const BASE_URL = BASE?.replace(/\/$/, "");
 
 function getUrl(path: string) {
@@ -10,16 +43,36 @@ function getUrl(path: string) {
 
 export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
   const token = await getToken();
-  const response = await fetch(getUrl(path), {
-    ...opts,
-    // กันเบราว์เซอร์ตอบ 304 จากแคช (fetch จะมองว่าไม่ ok แล้วข้อมูลหายทั้งหน้า)
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...opts.headers,
-    },
-  });
+  const method = (opts.method || "GET").toUpperCase();
+  const call = () =>
+    fetch(getUrl(path), {
+      ...opts,
+      // กันเบราว์เซอร์ตอบ 304 จากแคช (fetch จะมองว่าไม่ ok แล้วข้อมูลหายทั้งหน้า)
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...opts.headers,
+      },
+    });
+
+  let response: Response;
+  try {
+    response = await call();
+  } catch (error) {
+    // เน็ตมือถือสะดุดบ่อย — คำขอที่เรียกซ้ำได้ ลองอีกครั้งก่อนแจ้งผู้ใช้
+    if (method === "GET" || method === "HEAD") {
+      await new Promise((r) => setTimeout(r, 600));
+      try {
+        response = await call();
+      } catch {
+        throw new Error("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+      }
+    } else {
+      throw new Error("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+    }
+  }
+
   if (!response.ok) {
     // token หมดอายุ/ใช้ไม่ได้ — ล้างทิ้งให้หน้าจอรู้ว่าต้องล็อกอินใหม่ ไม่ใช่เงียบ ๆ แล้วค้าง
     // แต่ถ้าคำขอนี้ไม่ได้แนบ token ไป (เช่น เพิ่งเปิดแอปแล้วยังอ่าน token ไม่ทัน) อย่าเพิ่งลบทิ้ง
@@ -129,40 +182,104 @@ export async function tutorTts(text: string) {
   return api<any>("/studypath/tutor/tts", { method: "POST", body: JSON.stringify({ text }) });
 }
 
-/** ถาม–ตอบแบบสตรีม: ข้อความทยอยกลับมา ผู้ใช้เห็นผลทันที */
+/** ถาม–ตอบแบบสตรีม: ข้อความทยอยกลับมา ผู้ใช้เห็นผลทันที
+ *  - ถ้าเซิร์ฟเวอร์สั่ง reset (เปลี่ยนโมเดลกลางทาง) จะล้างข้อความที่พิมพ์ค้างไว้ ไม่ให้ต่อกันมั่ว
+ *  - ถ้าเงียบเกิน 60 วิ หรือ stream จบโดยไม่มี done = แจ้งผู้ใช้ว่าการเชื่อมต่อขาดกลางทาง
+ */
 export async function tutorAskStream(
   subjectId: string, question: string, difficulty: string, mode: string, speed: string,
-  handlers: { onSources?: (s: any[]) => void; onDelta?: (t: string) => void; onDone?: (d: any) => void; onError?: (e: string) => void },
+  handlers: {
+    onSources?: (s: any[]) => void;
+    onDelta?: (t: string) => void;
+    onDone?: (d: any) => void;
+    onError?: (e: string) => void;
+    onReset?: () => void;
+  },
   history: { role: "user" | "assistant"; content: string }[] = []
 ) {
   const token = await getToken();
-  const res = await fetch(getUrl("/studypath/tutor/ask/stream"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ subjectId, question, difficulty, mode, speed, history: history.slice(-10) }),
-  });
-  if (!res.ok || !res.body) { handlers.onError?.("เชื่อมต่อ AI ไม่สำเร็จ"); return; }
+  const controller = new AbortController();
+  let lastByte = Date.now();
+  let completed = false;
+  const watchdog = setInterval(() => {
+    if (!completed && Date.now() - lastByte > 60000) controller.abort();
+  }, 5000);
 
-  const reader = (res.body as any).getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const blocks = buf.split("\n\n");
-    buf = blocks.pop() || "";
-    for (const block of blocks) {
+  /** อ่าน SSE ทั้งก้อนเป็นข้อความแล้วแปลง event เอง
+   *  ใช้เมื่อเบราว์เซอร์อ่านสตรีมไม่ได้ (iOS Safari < 16.4: response.body เป็น null)
+   *  ผู้ใช้จะไม่ได้เห็นข้อความทยอยขึ้น แต่ได้คำตอบครบเหมือนกัน แทนที่จะเจอ error */
+  const consumeAsText = async (raw: string) => {
+    let any = false;
+    for (const block of raw.split("\n\n")) {
       const ev = block.match(/event:\s*(\S+)/)?.[1];
-      const raw = block.match(/data:\s*(.+)/)?.[1];
-      if (!ev || !raw) continue;
+      const line = block.match(/data:\s*(.+)/)?.[1];
+      if (!ev || !line) continue;
       let payload: any = {};
-      try { payload = JSON.parse(raw); } catch { continue; }
+      try { payload = JSON.parse(line); } catch { continue; }
       if (ev === "sources") handlers.onSources?.(payload.sources || []);
-      else if (ev === "delta") handlers.onDelta?.(payload.text || "");
-      else if (ev === "done") handlers.onDone?.(payload);
-      else if (ev === "error") handlers.onError?.(payload.error || "ผิดพลาด");
+      else if (ev === "delta") { any = true; handlers.onDelta?.(payload.text || ""); }
+      else if (ev === "reset") handlers.onReset?.();
+      else if (ev === "done") { completed = true; handlers.onDone?.(payload); }
+      else if (ev === "error") { completed = true; handlers.onError?.(payload.error || "ผิดพลาด"); }
     }
+    if (!any && !completed) { completed = true; handlers.onError?.("ไม่ได้รับคำตอบจากเซิร์ฟเวอร์"); }
+  };
+
+  try {
+    const res = await fetch(getUrl("/studypath/tutor/ask/stream"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ subjectId, question, difficulty, mode, speed, history: history.slice(-10) }),
+      signal: controller.signal,
+    });
+    if (!res.ok) { completed = true; handlers.onError?.("เชื่อมต่อ AI ไม่สำเร็จ (" + res.status + ")"); return; }
+
+    const body: any = (res as any).body;
+    if (!body || typeof body.getReader !== "function") {
+      // เบราว์เซอร์ไม่รองรับสตรีม → อ่านทีเดียวทั้งก้อน
+      await consumeAsText(await res.text());
+      return;
+    }
+
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      lastByte = Date.now();
+      buf += decoder.decode(value, { stream: true });
+      const blocks = buf.split("\n\n");
+      buf = blocks.pop() || "";
+      for (const block of blocks) {
+        const ev = block.match(/event:\s*(\S+)/)?.[1];
+        const raw = block.match(/data:\s*(.+)/)?.[1];
+        if (!ev || !raw) continue;
+        let payload: any = {};
+        try { payload = JSON.parse(raw); } catch { continue; }
+        if (ev === "sources") handlers.onSources?.(payload.sources || []);
+        else if (ev === "delta") handlers.onDelta?.(payload.text || "");
+        else if (ev === "reset") handlers.onReset?.();
+        else if (ev === "done") { completed = true; handlers.onDone?.(payload); }
+        else if (ev === "error") { completed = true; handlers.onError?.(payload.error || "ผิดพลาด"); }
+      }
+    }
+    if (!completed) handlers.onError?.("การเชื่อมต่อขาดกลางทาง กรุณาลองอีกครั้ง");
+  } catch (error: any) {
+    if (!completed) {
+      completed = true;
+      const raw = String(error?.message || error);
+      const isNetwork = /failed to fetch|network request failed|load failed/i.test(raw);
+      handlers.onError?.(
+        error?.name === "AbortError"
+          ? "การเชื่อมต่อขาดหาย (ไม่มีการตอบกลับเกิน 60 วินาที)"
+          : isNetwork
+            ? "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่"
+            : raw
+      );
+    }
+  } finally {
+    clearInterval(watchdog);
   }
 }
 export async function tutorOpen(subjectId: string, difficulty: string) {
