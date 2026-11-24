@@ -23,3 +23,5 @@ backend/storage/
 backend/_debug/
 backend/_*.json
 backend/tools/_*
+
+mobile/web-share/
