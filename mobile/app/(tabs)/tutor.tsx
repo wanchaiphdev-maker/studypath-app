@@ -3,6 +3,7 @@ import {
   ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { colors, font, spacing } from "../../lib/theme";
 import { Alert } from "../../lib/alert";
 import { Button, Card, GlowCard, Pill } from "../../lib/ui";
@@ -1170,7 +1171,7 @@ export default function Tutor() {
           <View style={styles.subjectIcon}><Ionicons name="book-outline" size={16} color="#a78bfa" /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.subjectName} numberOfLines={1}>
-              {subject?.name || (subjects.length ? "เลือกวิชา" : "ยังไม่ได้เข้าสู่ระบบ")}
+              {subject?.name || (subjects.length ? "เลือกวิชา" : "ยังไม่มีวิชา")}
             </Text>
             <Pill text={`${subject?._count?.materials ?? 0} ไฟล์`} color="#38bdf8" />
           </View>
@@ -1284,20 +1285,24 @@ export default function Tutor() {
         {opening?.empty ? <Card style={styles.panel}>
           <Text style={font.h2}>ยังไม่มีเนื้อหาในวิชานี้</Text>
           <Text style={font.caption}>{opening.greeting}</Text>
-          <Button onPress={() => Linking.openURL("/classroom")} icon="cloud-download-outline">ไปหน้า Classroom เพื่อซิงก์</Button>
+          <View style={{ gap: 8, marginTop: 12 }}>
+            <Button onPress={() => router.push(subjectId ? ("/subject/" + subjectId) as any : "/(tabs)/subjects" as any)} icon="cloud-upload-outline">อัปโหลดไฟล์เนื้อหา</Button>
+            <Pressable style={styles.ghostBtn} onPress={() => Linking.openURL("/classroom")}><Text style={styles.ghostText}>หรือซิงก์จาก Google Classroom</Text></Pressable>
+          </View>
         </Card> : null}
 
         {openBusy ? <View style={styles.thinking}><ActivityIndicator color={colors.accent} /><Text style={font.caption}>อาจารย์ AI กำลังอ่านเนื้อหาในวิชา...</Text></View> : null}
 
         {/* ไม่มีวิชาเลย — บอกให้ชัดว่าต้องทำอะไรต่อ ไม่ใช่ค้างเงียบๆ */}
         {!openBusy && !subjects.length ? <Card style={styles.panel}>
-          <Text style={font.h2}>ยังโหลดรายชื่อวิชาไม่ได้</Text>
+          <Text style={font.h2}>ยังไม่มีวิชาในบัญชีนี้</Text>
           <Text style={font.caption}>
-            สาเหตุที่พบบ่อย: เซสชันหมดอายุ หรือยังไม่ได้เชื่อม Google Classroom
+            เพิ่มวิชาเองได้เลย (ตั้งชื่อ + รหัสวิชา) แล้วอัปโหลดสไลด์/PDF/โน้ตเข้าไป
+            หรือจะซิงก์จาก Google Classroom ก็ได้
           </Text>
           <View style={{ gap: 8, marginTop: 12 }}>
-            <Button onPress={() => Linking.openURL("/classroom")} icon="cloud-download-outline">ไปหน้า Classroom</Button>
-            <Pressable style={styles.ghostBtn} onPress={() => getSubjects().then(setSubjects).catch(() => Alert.alert("ยังลองไม่ได้", "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ ลองเชื่อม Google Classroom ใหม่"))}>
+            <Button onPress={() => router.push("/(tabs)/subjects" as any)} icon="add">เพิ่มวิชา</Button>
+            <Pressable style={styles.ghostBtn} onPress={() => getSubjects().then(setSubjects).catch(() => Alert.alert("ยังลองไม่ได้", "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ ลองใหม่อีกครั้ง"))}>
               <Text style={styles.ghostText}>ลองโหลดใหม่</Text>
             </Pressable>
           </View>

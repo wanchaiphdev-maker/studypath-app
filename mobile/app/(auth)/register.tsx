@@ -9,10 +9,10 @@ import {
   TextInput,
   View,
 } from "react-native";
-import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { register } from "../../lib/api";
+import { getToken } from "../../lib/storage";
 import { colors, spacing, radius, font, shadow } from "../../lib/theme";
 
 export default function RegisterScreen() {
@@ -29,7 +29,8 @@ export default function RegisterScreen() {
     try {
       if (password !== confirm) throw new Error("รหัสผ่านไม่ตรงกัน");
       await register(name.trim(), email.trim(), password);
-      const token = await SecureStore.getItemAsync("token");
+      // ใช้ storage helper (เว็บ = localStorage, มือถือ = SecureStore) — SecureStore ตรง ๆ จะพังบนเว็บ
+      const token = await getToken();
       if (!token) throw new Error("เข้าสู่ระบบไม่สำเร็จ");
       router.replace("/(tabs)");
     } catch (cause) {

@@ -147,17 +147,33 @@ export async function createSubject(semesterId: string, name: string, code = "")
 export async function getSubject(id: string) { return api<any>("/studypath/subjects/" + id); }
 export async function createMaterial(subjectId: string, title: string, textContent: string) { return api("/studypath/materials", { method: "POST", body: JSON.stringify({ subjectId, title, textContent }) }); }
 
-export async function uploadMaterial(subjectId: string, file: { uri: string; name: string; mimeType?: string }, title?: string) {
+export async function uploadMaterial(subjectId: string, file: { uri: string; name: string; mimeType?: string; file?: any }, title?: string) {
   const token = await getToken();
   if (!BASE) throw new Error("ตั้งค่า EXPO_PUBLIC_API_URL ในไฟล์ .env ก่อน");
   const form = new FormData();
   form.append("subjectId", subjectId);
   if (title?.trim()) form.append("title", title.trim());
-  form.append("file", {
-    uri: file.uri,
-    name: file.name,
-    type: file.mimeType || "application/pdf",
-  } as any);
+  // บนเว็บ ตัวเลือกไฟล์ (expo-document-picker) คืน Blob จริงมาใน file.file
+  // ถ้าใส่ { uri, name, type } ลง FormData ของเบราว์เซอร์ มันจะกลายเป็น "[object Object]" แล้วอัปโหลดไม่ขึ้น
+  if (typeof window !== "undefined") {
+    let blob: Blob | null = file.file instanceof Blob ? file.file : null;
+    if (!blob && typeof file.uri === "string" && file.uri.startsWith("blob:")) {
+      blob = await fetch(file.uri).then((r) => r.blob()).catch(() => null);
+    }
+    if (blob) form.append("file", blob, file.name || "learning-material");
+    else
+      form.append("file", {
+        uri: file.uri,
+        name: file.name,
+        type: file.mimeType || "application/pdf",
+      } as any);
+  } else {
+    form.append("file", {
+      uri: file.uri,
+      name: file.name,
+      type: file.mimeType || "application/pdf",
+    } as any);
+  }
   const response = await fetch(getUrl("/studypath/materials/upload"), {
     method: "POST",
     headers: {
