@@ -57,6 +57,7 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
     });
 
   let response: Response;
+  let retried = false;
   try {
     response = await call();
   } catch (error) {
@@ -65,11 +66,22 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
       await new Promise((r) => setTimeout(r, 600));
       try {
         response = await call();
+        retried = true;
       } catch {
         throw new Error("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
       }
     } else {
       throw new Error("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+    }
+  }
+
+  // tunnel/พร็อกซีตอบ 502-504 เป็นหน้า HTML ชั่วคราว — ลองใหม่ก่อนสรุปว่าเซิร์ฟเวอร์พัง
+  if (!retried && (method === "GET" || method === "HEAD") && [502, 503, 504].includes(response.status)) {
+    await new Promise((r) => setTimeout(r, 900));
+    try {
+      response = await call();
+    } catch {
+      /* ใช้ผลเดิมด้านล่าง */
     }
   }
 
@@ -225,14 +237,54 @@ export async function tutorAskStream(
     if (!any && !completed) { completed = true; handlers.onError?.("ไม่ได้รับคำตอบจากเซิร์ฟเวอร์"); }
   };
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const payload = () => JSON.stringify({ subjectId, question, difficulty, mode, speed, history: history.slice(-10) });
+
+  /** แผนสำรอง: ถ้าสตรีมขาดกลางทาง (เน็ตมือถือ/iOS ตัดการเชื่อมต่อ) ให้ยิงคำขอปกติที่รอผลเต็ม
+   *  ผู้ใช้จะไม่ได้เห็นข้อความทยอย แต่ได้คำตอบครบแทนที่จะเจอ error แล้วต้องพิมพ์ใหม่เอง */
+  const retryFull = async (wasPartial: boolean) => {
+    try {
+      const fallback = new AbortController();
+      const timer = setTimeout(() => fallback.abort(), 90000);
+      const response = await fetch(getUrl("/studypath/tutor/ask"), {
+        method: "POST",
+        headers,
+        body: payload(),
+        signal: fallback.signal,
+      });
+      clearTimeout(timer);
+      if (!response.ok) return false;
+      const data: any = await response.json().catch(() => null);
+      const answer = String(data?.answer || "");
+      if (!answer) return false;
+      if (wasPartial) handlers.onReset?.();
+      if (Array.isArray(data?.sources)) handlers.onSources?.(data.sources);
+      completed = true;
+      handlers.onDelta?.(answer);
+      handlers.onDone?.({ usedModel: data?.usedModel, grounded: data?.grounded, casual: data?.casual, fallback: true });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   try {
     const res = await fetch(getUrl("/studypath/tutor/ask/stream"), {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ subjectId, question, difficulty, mode, speed, history: history.slice(-10) }),
+      headers,
+      body: payload(),
       signal: controller.signal,
     });
-    if (!res.ok) { completed = true; handlers.onError?.("เชื่อมต่อ AI ไม่สำเร็จ (" + res.status + ")"); return; }
+    if (!res.ok) {
+      // 5xx = เซิร์ฟเวอร์สะดุดชั่วคราว → ลองแบบไม่สตรีมก่อนแจ้งผู้ใช้
+      if (res.status >= 500) { completed = true; if (await retryFull(false)) return; handlers.onError?.("เชื่อมต่อ AI ไม่สำเร็จ (" + res.status + ")"); return; }
+      completed = true;
+      handlers.onError?.("เชื่อมต่อ AI ไม่สำเร็จ (" + res.status + ")");
+      return;
+    }
 
     const body: any = (res as any).body;
     if (!body || typeof body.getReader !== "function") {
@@ -264,10 +316,19 @@ export async function tutorAskStream(
         else if (ev === "error") { completed = true; handlers.onError?.(payload.error || "ผิดพลาด"); }
       }
     }
-    if (!completed) handlers.onError?.("การเชื่อมต่อขาดกลางทาง กรุณาลองอีกครั้ง");
+    if (!completed) {
+      // สตรีมจบแบบไม่มี done = ถูกตัดกลางทาง ลองแบบไม่สตรีมแทนการปล่อยให้ผู้ใช้เห็น error
+      completed = true;
+      if (await retryFull(true)) return;
+      handlers.onError?.("การเชื่อมต่อขาดกลางทาง กรุณาลองอีกครั้ง");
+    }
   } catch (error: any) {
     if (!completed) {
       completed = true;
+      // ถูกตัดกลางทาง/เน็ตหลุด → ยังมีโอกาสได้คำตอบครบด้วยคำขอปกติ
+      if (error?.name === "AbortError" || /failed to fetch|network request failed|load failed/i.test(String(error?.message || error))) {
+        if (await retryFull(true)) return;
+      }
       const raw = String(error?.message || error);
       const isNetwork = /failed to fetch|network request failed|load failed/i.test(raw);
       handlers.onError?.(

@@ -68,7 +68,6 @@ async function llmStream(
    วัดจริง:3.5-flash-lite เร็วสุด ~1.2s · 3.5-flash ~3.6s · 3.6-flash ~5.4s
    3.8-flash และ 3.7-flash มัก 429/timeout จึงไม่ใส่ไว้ */
 const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite"];
-
 async function llmOnce(
   model: string,
   messages: { role: string; content: string }[],
@@ -103,7 +102,7 @@ async function llm(
   messages: { role: string; content: string }[],
   opts?: { temperature?: number; json?: boolean; model?: string; deadline?: number }
 ) {
-  const primary = opts?.model || process.env.AI_MODEL || "gemini-3.5-flash";
+  const primary = opts?.model || process.env.AI_MODEL || "gemini-3.5-flash-lite";
   const models = [primary, ...FALLBACK_MODELS.filter((m) => m !== primary)];
   let lastError: any = null;
   for (let i = 0; i < models.length; i++) {
@@ -113,7 +112,8 @@ async function llm(
       const raw = await llmOnce(models[i], messages, {
         temperature: opts?.temperature,
         json: opts?.json,
-        timeoutMs: Math.min(90000, remaining),
+        // 20 วิ/โมเดล: โมเดลที่ค้างจะไม่กินเวลาจนผู้ใช้หมด patience ก่อนได้ลองตัวสำรอง
+        timeoutMs: Math.min(20000, remaining),
       });
       if (!raw) return null;
       if (!opts?.json) return raw;
@@ -224,10 +224,12 @@ const MODES: Record<AskMode, { label: string; hint: string; instruction: string 
 
 /** ตรวจค่าที่ส่งมาว่าถูกต้องไหม กันพิสูจน์ใครส่งค่าแปลกๆ */
 type Speed = "fast" | "balanced" | "thorough";
+// โมเดล "lite" ตอบเร็วและเสถียรกว่าในโควตาฟรี (flash/3.6 บางช่วงค้างเกิน 30 วิ ทำให้ผู้ใช้เห็นค้าง/หลุด)
+// ตั้งค่าที่ต้องการผ่าน .env: AI_MODEL / AI_FAST_MODEL / AI_DEEP_MODEL
 const SPEED: Record<Speed, { label: string; model: string; instruction: string; temperature: number }> = {
   fast: { label: "เร็ว", model: process.env.AI_FAST_MODEL || "gemini-3.5-flash-lite", instruction: "ตอบสั้นที่สุด ไม่อธิบายเพิ่ม", temperature: 0.3 },
-  balanced: { label: "ปกติ", model: process.env.AI_MODEL || "gemini-3.5-flash", instruction: "ตอบกระชับ ครบ ไม่เยิ่นเย้อ", temperature: 0.5 },
-  thorough: { label: "ละเอียด", model: process.env.AI_DEEP_MODEL || "gemini-3.6-flash", instruction: "อธิบายละเอียดเป็นขั้นตอน พร้อมตัวอย่าง", temperature: 0.7 },
+  balanced: { label: "ปกติ", model: process.env.AI_MODEL || "gemini-3.5-flash-lite", instruction: "ตอบกระชับ ครบ ไม่เยิ่นเย้อ", temperature: 0.5 },
+  thorough: { label: "ละเอียด", model: process.env.AI_DEEP_MODEL || "gemini-3.5-flash-lite", instruction: "อธิบายละเอียดเป็นขั้นตอน พร้อมตัวอย่าง", temperature: 0.7 },
 };
 function pickMode(v: any): AskMode { return (typeof v === "string" && v in MODES ? v : "explain") as AskMode; }
 function pickDifficulty(v: any): Difficulty { return (["normal", "high", "deep"].includes(v) ? v : "normal") as Difficulty; }
@@ -706,7 +708,10 @@ router.post("/ask/stream", requireAuth(), async (req: any, res) => {
     const sources = casual || !grounded ? [] : toSources(ranked);
     send("sources", { sources });
 
-    const models = [SPEED[speed].model, process.env.AI_MODEL || "gemini-3.5-flash", ...FALLBACK_MODELS.filter((m) => m !== SPEED[speed].model)];
+    // เรียงจากโมเดลที่เร็ว/เสถียรก่อน — ตัวที่ค้างจะถูกตัดที่ 20 วิ แล้วไปตัวถัดไปทันที
+    const models = Array.from(
+      new Set([SPEED[speed].model, process.env.AI_MODEL || "gemini-3.5-flash-lite", ...FALLBACK_MODELS])
+    );
     let full = "";
     let usedModel = false;
     // เวลารวมของทั้งคำขอ: ไม่ปล่อยให้ค้างข้ามนาที (tunnel ตัดการเชื่อมต่อก่อนที่ผู้ใช้จะได้อะไร)
@@ -720,7 +725,7 @@ router.post("/ask/stream", requireAuth(), async (req: any, res) => {
           model,
           messages,
           (delta) => { streamed = true; send("delta", { text: delta }); },
-          { temperature: SPEED[speed].temperature, timeoutMs: Math.min(30000, Math.max(5000, deadline - Date.now())) }
+          { temperature: SPEED[speed].temperature, timeoutMs: Math.min(20000, Math.max(5000, deadline - Date.now())) }
         );
         if (full) { usedModel = true; break; }
       } catch (error: any) {

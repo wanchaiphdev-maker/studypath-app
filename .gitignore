@@ -26,5 +26,7 @@ backend/tools/_*
 
 mobile/web-share/
 mobile/web-share-next/
+tools/bin/
 *.tmp.ts
 *.tmp.js
+LINK.txt

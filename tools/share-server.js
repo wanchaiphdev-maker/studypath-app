@@ -12,8 +12,8 @@ const path = require("path");
 const ROOT = path.resolve(process.argv[2] || path.join(__dirname, "..", "mobile", "web-share"));
 const PORT = Number(process.argv[3] || 8090);
 const API = { host: "127.0.0.1", port: Number(process.env.API_PORT || 3000) };
-// ทุก path ที่เป็น API ต้อง proxy ไป backend — ถ้าตกหล่นจะได้ HTML ของแอปกลับไปแทน JSON
-// (อาการ: "Unexpected token '<', <!DOCTYPE ... is not valid JSON")
+// à¸—à¸¸à¸ path à¸—à¸µà¹ˆà¹€à¸›à¹‡à¸™ API à¸•à¹‰à¸­à¸‡ proxy à¹„à¸› backend â€” à¸–à¹‰à¸²à¸•à¸à¸«à¸¥à¹ˆà¸™à¸ˆà¸°à¹„à¸”à¹‰ HTML à¸‚à¸­à¸‡à¹à¸­à¸›à¸à¸¥à¸±à¸šà¹„à¸›à¹à¸—à¸™ JSON
+// (à¸­à¸²à¸à¸²à¸£: "Unexpected token '<', <!DOCTYPE ... is not valid JSON")
 const PROXY_PREFIXES = ["/studypath", "/auth", "/health", "/me", "/privacy", "/terms"];
 
 function isApiPath(url) {
@@ -42,7 +42,7 @@ const TYPES = {
   ".txt": "text/plain; charset=utf-8",
 };
 
-/** ลบ header ที่ห้ามส่งต่อ (hop-by-hop) — ถ้าส่งต่อทั้งดุ้น บางครั้ง connection จะค้าง/ถูกตัด */
+/** à¸¥à¸š header à¸—à¸µà¹ˆà¸«à¹‰à¸²à¸¡à¸ªà¹ˆà¸‡à¸•à¹ˆà¸­ (hop-by-hop) â€” à¸–à¹‰à¸²à¸ªà¹ˆà¸‡à¸•à¹ˆà¸­à¸—à¸±à¹‰à¸‡à¸”à¸¸à¹‰à¸™ à¸šà¸²à¸‡à¸„à¸£à¸±à¹‰à¸‡ connection à¸ˆà¸°à¸„à¹‰à¸²à¸‡/à¸–à¸¹à¸à¸•à¸±à¸” */
 function cleanHeaders(headers) {
   const out = {};
   const drop = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "upgrade"]);
@@ -53,8 +53,8 @@ function cleanHeaders(headers) {
 }
 
 function proxy(req, res, attempt = 0) {
-  // ส่ง host เดิมของผู้ใช้ต่อให้ API รู้ว่าโดเมนที่เปิดอยู่คืออะไร (ใช้สร้าง redirect_uri ของ Google)
-  // ถ้าไม่ส่ง ปลายทางจะกลายเป็น 127.0.0.1:3000 เสมอ ทำให้ Google เด้งกลับ localhost บนมือถือ
+  // à¸ªà¹ˆà¸‡ host à¹€à¸”à¸´à¸¡à¸‚à¸­à¸‡à¸œà¸¹à¹‰à¹ƒà¸Šà¹‰à¸•à¹ˆà¸­à¹ƒà¸«à¹‰ API à¸£à¸¹à¹‰à¸§à¹ˆà¸²à¹‚à¸”à¹€à¸¡à¸™à¸—à¸µà¹ˆà¹€à¸›à¸´à¸”à¸­à¸¢à¸¹à¹ˆà¸„à¸·à¸­à¸­à¸°à¹„à¸£ (à¹ƒà¸Šà¹‰à¸ªà¸£à¹‰à¸²à¸‡ redirect_uri à¸‚à¸­à¸‡ Google)
+  // à¸–à¹‰à¸²à¹„à¸¡à¹ˆà¸ªà¹ˆà¸‡ à¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡à¸ˆà¸°à¸à¸¥à¸²à¸¢à¹€à¸›à¹‡à¸™ 127.0.0.1:3000 à¹€à¸ªà¸¡à¸­ à¸—à¸³à¹ƒà¸«à¹‰ Google à¹€à¸”à¹‰à¸‡à¸à¸¥à¸±à¸š localhost à¸šà¸™à¸¡à¸·à¸­à¸–à¸·à¸­
   const incomingHost = String(req.headers["x-forwarded-host"] || req.headers.host || "");
   const incomingProto = String(req.headers["x-forwarded-proto"] || "https");
   const headers = {
@@ -73,27 +73,27 @@ function proxy(req, res, attempt = 0) {
       if (res.writableEnded) { up.destroy(); return; }
       res.writeHead(up.statusCode || 502, cleanHeaders(up.headers));
       up.pipe(res);
-      // ปลายทางขาดกลางทาง (เช่น backend ตายระหว่างส่ง SSE) → ปิดฝั่งผู้ใช้ให้รู้ ไม่ปล่อยค้าง
-      up.on("error", () => { try { res.end(); } catch { /* ปิดแล้ว */ } });
-      up.on("aborted", () => { try { res.end(); } catch { /* ปิดแล้ว */ } });
+      // à¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡à¸‚à¸²à¸”à¸à¸¥à¸²à¸‡à¸—à¸²à¸‡ (à¹€à¸Šà¹ˆà¸™ backend à¸•à¸²à¸¢à¸£à¸°à¸«à¸§à¹ˆà¸²à¸‡à¸ªà¹ˆà¸‡ SSE) â†’ à¸›à¸´à¸”à¸à¸±à¹ˆà¸‡à¸œà¸¹à¹‰à¹ƒà¸Šà¹‰à¹ƒà¸«à¹‰à¸£à¸¹à¹‰ à¹„à¸¡à¹ˆà¸›à¸¥à¹ˆà¸­à¸¢à¸„à¹‰à¸²à¸‡
+      up.on("error", () => { try { res.end(); } catch { /* à¸›à¸´à¸”à¹à¸¥à¹‰à¸§ */ } });
+      up.on("aborted", () => { try { res.end(); } catch { /* à¸›à¸´à¸”à¹à¸¥à¹‰à¸§ */ } });
     }
   );
 
-  // ถ้าไม่มีข้อมูลไหลเลย 120 วิ ถือว่าค้าง (SSE ที่ยังทำงานจะมี heartbeat ทุก 15 วิ จึงไม่ถูกตัด)
-  upstream.setTimeout(120000, () => upstream.destroy(new Error("API ไม่ตอบสนองภายใน 120 วินาที")));
+  // à¸–à¹‰à¸²à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹„à¸«à¸¥à¹€à¸¥à¸¢ 120 à¸§à¸´ à¸–à¸·à¸­à¸§à¹ˆà¸²à¸„à¹‰à¸²à¸‡ (SSE à¸—à¸µà¹ˆà¸¢à¸±à¸‡à¸—à¸³à¸‡à¸²à¸™à¸ˆà¸°à¸¡à¸µ heartbeat à¸—à¸¸à¸ 15 à¸§à¸´ à¸ˆà¸¶à¸‡à¹„à¸¡à¹ˆà¸–à¸¹à¸à¸•à¸±à¸”)
+  upstream.setTimeout(120000, () => upstream.destroy(new Error("API à¹„à¸¡à¹ˆà¸•à¸­à¸šà¸ªà¸™à¸­à¸‡à¸ à¸²à¸¢à¹ƒà¸™ 120 à¸§à¸´à¸™à¸²à¸—à¸µ")));
 
   upstream.on("error", (e) => {
     if (res.writableEnded) return;
     const retriable = ["ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT"].includes(e.code);
-    // ลองใหม่หนึ่งครั้งเฉพาะคำขอที่เรียกซ้ำได้ (GET/HEAD) — backend อาจกำลังรีสตาร์ท
+    // à¸¥à¸­à¸‡à¹ƒà¸«à¸¡à¹ˆà¸«à¸™à¸¶à¹ˆà¸‡à¸„à¸£à¸±à¹‰à¸‡à¹€à¸‰à¸žà¸²à¸°à¸„à¸³à¸‚à¸­à¸—à¸µà¹ˆà¹€à¸£à¸µà¸¢à¸à¸‹à¹‰à¸³à¹„à¸”à¹‰ (GET/HEAD) â€” backend à¸­à¸²à¸ˆà¸à¸³à¸¥à¸±à¸‡à¸£à¸µà¸ªà¸•à¸²à¸£à¹Œà¸—
     if (!finished && retriable && attempt === 0 && ["GET", "HEAD"].includes(req.method || "GET")) {
       return proxy(req, res, attempt + 1);
     }
     if (!res.headersSent) res.writeHead(502, { "content-type": "application/json; charset=utf-8" });
-    try { res.end(JSON.stringify({ error: "API ยังไม่พร้อม: " + e.message })); } catch { /* ปิดแล้ว */ }
+    try { res.end(JSON.stringify({ error: "API à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸žà¸£à¹‰à¸­à¸¡: " + e.message })); } catch { /* à¸›à¸´à¸”à¹à¸¥à¹‰à¸§ */ }
   });
 
-  // ผู้ใช้ปิดแท็บ/เน็ตหลุด → เลิกคุยกับ backend ทันที ไม่ให้ค้างเป็น zombie request
+  // à¸œà¸¹à¹‰à¹ƒà¸Šà¹‰à¸›à¸´à¸”à¹à¸—à¹‡à¸š/à¹€à¸™à¹‡à¸•à¸«à¸¥à¸¸à¸” â†’ à¹€à¸¥à¸´à¸à¸„à¸¸à¸¢à¸à¸±à¸š backend à¸—à¸±à¸™à¸—à¸µ à¹„à¸¡à¹ˆà¹ƒà¸«à¹‰à¸„à¹‰à¸²à¸‡à¹€à¸›à¹‡à¸™ zombie request
   res.on("close", () => {
     if (!res.writableEnded) upstream.destroy();
   });
@@ -101,20 +101,47 @@ function proxy(req, res, attempt = 0) {
   req.pipe(upstream);
 }
 
-function serveFile(file, res) {
+function serveFile(file, res, req) {
   const ext = path.extname(file).toLowerCase();
   const stat = fs.statSync(file);
+  const isHtml = ext === ".html";
   const headers = {
     "content-type": TYPES[ext] || "application/octet-stream",
-    "content-length": stat.size,
-    "cache-control": file.includes(path.sep + "_expo" + path.sep)
-      ? "public, max-age=31536000, immutable"
-      : "public, max-age=60",
+    // à¸«à¸™à¹‰à¸² HTML à¸•à¹‰à¸­à¸‡à¸•à¸£à¸§à¸ˆà¹ƒà¸«à¸¡à¹ˆà¸—à¸¸à¸à¸„à¸£à¸±à¹‰à¸‡ à¹„à¸¡à¹ˆà¸‡à¸±à¹‰à¸™ iOS Safari à¸­à¸²à¸ˆà¹ƒà¸Šà¹‰ HTML à¹€à¸à¹ˆà¸²à¸—à¸µà¹ˆà¸Šà¸µà¹‰à¹„à¸› bundle à¸—à¸µà¹ˆà¸–à¸¹à¸à¸¥à¸šà¹à¸¥à¹‰à¸§ â†’ à¸«à¸™à¹‰à¸²à¸ˆà¸­à¸‚à¸²à¸§
+    "cache-control": isHtml
+      ? "no-cache"
+      : file.includes(path.sep + "_expo" + path.sep)
+        ? "public, max-age=31536000, immutable"
+        : "public, max-age=3600",
+    "accept-ranges": "bytes",
   };
+
+  // à¸£à¸­à¸‡à¸£à¸±à¸š Range (iOS Safari/AVPlayer à¸‚à¸­à¸Šà¹ˆà¸§à¸‡à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸à¹ˆà¸­à¸™à¹€à¸¥à¹ˆà¸™à¹€à¸ªà¸µà¸¢à¸‡/à¸§à¸´à¸”à¸µà¹‚à¸­)
+  const range = req && req.headers ? String(req.headers.range || "") : "";
+  const match = range.match(/^bytes=(\d*)-(\d*)$/);
+  if (match && (match[1] || match[2])) {
+    const start = match[1] ? Number(match[1]) : Math.max(0, stat.size - Number(match[2]));
+    const end = match[1] && match[2] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
+    if (start >= stat.size || start > end) {
+      res.writeHead(416, { "content-range": `bytes */${stat.size}` }).end();
+      return;
+    }
+    res.writeHead(206, {
+      ...headers,
+      "content-range": `bytes ${start}-${end}/${stat.size}`,
+      "content-length": end - start + 1,
+    });
+    const part = fs.createReadStream(file, { start, end });
+    part.on("error", () => { try { res.end(); } catch { /* à¸›à¸´à¸”à¹à¸¥à¹‰à¸§ */ } });
+    res.on("close", () => part.destroy());
+    return part.pipe(res);
+  }
+
+  headers["content-length"] = stat.size;
   res.writeHead(200, headers);
   const stream = fs.createReadStream(file);
-  // ไฟล์ถูกเขียนทับ/ลบระหว่างส่ง (เช่นตอน export build ใหม่) ต้องปิด response ไม่ให้ process ตาย
-  stream.on("error", () => { try { res.end(); } catch { /* ปิดแล้ว */ } });
+  // à¹„à¸Ÿà¸¥à¹Œà¸–à¸¹à¸à¹€à¸‚à¸µà¸¢à¸™à¸—à¸±à¸š/à¸¥à¸šà¸£à¸°à¸«à¸§à¹ˆà¸²à¸‡à¸ªà¹ˆà¸‡ (à¹€à¸Šà¹ˆà¸™à¸•à¸­à¸™ export build à¹ƒà¸«à¸¡à¹ˆ) à¸•à¹‰à¸­à¸‡à¸›à¸´à¸” response à¹„à¸¡à¹ˆà¹ƒà¸«à¹‰ process à¸•à¸²à¸¢
+  stream.on("error", () => { try { res.end(); } catch { /* à¸›à¸´à¸”à¹à¸¥à¹‰à¸§ */ } });
   res.on("close", () => stream.destroy());
   stream.pipe(res);
 }
@@ -124,7 +151,7 @@ function safePathname(rawUrl) {
   try {
     return decodeURIComponent(raw);
   } catch {
-    return raw; // % ที่ไม่ถูกต้อง — อย่าให้ throw แล้วล้มทั้งเซิร์ฟเวอร์
+    return raw; // % à¸—à¸µà¹ˆà¹„à¸¡à¹ˆà¸–à¸¹à¸à¸•à¹‰à¸­à¸‡ â€” à¸­à¸¢à¹ˆà¸²à¹ƒà¸«à¹‰ throw à¹à¸¥à¹‰à¸§à¸¥à¹‰à¸¡à¸—à¸±à¹‰à¸‡à¹€à¸‹à¸´à¸£à¹Œà¸Ÿà¹€à¸§à¸­à¸£à¹Œ
   }
 }
 
@@ -132,7 +159,7 @@ const server = http.createServer((req, res) => {
   const url = safePathname(req.url);
   const method = req.method || "GET";
   const accept = String(req.headers.accept || "");
-  // เรียก API ตรง ๆ (fetch) ต้องได้ JSON เสมอ ไม่ใช่ HTML ของแอป
+  // à¹€à¸£à¸µà¸¢à¸ API à¸•à¸£à¸‡ à¹† (fetch) à¸•à¹‰à¸­à¸‡à¹„à¸”à¹‰ JSON à¹€à¸ªà¸¡à¸­ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ HTML à¸‚à¸­à¸‡à¹à¸­à¸›
   if (isApiPath(url)) return proxy(req, res);
   if (!["GET", "HEAD"].includes(method)) return proxy(req, res);
 
@@ -140,37 +167,37 @@ const server = http.createServer((req, res) => {
   let file = path.join(ROOT, url);
   if (!file.startsWith(ROOT)) { res.writeHead(403).end("forbidden"); return; }
   try {
-    if (fs.existsSync(file) && fs.statSync(file).isFile()) return serveFile(file, res);
-    // 1b) Expo export บางเวอร์ชันสร้างเป็นไฟล์ /login.html (ไม่ใช่ /login/index.html)
+    if (fs.existsSync(file) && fs.statSync(file).isFile()) return serveFile(file, res, req);
+    // 1b) Expo export à¸šà¸²à¸‡à¹€à¸§à¸­à¸£à¹Œà¸Šà¸±à¸™à¸ªà¸£à¹‰à¸²à¸‡à¹€à¸›à¹‡à¸™à¹„à¸Ÿà¸¥à¹Œ /login.html (à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ /login/index.html)
     const flatHtml = path.join(ROOT, url.replace(/\/$/, "") + ".html");
-    if (url !== "/" && fs.existsSync(flatHtml)) return serveFile(flatHtml, res);
-    // 2) route.html (expo static export แบบโฟลเดอร์)
+    if (url !== "/" && fs.existsSync(flatHtml)) return serveFile(flatHtml, res, req);
+    // 2) route.html (expo static export à¹à¸šà¸šà¹‚à¸Ÿà¸¥à¹€à¸”à¸­à¸£à¹Œ)
     const routeHtml = path.join(ROOT, url.replace(/\/$/, ""), "index.html");
-    if (url !== "/" && fs.existsSync(routeHtml)) return serveFile(routeHtml, res);
-    // 3) หน้าแรก และหน้าเว็บที่เบราว์เซอร์เปิด → SPA fallback
+    if (url !== "/" && fs.existsSync(routeHtml)) return serveFile(routeHtml, res, req);
+    // 3) à¸«à¸™à¹‰à¸²à¹à¸£à¸ à¹à¸¥à¸°à¸«à¸™à¹‰à¸²à¹€à¸§à¹‡à¸šà¸—à¸µà¹ˆà¹€à¸šà¸£à¸²à¸§à¹Œà¹€à¸‹à¸­à¸£à¹Œà¹€à¸›à¸´à¸” â†’ SPA fallback
     const index = path.join(ROOT, "index.html");
     if (url === "/" || accept.includes("text/html")) {
-      if (fs.existsSync(index)) return serveFile(index, res);
+      if (fs.existsSync(index)) return serveFile(index, res, req);
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("not found");
       return;
     }
   } catch (error) {
     console.error("[static]", url, error?.message || error);
     if (!res.headersSent) res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-    try { res.end("static error"); } catch { /* ปิดแล้ว */ }
+    try { res.end("static error"); } catch { /* à¸›à¸´à¸”à¹à¸¥à¹‰à¸§ */ }
     return;
   }
-  // 4) คำขอข้อมูลอื่น (fetch ไป path ที่ยังไม่รู้จัก) → ส่งต่อ API เพื่อให้ได้ JSON error ที่อ่านออก
+  // 4) à¸„à¸³à¸‚à¸­à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸­à¸·à¹ˆà¸™ (fetch à¹„à¸› path à¸—à¸µà¹ˆà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸£à¸¹à¹‰à¸ˆà¸±à¸) â†’ à¸ªà¹ˆà¸‡à¸•à¹ˆà¸­ API à¹€à¸žà¸·à¹ˆà¸­à¹ƒà¸«à¹‰à¹„à¸”à¹‰ JSON error à¸—à¸µà¹ˆà¸­à¹ˆà¸²à¸™à¸­à¸­à¸
   return proxy(req, res);
 });
 
-// คำขอที่ format ผิด (HTTP เสีย) — ตอบ 400 แล้วปิด ไม่ให้ error ลอยขึ้นไปฆ่า process
+// à¸„à¸³à¸‚à¸­à¸—à¸µà¹ˆ format à¸œà¸´à¸” (HTTP à¹€à¸ªà¸µà¸¢) â€” à¸•à¸­à¸š 400 à¹à¸¥à¹‰à¸§à¸›à¸´à¸” à¹„à¸¡à¹ˆà¹ƒà¸«à¹‰ error à¸¥à¸­à¸¢à¸‚à¸¶à¹‰à¸™à¹„à¸›à¸†à¹ˆà¸² process
 server.on("clientError", (error, socket) => {
   if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
   else socket.destroy();
 });
 
-// ให้ยาวกว่า timeout ของ Cloudflare เพื่อไม่ให้ proxy หยิบ connection ที่เพิ่งปิดไปใช้ (502 เป็นครั้งคราว)
+// à¹ƒà¸«à¹‰à¸¢à¸²à¸§à¸à¸§à¹ˆà¸² timeout à¸‚à¸­à¸‡ Cloudflare à¹€à¸žà¸·à¹ˆà¸­à¹„à¸¡à¹ˆà¹ƒà¸«à¹‰ proxy à¸«à¸¢à¸´à¸š connection à¸—à¸µà¹ˆà¹€à¸žà¸´à¹ˆà¸‡à¸›à¸´à¸”à¹„à¸›à¹ƒà¸Šà¹‰ (502 à¹€à¸›à¹‡à¸™à¸„à¸£à¸±à¹‰à¸‡à¸„à¸£à¸²à¸§)
 server.keepAliveTimeout = 120000;
 server.headersTimeout = 125000;
 
