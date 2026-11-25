@@ -67,7 +67,9 @@ async function llmStream(
 /* โมเดลสำรองที่มีจริง (ตรวจจาก ListModels ของ Google)
    วัดจริง:3.5-flash-lite เร็วสุด ~1.2s · 3.5-flash ~3.6s · 3.6-flash ~5.4s
    3.8-flash และ 3.7-flash มัก 429/timeout จึงไม่ใส่ไว้ */
-const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite"];
+// โมเดลสำรองที่ "ตอบกลับจริง" ในโควตาฟรี — 3.6-flash / 3.1-flash-lite บางช่วงค้างเกิน 20 วิ
+// ใส่ตัวที่ค้างไว้จะทำให้ผู้ใช้รอเปล่าและเลย deadline จึงตัดออก
+const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash"];
 async function llmOnce(
   model: string,
   messages: { role: string; content: string }[],
@@ -247,38 +249,91 @@ function tokenize(text: string) {
     .filter((x) => x.length > 1);
 }
 
+/** ชุดตัวอักษร 3 ตัวติดกัน — ใช้แทนการแบ่งคำ เพราะภาษาไทยไม่เว้นวรรคระหว่างคำ */
+function trigrams(text: string) {
+  const clean = String(text || "").toLowerCase().replace(/\s+/g, " ");
+  const out = new Set<string>();
+  for (let i = 0; i + 3 <= clean.length; i++) out.add(clean.slice(i, i + 3));
+  return out;
+}
+
 /** ค้นเนื้อหาจาก Knowledge Base: ผสม "คำตรงกัน" กับ "ความหมายใกล้กัน" (embedding)
  *  - keyword: เดิม (นับคำที่ตรง + prefix ไทย) — แม่นเมื่อผู้ใช้ใช้คำเดียวกับไฟล์
  *  - semantic: cosine ระหว่างเวกเตอร์คำถามกับเวกเตอร์ chunk — แม่นเมื่อใช้คำต่างกัน
  *  ถ้ายังไม่มีเวกเตอร์ (เพิ่งซิงก์/กำลัง backfill) จะถอยไปใช้ keyword อย่างเดียวโดยอัตโนมัติ
  */
 async function retrieve(subjectId: string, userId: string, query: string, limit = 8) {
+  // คำถามต้องไม่ค้างเพราะ embedding: ถ้าผู้ให้บริการช้า/โควตาหมด ให้ใช้ keyword ต่อทันที
+  const qvecPromise = Promise.race([
+    embedQuery(query).catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
+  ]);
   const [materials, qvec] = await Promise.all([
     prisma.material.findMany({
       where: { subjectId, userId, status: "COMPLETED" },
       include: { chunks: true },
     }),
-    embedQuery(query).catch(() => null),
+    qvecPromise,
   ]);
   const terms = new Set(tokenize(query));
-  const scored = materials.flatMap((m) =>
-    m.chunks.map((chunk) => {
-      const words = tokenize(chunk.content);
-      let hits = 0;
-      for (const w of words) if (terms.has(w)) hits++;
-      // บูรณ์คำไทยแบบเดียว: "วนธรรมดา" ควรเจอคำว่า "วน"
-      if (terms.size) {
-        for (const t of terms) {
-          if (t.length > 3 && chunk.content.toLowerCase().includes(t.slice(0, 3))) hits += 0.4;
-        }
+  const gramList = Array.from(trigrams(String(query).slice(0, 200)));
+  const chunks = materials.flatMap((m) => m.chunks.map((chunk) => ({ m, chunk })));
+
+  // รอบ 1: trigram ไหนตรงกับ chunk ไหน + พบในกี่ chunk
+  // trigram ที่พบน้อย (เช่น "มคอ") สำคัญกว่า trigram ที่พบทุกไฟล์ (เช่น "การ") — ถ่วงน้ำหนักด้วย IDF
+  const matched: number[][] = [];
+  const df = new Map<number, number>();
+  for (const { chunk } of chunks) {
+    const text = String(chunk.content || "").toLowerCase();
+    const set = new Set<string>();
+    for (let i = 0; i + 3 <= text.length; i++) set.add(text.slice(i, i + 3));
+    const found: number[] = [];
+    for (let idx = 0; idx < gramList.length; idx++) {
+      if (set.has(gramList[idx])) {
+        found.push(idx);
+        df.set(idx, (df.get(idx) || 0) + 1);
       }
-      const keyword = Math.min(1, hits / Math.max(3, Math.min(8, terms.size)));
-      const vector = decodeVector(chunk.embedding);
-      const semantic = qvec && vector ? cosine(qvec, vector) : 0;
-      const score = qvec && vector ? 0.55 * semantic + 0.45 * keyword : keyword;
-      return { m, chunk, keyword, semantic, score, hasVector: !!vector };
-    })
-  );
+    }
+    matched.push(found);
+  }
+  const total = Math.max(1, chunks.length);
+  const gramWeight = gramList.map((_, idx) => Math.log(1 + total / (1 + (df.get(idx) || 0))));
+  const weightSum = gramWeight.reduce((a, b) => a + b, 0) || 1;
+
+  const scored = chunks.map(({ m, chunk }, i) => {
+    const text = String(chunk.content || "").toLowerCase();
+    const words = tokenize(chunk.content);
+    let hits = 0;
+    for (const w of words) if (terms.has(w)) hits++;
+    // บูรณ์คำไทยแบบเดียว: "วนธรรมดา" ควรเจอคำว่า "วน"
+    if (terms.size) {
+      for (const t of terms) {
+        if (t.length > 3 && text.includes(t.slice(0, 3))) hits += 0.4;
+      }
+    }
+    // คำถามภาษาไทยที่เขียนต่างจากไฟล์เล็กน้อยจะไม่ตรง "คำ" เลย → วัดจาก trigram ที่ถ่วงน้ำหนักแล้ว
+    let gramScore = 0;
+    if (matched[i].length) {
+      let w = 0;
+      for (const idx of matched[i]) w += gramWeight[idx];
+      gramScore = w / weightSum;
+    }
+    // เจอวลาที่ "หายาก" ตรงเป๊ะ (เช่น "มคอ.3") = หลักฐานแข็งพอ แม้คำที่เหลือในประโยคจะไม่ตรง
+    // ต้องเจออย่างน้อย 2 ชิ้นติดกัน ไม่งั้น trigram บังเอิญ (เช่น "3 ก") จะทำให้ไฟล์อื่นแซงขึ้นมา
+    let rareCount = 0;
+    for (const idx of matched[i]) {
+      if ((df.get(idx) || 0) <= 2 && /[ก-๙a-z]/i.test(gramList[idx])) rareCount++;
+    }
+    const rareHit = rareCount >= 2;
+    let keyword = Math.max(Math.min(1, hits / Math.max(3, Math.min(8, terms.size))), gramScore);
+    if (rareHit) keyword = Math.max(keyword, 0.62);
+    const vector = decodeVector(chunk.embedding);
+    const semantic = qvec && vector ? cosine(qvec, vector) : 0;
+    let score = qvec && vector ? 0.55 * semantic + 0.45 * keyword : keyword;
+    // วลาหายากที่ตรงเป๊ะควรถูกยกขึ้นบนสุด ไม่ใช่ไปอยู่ท้ายรายการจนโมเดลอ้างอิงสลับไฟล์
+    if (rareHit) score = Math.max(score, 0.55 + 0.3 * keyword) + 0.02 * Math.min(3, rareCount);
+    return { m, chunk, keyword, semantic, score, hasVector: !!vector };
+  });
   scored.sort((a, b) => b.score - a.score);
 
   const semMode = !!qvec && scored.some((x) => x.hasVector);
@@ -291,7 +346,7 @@ async function retrieve(subjectId: string, userId: string, query: string, limit 
   for (const m of materials) byMaterial.set(m.id, [...m.chunks].sort((a, b) => a.chunkIndex - b.chunkIndex));
   const ranked: typeof picked = [];
   const seen = new Set<string>();
-  for (const hit of picked) {
+  const pushWithNeighbors = (hit: (typeof picked)[number]) => {
     const list = byMaterial.get(hit.m.id) || [];
     const idx = list.findIndex((c) => c.id === hit.chunk.id);
     for (const offset of [0, -1, 1]) {
@@ -300,7 +355,24 @@ async function retrieve(subjectId: string, userId: string, query: string, limit 
       seen.add(chunk.id);
       ranked.push(offset === 0 ? hit : { ...hit, chunk, score: hit.score * 0.9 });
     }
+  };
+
+  // ผลอันดับ 1 = เอกสารที่ตรงที่สุด → ใส่ chunk อื่นของเอกสารเดียวกันที่ตรงคำถามที่สุดไว้ต้น ๆ ด้วย
+  // (เช่นถามถึง "มคอ.3 การวัดผล" แต่หัวข้อการวัดผลอยู่คนละหน้า)
+  const first = picked[0];
+  if (first) {
+    pushWithNeighbors(first);
+    const siblings = scored
+      .filter((x) => x.m.id === first.m.id && !seen.has(x.chunk.id))
+      .sort((a, b) => b.keyword - a.keyword)
+      .slice(0, 3);
+    for (const s of siblings) {
+      seen.add(s.chunk.id);
+      ranked.push(s);
+    }
   }
+  for (const hit of picked.slice(1)) pushWithNeighbors(hit);
+
   return { materials, ranked: ranked.slice(0, limit + 4), semantic: semMode };
 }
 
@@ -613,7 +685,7 @@ router.post("/ask", requireAuth(), async (req: any, res) => {
     const { messages, grounded } = buildPrompt(subject, question, mode, difficulty, speed, ranked, materials, history);
     let answer: string | null = null;
     try {
-      answer = await llm(messages, { temperature: SPEED[speed].temperature, model: SPEED[speed].model, deadline: Date.now() + 45000 });
+      answer = await llm(messages, { temperature: SPEED[speed].temperature, model: SPEED[speed].model, deadline: Date.now() + 30000 });
     } catch (error) {
       console.warn("AI provider ใช้ไม่ได้ ใช้การค้นเนื้อหาแทน", String(error));
     }

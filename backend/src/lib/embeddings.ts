@@ -31,17 +31,25 @@ function retryDelayMs(body: string, fallback: number) {
   return Math.min(65000, Math.max(1000, ms));
 }
 
-/** ฝังข้อความหลายข้อความพร้อมกัน — คืน array ที่ตรงลำดับกับ input (null = ฝังไม่ได้) */
-export async function embedTexts(texts: string[]): Promise<(number[] | null)[]> {
+/** ฝังข้อความหลายข้อความพร้อมกัน — คืน array ที่ตรงลำดับกับ input (null = ฝังไม่ได้)
+ *  opts ใช้จำกัดเวลา/จำนวนครั้งสำหรับ "คำถามของผู้ใช้" ซึ่งต้องตอบเร็ว
+ *  (ถ้าโควตาหมดแล้วรอตาม Google หลายรอบ ผู้ใช้จะค้างเป็นนาที)
+ */
+export async function embedTexts(
+  texts: string[],
+  opts: { attempts?: number; timeoutMs?: number } = {}
+): Promise<(number[] | null)[]> {
   const out: (number[] | null)[] = texts.map(() => null);
   const base = endpoint();
   const key = process.env.AI_API_KEY;
   if (!base || !key || !texts.length) return out;
+  const attempts = Math.max(1, opts.attempts ?? 4);
+  const timeoutMs = Math.max(1000, opts.timeoutMs ?? 30000);
 
   for (let start = 0; start < texts.length; start += BATCH) {
     const slice = texts.slice(start, start + BATCH);
-    // free tier จำกัด ~100 ข้อความ/นาที — ลองใหม่ได้สูงสุด 4 ครั้ง โดยรอตามที่ Google บอก
-    for (let attempt = 0; attempt < 4; attempt++) {
+    // free tier จำกัด ~100 ข้อความ/นาที — ลองใหม่ได้ตาม attempts โดยรอตามที่ Google บอก
+    for (let attempt = 0; attempt < attempts; attempt++) {
       try {
         const response = await fetch(base + "/embeddings", {
           method: "POST",
@@ -51,11 +59,11 @@ export async function embedTexts(texts: string[]): Promise<(number[] | null)[]> 
             dimensions: DIMS,
             input: slice.map((t) => String(t || "").slice(0, MAX_CHARS) || "-"),
           }),
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(timeoutMs),
         });
         if (!response.ok) {
           const body = await response.text().catch(() => "");
-          if (response.status === 429 && attempt < 3) {
+          if (response.status === 429 && attempt < attempts - 1) {
             await new Promise((r) => setTimeout(r, retryDelayMs(body, 20000)));
             continue;
           }
@@ -124,7 +132,8 @@ export async function embedQuery(text: string): Promise<Float32Array | null> {
   if (!key) return null;
   const hit = queryCache.get(key);
   if (hit && Date.now() - hit.at < QUERY_TTL) return hit.vec;
-  const [vec] = await embedTexts([key]);
+  // ต้องเร็ว: ลองครั้งเดียว จำกัดเวลา 5 วิ — ถ้าโควตาหมดให้ถอยไปใช้ keyword/trigram ทันที
+  const [vec] = await embedTexts([key], { attempts: 1, timeoutMs: 5000 }).catch(() => [null]);
   if (!vec) return null;
   const out = new Float32Array(vec);
   if (queryCache.size > QUERY_MAX) queryCache.clear();
@@ -173,6 +182,31 @@ export async function backfillEmbeddings(maxChunks = 200): Promise<{ embedded: n
   }
   const { missing } = await embeddingStats();
   return { embedded, remaining: missing };
+}
+
+/**
+ * ฝังเวกเตอร์ให้ chunk ของ "ไฟล์เดียว" ทันทีหลังอัปโหลด
+ * เพื่อให้ไฟล์ใหม่ค้นเจอด้วยความหมายได้ทันที ไม่ต้องรอ worker รอบถัดไป (10 นาที)
+ * ทำงานเบื้องหลังแบบ fire-and-forget — ถ้าโควตาหมดก็ปล่อยให้ worker ตามเก็บทีหลัง
+ */
+export async function embedMaterial(materialId: string, maxChunks = 40): Promise<number> {
+  if (!embeddingsEnabled() || !materialId) return 0;
+  const rows = await prisma.$queryRaw<{ id: string; content: string }[]>`
+    SELECT id, content FROM "MaterialChunk"
+    WHERE "materialId" = ${materialId} AND embedding IS NULL
+    ORDER BY "chunkIndex" ASC
+    LIMIT ${maxChunks}`;
+  if (!rows.length) return 0;
+  const vecs = await embedTexts(rows.map((r) => r.content));
+  let embedded = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const vec = vecs[i];
+    if (!vec) continue;
+    const payload = JSON.stringify(encodeVector(vec));
+    await prisma.$executeRaw`UPDATE "MaterialChunk" SET embedding = ${payload}::jsonb WHERE id = ${rows[i].id}`;
+    embedded++;
+  }
+  return embedded;
 }
 
 let workerRunning = false;

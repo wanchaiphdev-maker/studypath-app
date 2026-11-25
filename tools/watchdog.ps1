@@ -117,9 +117,38 @@ while ($true) {
     }
   }
 
-  # ---------- tunnel (แจ้งเตือนเท่านั้น) ----------
+  # ---------- tunnel ----------
+  # ถ้า cloudflared ตาย ให้เปิดใหม่เองแล้วบันทึกลิงก์ใหม่ไว้ที่ LINK.txt
+  # (ลิงก์ trycloudflare เปลี่ยนเมื่อเริ่มใหม่ — ตัวเว็บไม่ต้อง build ใหม่ แต่ต้องส่งลิงก์ใหม่ให้เพื่อน)
   if (-not (Get-Process cloudflared -ErrorAction SilentlyContinue)) {
-    if (-not $cfWarned) { Log "cloudflared ไม่ทำงาน — ลิงก์สาธารณะจะใช้ไม่ได้ (ต้องเริ่ม tunnel ใหม่)"; $cfWarned = $true }
+    if (-not $cfWarned) {
+      Log "cloudflared ไม่ทำงาน → เปิด tunnel ใหม่"
+      $cfWarned = $true
+      $cfExe = Join-Path $repo "tools\bin\cloudflared.exe"
+      if (Test-Path $cfExe) {
+        $tunnelLog = Join-Path $temp "tunnel.log"
+        Remove-Item $tunnelLog -Force -ErrorAction SilentlyContinue
+        Start-Process $cfExe `
+          -ArgumentList "tunnel", "--url", "http://127.0.0.1:8090", "--no-autoupdate" `
+          -RedirectStandardError $tunnelLog `
+          -RedirectStandardOutput (Join-Path $temp "tunnel.out.log") `
+          -WindowStyle Hidden
+        $url = $null
+        for ($i = 0; $i -lt 20 -and -not $url; $i++) {
+          Start-Sleep -Seconds 2
+          if (Test-Path $tunnelLog) {
+            $m = Select-String -Path $tunnelLog -Pattern "https://[a-z0-9-]+\.trycloudflare\.com" -AllMatches | Select-Object -First 1
+            if ($m) { $url = $m.Matches[0].Value }
+          }
+        }
+        if ($url) {
+          Set-Content -Path (Join-Path $repo "LINK.txt") -Value $url -Encoding ascii
+          Log "ลิงก์ใหม่: $url"
+        } else {
+          Log "เปิด tunnel แล้วแต่ยังไม่ได้ลิงก์ — ดู $tunnelLog"
+        }
+      }
+    }
   } else {
     $cfWarned = $false
   }

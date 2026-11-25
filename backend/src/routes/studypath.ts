@@ -8,6 +8,7 @@ import { prisma, requireAuth } from "../auth";
 import { sortByTitle } from "../lib/natural-sort";
 import { letterCount, NON_TEXT_CHAR_RE, hasSubstantiveContent, contentQuality, isGenericTitle, ADMIN_NAME_RE, CASUAL_CHATTER_RE, CHATTER_FIRST_RE } from "../filters/classroom-filters";
 import { buildSubjectTopics } from "./tutor";
+import { embedMaterial } from "../lib/embeddings";
 
 /** แยกประโยคที่ยาวพอจะตั้งเป็นโจทย์เติมคำได้ */
 /** เลขหน้า/หัวกระดาษที่ OCR ติดมากับเนื้อหา เช่น "-- 3 of 12 --" — ตัดทิ้งก่อนตั้งโจทย์ */
@@ -315,6 +316,7 @@ router.post("/materials/upload", requireAuth(), upload.single("file"), async (re
         include: { chunks: true },
       });
       await prisma.subject.update({ where: { id: subjectId }, data: { status: "IN_PROGRESS" } });
+      void embedMaterial(material.id).catch(() => undefined);
       return res.status(201).json({ id: material.id, title: material.title, status: material.status, chunkCount: material.chunks.length, sourceLabel, transcriptAvailable: true });
     }
     if (isPptx) {
@@ -341,6 +343,7 @@ router.post("/materials/upload", requireAuth(), upload.single("file"), async (re
       include: { chunks: true },
     });
     await prisma.subject.update({ where: { id: subjectId }, data: { status: "IN_PROGRESS" } });
+    void embedMaterial(material.id).catch(() => undefined);
     res.status(201).json({ id: material.id, title: material.title, fileName: material.fileName, status: material.status, pageCount: material.pageCount, chunkCount: material.chunks.length, sourceLabel });
   } catch (error) {
     console.error("StudyPath material upload failed", error);
