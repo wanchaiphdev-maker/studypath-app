@@ -169,7 +169,11 @@ export async function backfillEmbeddings(maxChunks = 200): Promise<{ embedded: n
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH);
     const vecs = await embedTexts(slice.map((r) => r.content));
-    if (vecs.every((v) => !v)) break; // provider ใช้ไม่ได้ — หยุดรอบนี้ ไม่วนเปล่า
+    if (vecs.every((v) => !v)) {
+      // โควตารายวันหมด/ผู้ให้บริการล่ม — หยุดรอบนี้แล้วรอรอบถัดไป (worker เรียกทุก 10 นาที)
+      console.warn("[embed] ผู้ให้บริการไม่พร้อม (อาจหมดโควตา) — หยุดรอบนี้ จะลองใหม่รอบถัดไป");
+      break;
+    }
     for (let j = 0; j < slice.length; j++) {
       const vec = vecs[j];
       if (!vec) continue;
