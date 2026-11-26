@@ -70,6 +70,11 @@ npx ts-node scripts/backfill-embeddings.ts
 
 - ใช้เสียงเดียวเสมอ ตั้งได้ที่ `TTS_VOICE` ใน `backend/.env` (ค่าเริ่มต้น `Kore`)
   เสียงที่เลือกได้: `Kore`, `Aoede`, `Puck`, `Charon`, `Fenrir`
+- เปลี่ยนเสียงแล้วรอให้มีผล:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\restart-backend.ps1
+```
 - ห้ามใส่ fallback หลายเสียงในโค้ด เพราะจะทำให้เสียงเปลี่ยนไปเรื่อย ๆ
   (เดิมไล่ Kore → Aoede → Puck → … แล้วแคชเสียงที่ fallback ไว้)
 - ถ้าโควตา TTS หมด (429) แอปจะใช้เสียงเครื่อง (Siri/เบราว์เซอร์) ที่ล็อกไว้ตัวเดียว
