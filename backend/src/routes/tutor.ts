@@ -3090,7 +3090,11 @@ router.post("/study-plan", requireAuth(), async (req: any, res) => {
 
 const TTS_DIR = path.resolve(process.env.TTS_DIR || path.join(process.cwd(), "storage", "tts"));
 const TTS_MODEL = process.env.TTS_MODEL || "gemini-3.8-flash-tts";
-const TTS_VOICES = ["Kore", "Aoede", "Puck", "Charon", "Fenrir"];
+/* เสียงเดียวเท่านั้น — ห้าม fallback ไปเสียงอื่น เพราะผู้ใช้จะได้ยินเสียงเปลี่ยนไปเรื่อย ๆ
+   เปลี่ยนเสียงได้โดยตั้ง TTS_VOICE ใน .env (เช่น Kore, Aoede, Puck, Charon, Fenrir) */
+const TTS_VOICE = process.env.TTS_VOICE || "Kore";
+/* เวอร์ชันแคช — เปลี่ยนเมื่อแก้สูตรเสียง เพื่อไม่ให้ไฟล์เก่าที่เสียงไม่ตรงถูกนำมาใช้ซ้ำ */
+const TTS_CACHE_VERSION = "v2";
 
 router.post("/tts", requireAuth(), async (req: any, res) => {
   try {
@@ -3099,14 +3103,19 @@ router.post("/tts", requireAuth(), async (req: any, res) => {
     const apiKey = process.env.AI_API_KEY;
     if (!apiKey) return res.status(503).json({ error: "ยังไม่ได้ตั้งค่า AI_API_KEY" });
 
-    const hash = crypto.createHash("sha1").update(TTS_MODEL + "|" + (process.env.TTS_VOICE || "Kore") + "|" + text).digest("hex").slice(0, 20);
+    const hash = crypto
+      .createHash("sha1")
+      .update([TTS_CACHE_VERSION, TTS_MODEL, TTS_VOICE, text].join("|"))
+      .digest("hex")
+      .slice(0, 20);
     const file = path.join(TTS_DIR, hash + ".wav");
-    if (fs.existsSync(file)) return res.json({ url: `/studypath/tutor/tts/${hash}.wav`, cached: true });
+    if (fs.existsSync(file)) return res.json({ url: `/studypath/tutor/tts/${hash}.wav`, voice: TTS_VOICE, cached: true });
 
     fs.mkdirSync(TTS_DIR, { recursive: true });
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${apiKey}`;
     let lastError = "";
-    for (const voice of [process.env.TTS_VOICE || "Kore", ...TTS_VOICES]) {
+    // ลองซ้ำ "เสียงเดิม" เท่านั้น (429/5xx = ชั่วคราว) — ไม่สลับเสียงเพื่อให้เสียงคงที่เสมอ
+    for (let attempt = 0; attempt < 3; attempt++) {
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3114,20 +3123,26 @@ router.post("/tts", requireAuth(), async (req: any, res) => {
           contents: [{ parts: [{ text }] }],
           generationConfig: {
             responseModalities: ["AUDIO"],
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } } },
           },
         }),
         signal: AbortSignal.timeout(60000),
       });
       if (!response.ok) {
         lastError = `HTTP ${response.status}: ` + (await response.text().catch(() => "")).slice(0, 160);
-        continue;
+        // 429 = หมดโควตาวันนี้ ลองซ้ำก็ไม่ผ่าน → ออกทันที (ฝั่งแอปจะใช้เสียงสำรองที่ล็อกไว้)
+        if (response.status === 429) break;
+        if (response.status >= 500) {
+          await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)));
+          continue;
+        }
+        break;
       }
       const body: any = await response.json();
       const inline = body?.candidates?.[0]?.content?.parts?.find((p: any) => p?.inlineData?.data);
       if (!inline) { lastError = "ไม่ได้รับข้อมูลเสียงกลับมา"; continue; }
       fs.writeFileSync(file, Buffer.from(inline.inlineData.data, "base64"));
-      return res.json({ url: `/studypath/tutor/tts/${hash}.wav`, voice });
+      return res.json({ url: `/studypath/tutor/tts/${hash}.wav`, voice: TTS_VOICE });
     }
     res.status(502).json({ error: "สร้างเสียงไม่สำเร็จ: " + lastError });
   } catch (error) {

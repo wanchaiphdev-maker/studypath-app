@@ -536,6 +536,79 @@ const RichText = ({ text, streaming, tone }: { text: string; streaming?: boolean
 let current: any = null;
 const voiceCache = new Map<string, string>();
 
+/* ---- เล่นเสียงผ่าน <audio> ตัวเดียว ----
+   iOS Safari ไม่อนุญาตให้ play() หลัง await ถ้ายังไม่เคยเล่นจาก gesture ของผู้ใช้
+   เดิมจึงตกไปใช้เสียง Siri บางครั้ง บางครั้งได้เสียง Gemini → เสียงสลับไปมา
+   วิธีแก้: ปลดล็อก audio element ในจังหวะกดปุ่ม แล้วใช้ตัวเดิมตลอด */
+let audioEl: any = null;
+let audioUnlocked = false;
+let silentWav: string | null = null;
+/** สร้าง WAV เงียบสั้น ๆ ไว้ปลดล็อกเสียง iOS (ไม่ต้องฝัง base64 ยาว ๆ) */
+function silentWavUrl() {
+  if (silentWav) return silentWav;
+  const n = 400, sr = 8000;
+  const buf = new ArrayBuffer(44 + n);
+  const v = new DataView(buf);
+  const put = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  put(0, "RIFF"); v.setUint32(4, 36 + n, true); put(8, "WAVE"); put(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+  put(36, "data"); v.setUint32(40, n, true);
+  const bytes = new Uint8Array(buf);
+  for (let i = 44; i < bytes.length; i++) bytes[i] = 128;
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  silentWav = "data:audio/wav;base64," + btoa(bin);
+  return silentWav;
+}
+
+function getAudio() {
+  if (!audioEl && typeof window !== "undefined") {
+    audioEl = new Audio();
+    audioEl.playsInline = true;
+    audioEl.preload = "auto";
+  }
+  return audioEl;
+}
+
+/** ต้องเรียกก่อน await ทุกครั้งที่ผู้ใช้กดปุ่ม (ปลดล็อกเสียงให้ iOS) */
+function unlockAudio() {
+  const a = getAudio();
+  if (!a || audioUnlocked) return;
+  try {
+    a.src = silentWavUrl();
+    const p = a.play();
+    if (p && typeof p.then === "function") {
+      p.then(() => {
+        audioUnlocked = true;
+        if (String(a.src).startsWith("data:audio/wav")) { try { a.pause(); } catch { } }
+      }).catch(() => { });
+    } else {
+      audioUnlocked = true;
+    }
+  } catch { }
+}
+
+async function playUrl(url: string) {
+  const a = getAudio();
+  if (!a) throw new Error("เล่นเสียงไม่ได้");
+  a.src = url;
+  a.currentTime = 0;
+  await a.play();
+  current = a;
+}
+
+/** ล็อกเสียงสำรอง (Siri/เบราว์เซอร์) ไว้ตัวเดียว ไม่ให้เปลี่ยนไปตามระบบ */
+let pinnedVoice: any = null;
+function pickThaiVoice(w: any) {
+  if (pinnedVoice) return pinnedVoice;
+  const all: any[] = (w?.speechSynthesis?.getVoices?.() || []).slice();
+  const thai = all.filter((v) => /^th([-_]|$)/i.test(String(v.lang || "")));
+  thai.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  pinnedVoice = thai.find((v) => /siri/i.test(v.name)) || thai.find((v) => /kanya/i.test(v.name)) || thai[0] || null;
+  return pinnedVoice;
+}
+
 /** ตัดส่วนที่อ่านออกเสียงไม่ได้ออก เหลือแต่ข้อความภาษาไทย/อังกฤษ */
 function spokenText(raw: string) {
   return String(raw)
@@ -548,49 +621,61 @@ function spokenText(raw: string) {
     .slice(0, 2000);
 }
 
+/* ถ้าเสียงจากเซิร์ฟเวอร์ใช้ไม่ได้ (เช่น quota หมด) ให้ใช้เสียงสำรอง "ตัวเดิม" ตลอด session
+   จะได้ไม่สลับไปมาระหว่างเสียง Gemini กับเสียง Siri ทีละข้อความ */
+let preferBrowser = false;
+
 async function speak(text: string) {
   const w: any = typeof window !== "undefined" ? window : null;
   const clean = spokenText(text);
   if (!w || !clean) return;
+  stopSpeak();     // หยุดเสียงเดิมก่อน
+  unlockAudio();   // ต้องอยู่ก่อน await เพื่อให้ iOS ยอมเล่นเสียง
+  if (preferBrowser) { fallbackSpeak(w, clean); return; }
   const key = clean.slice(0, 160);
   const cached = voiceCache.get(key);
-  if (cached && w.Audio) {
-    const a = new Audio(`${BASE_URL}${cached}`);
-    await a.play().catch(() => fallbackSpeak(w, clean));
-    current = a;
-    return;
+  if (cached) {
+    try { await playUrl(`${BASE_URL}${cached}`); return; } catch { }
   }
   try {
     const r: any = await tutorTts(clean);
     if (!r?.url) throw new Error("ไม่ได้รับลิงก์เสียง");
     voiceCache.set(key, r.url);
-    if (w.Audio) {
-      stopSpeak();
-      const a = new Audio(`${BASE_URL}${r.url}`);
-      await a.play();
-      current = a;
-      return;
-    }
-    throw new Error("เล่นเสียงไม่ได้");
+    await playUrl(`${BASE_URL}${r.url}`);
+    return;
   } catch {
+    preferBrowser = true;
     fallbackSpeak(w, clean);
   }
 }
 
 function fallbackSpeak(w: any, clean: string) {
-  if (!w?.speechSynthesis) return;
-  w.speechSynthesis.cancel();
-  const u = new w.SpeechSynthesisUtterance(
-    clean.replace(/[#*`>_|]/g, " ").replace(/\n{2,}/g, ". ").replace(/\n/g, ". ").slice(0, 1200)
-  );
-  u.lang = "th-TH";
-  u.rate = 0.95;
-  w.speechSynthesis.speak(u);
+  const synth = w?.speechSynthesis;
+  if (!synth) return;
+  synth.cancel();
+  const text = clean.replace(/[#*`>_|]/g, " ").replace(/\n{2,}/g, ". ").replace(/\n/g, ". ").slice(0, 1200);
+  const speakNow = () => {
+    const u = new w.SpeechSynthesisUtterance(text);
+    u.lang = "th-TH";
+    u.rate = 0.95;
+    u.pitch = 1;
+    const v = pickThaiVoice(w);
+    if (v) { u.voice = v; if (v.lang) u.lang = v.lang; }
+    synth.speak(u);
+  };
+  // บางเบราว์เซอร์ (โดยเฉพาะ iOS) โหลดรายการเสียงไม่ทันครั้งแรก
+  if ((synth.getVoices?.() || []).length) { speakNow(); return; }
+  let done = false;
+  const once = () => { if (done) return; done = true; speakNow(); };
+  try { synth.addEventListener("voiceschanged", once, { once: true } as any); } catch { }
+  setTimeout(once, 800);
 }
 
 function stopSpeak() {
   const w: any = typeof window !== "undefined" ? window : null;
-  if (current) { try { current.pause(); } catch { } current = null; }
+  const a = getAudio();
+  if (a) { try { a.pause(); } catch { } }
+  current = null;
   if (w?.speechSynthesis) w.speechSynthesis.cancel();
 }
 
