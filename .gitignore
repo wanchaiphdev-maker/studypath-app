@@ -30,3 +30,4 @@ tools/bin/
 *.tmp.ts
 *.tmp.js
 LINK.txt
+audit-latest.txt

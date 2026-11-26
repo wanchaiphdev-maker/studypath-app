@@ -68,8 +68,10 @@ npx ts-node scripts/backfill-embeddings.ts
 
 ## Google Login (ยังต้องทำใน Google Cloud Console)
 
-ตอนนี้ปุ่ม Google จะซ่อนอัตโนมัติถ้ายังตั้งค่าไม่ครบ (`GET /auth/google/ready` → `ready:false`)
-เพื่อนยังสมัคร/เข้าสู่ระบบด้วยอีเมล+รหัสผ่านได้ตามปกติ
+ปุ่ม **"เข้าสู่ระบบด้วย Google" แสดงตลอด** (เดิมซ่อนเมื่อยังตั้งค่าไม่ครบ ทำให้ผู้ใช้คิดว่าปุ่มหาย)
+ถ้ายังไม่ได้ลงทะเบียน redirect URI ของลิงก์นี้ใน Google Console การกดปุ่มจะขึ้นกล่องบอก
+URL ที่ต้องนำไปเพิ่มให้ตรงตัว เช่น `https://<ลิงก์ปัจจุบัน>/auth/google/callback`
+ระหว่างนี้เพื่อนยังสมัคร/เข้าสู่ระบบด้วยอีเมล+รหัสผ่านได้ตามปกติ
 
 ถ้าจะเปิด Google login บนลิงก์ tunnel:
 
@@ -80,6 +82,22 @@ npx ts-node scripts/backfill-embeddings.ts
 3. OAuth consent screen → เปลี่ยนชื่อแอปจาก "Amway Team" เป็น **StudyPath**
    และเพิ่มอีเมลเพื่อนใน Test users
 4. ตรวจว่า `GET /auth/google/ready` ตอบ `{"ready":true}` แล้วรีเฟรชหน้า login
+
+หมายเหตุ: บนเครื่องนี้ `http://localhost:3000/auth/google/callback` ลงทะเบียนไว้แล้ว
+จึงเห็น `ready:true` เมื่อเปิดผ่าน localhost แต่ลิงก์ tunnel ยังต้องเพิ่มแยก
+
+## ลืมรหัสผ่าน / บัญชีที่สมัครด้วย Google เข้ารหัสไม่ได้
+
+บัญชีที่สมัครผ่าน Google จะมีรหัสผ่านสุ่ม จึงใช้ "อีเมล + รหัสผ่าน" ไม่ได้จนกว่าจะตั้งรหัสใหม่
+ให้เจ้าของเครื่องรันสคริปต์นี้ (รหัสผ่านพิมพ์ในหน้าจอ ไม่ถูกบันทึก/ไม่ผ่าน command line):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\set-password.ps1
+```
+
+กรอกอีเมล → รหัสผ่านใหม่ 2 ครั้ง → เข้าสู่ระบบด้วยอีเมลนั้นได้ทันที
+(ข้อความ error ตอนล็อกอินแยกให้แล้วว่า "ไม่พบบัญชี" หรือ "รหัสผ่านไม่ถูกต้อง")
+
 
 ## สิ่งที่แก้ในรอบ "พร้อมใช้งาน"
 

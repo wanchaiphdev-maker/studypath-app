@@ -257,12 +257,22 @@ function trigrams(text: string) {
   return out;
 }
 
+/** ชื่อเอกสารแบบเทียบง่าย: ตัดนามสกุล/วรรคตอน ให้ "Chapter 6 CPU.pdf" == "chapter 6 cpu" */
+function normalizeDocTitle(text: string) {
+  return String(text || "")
+    .replace(/\.(pdf|txt|pptx|pptm|docx|doc|mp4|m4a|mov|zip)$/i, "")
+    .toLowerCase()
+    .replace(/[^฀-๿\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** ค้นเนื้อหาจาก Knowledge Base: ผสม "คำตรงกัน" กับ "ความหมายใกล้กัน" (embedding)
  *  - keyword: เดิม (นับคำที่ตรง + prefix ไทย) — แม่นเมื่อผู้ใช้ใช้คำเดียวกับไฟล์
  *  - semantic: cosine ระหว่างเวกเตอร์คำถามกับเวกเตอร์ chunk — แม่นเมื่อใช้คำต่างกัน
  *  ถ้ายังไม่มีเวกเตอร์ (เพิ่งซิงก์/กำลัง backfill) จะถอยไปใช้ keyword อย่างเดียวโดยอัตโนมัติ
  */
-async function retrieve(subjectId: string, userId: string, query: string, limit = 8) {
+export async function retrieve(subjectId: string, userId: string, query: string, limit = 8) {
   // คำถามต้องไม่ค้างเพราะ embedding: ถ้าผู้ให้บริการช้า/โควตาหมด ให้ใช้ keyword ต่อทันที
   const qvecPromise = Promise.race([
     embedQuery(query).catch(() => null),
@@ -277,14 +287,30 @@ async function retrieve(subjectId: string, userId: string, query: string, limit 
   ]);
   const terms = new Set(tokenize(query));
   const gramList = Array.from(trigrams(String(query).slice(0, 200)));
-  const chunks = materials.flatMap((m) => m.chunks.map((chunk) => ({ m, chunk })));
+  // ผู้ใช้มักเรียกเอกสารด้วยชื่อไฟล์ ("Chapter 6 CPU", "ใบงานที่ 3", "มคอ.3")
+  // ถ้าคำถามมีชื่อเอกสารอยู่ด้วย เอกสารนั้นต้องถูกยกขึ้นบนสุด ไม่ใช่จมเพราะ semantic ของเล่มอื่น
+  const queryNorm = normalizeDocTitle(String(query).slice(0, 200));
+  const queryCompact = queryNorm.replace(/\s+/g, "");
+  const titleNormById = new Map<string, { norm: string; compact: string }>();
+  for (const m of materials) {
+    const norm = normalizeDocTitle(m.title || "");
+    titleNormById.set(m.id, { norm, compact: norm.replace(/\s+/g, "") });
+  }
+  // ค้นทั้ง "ชื่อไฟล์" และ "เนื้อหา" — ผู้ใช้มักอ้างถึงชื่อเอกสาร เช่น "ใบงานที่ 3", "Chapter 6 CPU", "มคอ.3"
+  // ซึ่งบางไฟล์ชื่อไม่ปรากฏอยู่ในเนื้อหาเลย ถ้าไม่นับชื่อจะค้นไม่เจอ
+  const chunks = materials.flatMap((m) =>
+    m.chunks.map((chunk) => ({
+      m,
+      chunk,
+      text: (String(m.title || "") + "\n" + String(chunk.content || "")).toLowerCase(),
+    }))
+  );
 
   // รอบ 1: trigram ไหนตรงกับ chunk ไหน + พบในกี่ chunk
   // trigram ที่พบน้อย (เช่น "มคอ") สำคัญกว่า trigram ที่พบทุกไฟล์ (เช่น "การ") — ถ่วงน้ำหนักด้วย IDF
   const matched: number[][] = [];
   const df = new Map<number, number>();
-  for (const { chunk } of chunks) {
-    const text = String(chunk.content || "").toLowerCase();
+  for (const { text } of chunks) {
     const set = new Set<string>();
     for (let i = 0; i + 3 <= text.length; i++) set.add(text.slice(i, i + 3));
     const found: number[] = [];
@@ -300,9 +326,8 @@ async function retrieve(subjectId: string, userId: string, query: string, limit 
   const gramWeight = gramList.map((_, idx) => Math.log(1 + total / (1 + (df.get(idx) || 0))));
   const weightSum = gramWeight.reduce((a, b) => a + b, 0) || 1;
 
-  const scored = chunks.map(({ m, chunk }, i) => {
-    const text = String(chunk.content || "").toLowerCase();
-    const words = tokenize(chunk.content);
+  const scored = chunks.map(({ m, chunk, text }, i) => {
+    const words = tokenize(text);
     let hits = 0;
     for (const w of words) if (terms.has(w)) hits++;
     // บูรณ์คำไทยแบบเดียว: "วนธรรมดา" ควรเจอคำว่า "วน"
@@ -327,11 +352,19 @@ async function retrieve(subjectId: string, userId: string, query: string, limit 
     const rareHit = rareCount >= 2;
     let keyword = Math.max(Math.min(1, hits / Math.max(3, Math.min(8, terms.size))), gramScore);
     if (rareHit) keyword = Math.max(keyword, 0.62);
+    // ชื่อเอกสารที่ผู้ใช้พิมพ์มาในคำถาม = หลักฐานตรงตัว (เช่น "Chapter 6 CPU เกี่ยวกับอะไร")
+    const titleInfo = titleNormById.get(m.id);
+    const titleHit = !!titleInfo && titleInfo.norm.length >= 4 && (
+      queryNorm.includes(titleInfo.norm) || queryCompact.includes(titleInfo.compact)
+    );
+    if (titleHit) keyword = Math.max(keyword, 0.95);
     const vector = decodeVector(chunk.embedding);
     const semantic = qvec && vector ? cosine(qvec, vector) : 0;
     let score = qvec && vector ? 0.55 * semantic + 0.45 * keyword : keyword;
     // วลาหายากที่ตรงเป๊ะควรถูกยกขึ้นบนสุด ไม่ใช่ไปอยู่ท้ายรายการจนโมเดลอ้างอิงสลับไฟล์
     if (rareHit) score = Math.max(score, 0.55 + 0.3 * keyword) + 0.02 * Math.min(3, rareCount);
+    // ชื่อเอกสารตรงทั้งชื่อ: ให้คะแนนพิเศษแบบคงที่ เพื่อให้ผลไม่แกว่งตามว่า embedding คำถามมาทันหรือไม่
+    if (titleHit) score += 0.35;
     return { m, chunk, keyword, semantic, score, hasVector: !!vector };
   });
   scored.sort((a, b) => b.score - a.score);

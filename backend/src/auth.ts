@@ -9,8 +9,12 @@ export const login = async (req: Request, res: Response) => {
   const email = String(req.body?.email || "").trim().toLowerCase();
   const password = String(req.body?.password || "");
   const u = await prisma.user.findUnique({ where: { email } });
-  if (!u || !(await bcrypt.compare(password, u.passwordHash))) {
-    return res.status(401).json({ error: "อีเมลหรือรหัสผ่านไม่ถูกต้อง" });
+  // แยกข้อความให้ตรงสาเหตุ — ผู้ใช้จะได้รู้ว่าต้องสมัครก่อน หรือบัญชีนี้ใช้ Google
+  if (!u) {
+    return res.status(404).json({ error: "ไม่พบบัญชีนี้ในระบบ — ถ้ายังไม่มีบัญชี กด \"สมัครสมาชิก\" ก่อน" });
+  }
+  if (!(await bcrypt.compare(password, u.passwordHash))) {
+    return res.status(401).json({ error: "รหัสผ่านไม่ถูกต้อง — ถ้าบัญชีนี้สมัครด้วย Google ให้ใช้ปุ่ม \"เข้าสู่ระบบด้วย Google\" หรือให้ผู้ดูแลตั้งรหัสใหม่" });
   }
   const token = jwt.sign({ id: u.id, role: u.role }, process.env.JWT_SECRET!, { expiresIn: "7d" });
   return res.json({ token, user: { id: u.id, name: u.name, role: u.role, themeColor: u.themeColor } });
