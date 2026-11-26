@@ -14,7 +14,16 @@ export const login = async (req: Request, res: Response) => {
     return res.status(404).json({ error: "ไม่พบบัญชีนี้ในระบบ — ถ้ายังไม่มีบัญชี กด \"สมัครสมาชิก\" ก่อน" });
   }
   if (!(await bcrypt.compare(password, u.passwordHash))) {
-    return res.status(401).json({ error: "รหัสผ่านไม่ถูกต้อง — ถ้าบัญชีนี้สมัครด้วย Google ให้ใช้ปุ่ม \"เข้าสู่ระบบด้วย Google\" หรือให้ผู้ดูแลตั้งรหัสใหม่" });
+    // บัญชีที่สมัครผ่าน Google จะมีรหัสผ่านสุ่ม → บอกให้ตรงสาเหตุ ไม่ใช่แค่ "รหัสผิด"
+    const google = await prisma.googleConnection.findUnique({ where: { userId: u.id }, select: { id: true } });
+    if (google) {
+      return res.status(401).json({
+        error: "บัญชีนี้สมัครด้วย Google จึงยังไม่มีรหัสผ่าน — ถ้าปุ่ม Google ยังใช้ไม่ได้ ให้แจ้งผู้ดูแลเพื่อตั้งรหัสผ่านให้",
+      });
+    }
+    return res.status(401).json({
+      error: "รหัสผ่านไม่ถูกต้อง — ตรวจ Caps Lock/แป้นพิมพ์แล้วลองอีกครั้ง หรือแจ้งผู้ดูแลเพื่อตั้งรหัสใหม่",
+    });
   }
   const token = jwt.sign({ id: u.id, role: u.role }, process.env.JWT_SECRET!, { expiresIn: "7d" });
   return res.json({ token, user: { id: u.id, name: u.name, role: u.role, themeColor: u.themeColor } });
