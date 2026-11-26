@@ -188,22 +188,61 @@ function extractPptxText(buffer: Buffer) {
     .join("\n\n");
 }
 
+/** ถอดเสียงไฟล์เสียง/วิดีโอ
+ *  - ถ้าตั้ง AI_TRANSCRIBE_BASE_URL (OpenAI/Whisper) → ใช้ /audio/transcriptions
+ *  - ไม่งั้นใช้ Gemini native (generateContent + inlineData) ซึ่งรองรับเสียงโดยตรง
+ *    (AI_BASE_URL ของโปรเจกต์เป็น Gemini OpenAI-compat ที่ไม่มี /audio/transcriptions → 404)
+ */
 async function transcribeAudio(buffer: Buffer, filename: string, mimeType: string) {
-  const endpoint = process.env.AI_BASE_URL?.replace(/\/$/, "");
+  // 1) ผู้ให้บริการแบบ OpenAI/Whisper (ถ้าตั้งไว้)
+  const openaiBase = process.env.AI_TRANSCRIBE_BASE_URL?.replace(/\/$/, "");
+  const openaiKey = process.env.AI_TRANSCRIBE_API_KEY || process.env.AI_API_KEY;
+  if (openaiBase && openaiKey) {
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(buffer)], { type: mimeType }), filename);
+    form.append("model", process.env.AI_TRANSCRIBE_MODEL || "whisper-1");
+    const response = await fetch(openaiBase + "/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + openaiKey },
+      body: form,
+      signal: AbortSignal.timeout(180000),
+    });
+    if (!response.ok) throw new Error("Transcription provider error " + response.status);
+    const body: any = await response.json();
+    return String(body?.text || "").trim() || null;
+  }
+
+  // 2) Gemini native (ใช้ AI_API_KEY เดิม)
   const key = process.env.AI_API_KEY;
-  if (!endpoint || !key) return null;
-  const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(buffer)], { type: mimeType }), filename);
-  form.append("model", process.env.AI_TRANSCRIBE_MODEL || process.env.AI_MODEL || "whisper-1");
-  const response = await fetch(endpoint + "/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + key },
-    body: form,
-    signal: AbortSignal.timeout(120000),
-  });
+  if (!key) return null;
+  if (buffer.length > 18 * 1024 * 1024) {
+    throw new Error("ไฟล์เสียงใหญ่เกิน 18MB — กรุณาตัดเป็นท่อนสั้นลงก่อนอัปโหลด");
+  }
+  const model = process.env.GEMINI_TRANSCRIBE_MODEL || process.env.AI_MODEL || "gemini-3.5-flash-lite";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inlineData: { mimeType, data: buffer.toString("base64") } },
+            { text: "ถอดเสียงในไฟล์นี้เป็นข้อความตามที่ได้ยินทั้งหมด ห้ามสรุปหรือแต่งเติม ถ้าฟังไม่ชัดให้ใส่ [ไม่ได้ยิน]" },
+          ],
+        }],
+        generationConfig: { temperature: 0, maxOutputTokens: 32768 },
+      }),
+      signal: AbortSignal.timeout(180000),
+    }
+  );
   if (!response.ok) throw new Error("Transcription provider error " + response.status);
   const body: any = await response.json();
-  return String(body?.text || "").trim() || null;
+  const text = (body?.candidates?.[0]?.content?.parts || [])
+    .map((p: any) => p?.text || "")
+    .join("")
+    .trim();
+  return text || null;
 }
 
 const router = Router();

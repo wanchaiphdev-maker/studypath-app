@@ -83,6 +83,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\restart-backend.ps1
 - ไฟล์เสียงแคชอยู่ที่ `backend/storage/tts` — ลบได้ ไม่กระทบข้อมูลผู้ใช้
   (แคชผูกกับรุ่นเสียง `v2` แล้ว ไฟล์เก่าที่เสียงไม่ตรงจะไม่ถูกใช้)
 
+## อัปโหลดไฟล์เสียง/วิดีโอ (ถอดเสียง)
+
+- รองรับไฟล์เสียง/วิดีโอไม่เกิน **18MB** (ข้อจำกัด inline ของ Gemini) — ไฟล์ใหญ่ให้ตัดเป็นท่อน
+- ใช้ **Gemini native** (`generateContent` + `inlineData`) ผ่าน `AI_API_KEY` เดิม
+  (เดิมยิง `/audio/transcriptions` ของ OpenAI-compat ซึ่ง Gemini ไม่มี → 404)
+- ถ้ามี OpenAI/Whisper ตั้งใน `backend/.env` ระบบจะเลือก Whisper ก่อน:
+  `AI_TRANSCRIBE_BASE_URL=https://api.openai.com/v1`, `AI_TRANSCRIBE_API_KEY=...`, `AI_TRANSCRIBE_MODEL=whisper-1`
+- เปลี่ยนโมเดลถอดเสียงฝั่ง Gemini ได้ที่ `GEMINI_TRANSCRIBE_MODEL` (ค่าเริ่มต้นใช้ `AI_MODEL`)
+- ไฟล์ที่อัปโหลดจะถูกเก็บที่ `backend/storage/materials` (ลบไฟล์ที่อัปโหลดไม่สำเร็จได้)
+
 ## Google Login (ยังต้องทำใน Google Cloud Console)
 
 ปุ่ม **"เข้าสู่ระบบด้วย Google" แสดงตลอด** (เดิมซ่อนเมื่อยังตั้งค่าไม่ครบ ทำให้ผู้ใช้คิดว่าปุ่มหาย)
