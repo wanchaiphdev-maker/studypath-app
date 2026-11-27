@@ -225,7 +225,7 @@ function guessLang(code: string): string {
 }
 
 /* รูปแบบคำตอบของระบบข้อสอบ — เลือกได้ทุกข้อ */
-type Fmt = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode" | "translate" | "cloze";
+type Fmt = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "test_table" | "pseudocode" | "translate" | "cloze";
 const FORMATS: { k: Fmt; label: string; icon: string; hint: string }[] = [
   { k: "text", label: "ข้อความ", icon: "document-text-outline", hint: "ตอบเป็นข้อความ" },
   { k: "options", label: "ตัวเลือก", icon: "list-outline", hint: "A B C ง" },
@@ -233,6 +233,7 @@ const FORMATS: { k: Fmt; label: string; icon: string; hint: string }[] = [
   { k: "flowchart", label: "ผังภาพ", icon: "git-branch-outline", hint: "flowchart" },
   { k: "diagram", label: "แผนผัง", icon: "grid-outline", hint: "ผังงาน/โครงสร้าง" },
   { k: "table", label: "ตาราง", icon: "grid-outline", hint: "เทียบข้อมูล" },
+  { k: "test_table", label: "ตารางทดสอบ", icon: "grid-outline", hint: "กรณีทดสอบและผลลัพธ์" },
   { k: "pseudocode", label: "รหัสเทียม", icon: "terminal-outline", hint: "pseudocode" },
   { k: "translate", label: "แปลประโยค", icon: "language-outline", hint: "ไทย ↔ อังกฤษ" },
   { k: "cloze", label: "เติมคำตอบ", icon: "create-outline", hint: "เติมคำ/ประโยคในช่องว่าง" },
@@ -972,6 +973,9 @@ export default function Tutor() {
   /** "สุ่มทุกอย่าง" — สุ่มฟอร์แมตใหม่ทุกครั้งที่ดึง โค้ด/รหัสเทียมสุ่มได้เฉพาะวิชาที่มีสัญญาณเขียนโปรแกรมจริง */
   function pickRandomFmt(): Fmt {
     const pool: Fmt[] = ["text", "options"];
+    if (String(subject?.code || "").trim() === "1204103") {
+      return (["options", "flowchart", "pseudocode", "test_table", "code"] as Fmt[])[Math.floor(Math.random() * 5)];
+    }
     if (hasDiagramMode) pool.push("flowchart", "diagram");
     if (hasCompareMode || hasStepsMode) pool.push("table");
     if (hasLangMode) pool.push("translate", "cloze");
@@ -1019,7 +1023,7 @@ export default function Tutor() {
         setFocusedPractice(false);
         setPullStyle("");
         setExamPick(true);
-      } else if (action === "flowchart" || action === "code") {
+      } else if (action === "flowchart" || action === "code" || action === "pseudocode" || action === "test_table") {
         setDiagStage("pull");
         setTab("diag");
         setPullStyle(action);
@@ -1875,7 +1879,7 @@ export default function Tutor() {
               onNext={() => loadProblem(pullStyle)}
               onBack={() => { setFocusedPractice(false); setExamPick(true); }}
             />
-            : fmt === "table" ? <View style={{ marginTop: 12, gap: 8 }}>
+            : fmt === "table" || fmt === "test_table" ? <View style={{ marginTop: 12, gap: 8 }}>
               <Text style={font.caption}>กรอกคำตอบเป็นตาราง Markdown แล้วดูตัวอย่างได้ทันที</Text>
               <TextInput
                 value={myAnswer} onChangeText={setMyAnswer} multiline

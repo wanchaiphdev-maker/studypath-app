@@ -1004,7 +1004,7 @@ export function dedupeOptions(options: any[], answerIndex: number, minCount = 2)
   return { options: kept, answerIndex: finalAnswer, removed: options.length - kept.length };
 }
 /** รูปแบบคำตอบที่ให้เลือก */
-type AnswerFormat = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode" | "translate" | "cloze";
+type AnswerFormat = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "test_table" | "pseudocode" | "translate" | "cloze";
 const FORMATS: Record<AnswerFormat, { label: string; hint: string; instruction: string }> = {
   text: { label: "ข้อความ", hint: "เขียนตอบเป็นข้อความ", instruction: "แสดงโจทย์เป็นข้อความอ่านง่าย ใช้หัวข้อย่อยและ bullet" },
   options: { label: "ตัวเลือก", hint: "A B C D", instruction: "แสดงโจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง) พร้อมเฉลยอธิบาย" },
@@ -1012,6 +1012,7 @@ const FORMATS: Record<AnswerFormat, { label: string; hint: string; instruction: 
   flowchart: { label: "ผังภาพ", hint: "flowchart", instruction: "เขียนโจทย์ภาษาไทยให้ผู้เรียนวาด flowchart เพื่อหาคำตอบ โดยคงข้อมูลและเงื่อนไขจากต้นทางครบ ห้ามวาดผังเฉลยให้" },
   diagram: { label: "แผนผัง", hint: "ผังงาน/โครงสร้าง", instruction: "เขียนโจทย์ภาษาไทยให้ผู้เรียนสร้างแผนผังโครงสร้างหรือความสัมพันธ์ตามเนื้อหา โดยคงข้อมูลต้นทางครบ ห้ามแสดงแผนผังเฉลยให้" },
   table: { label: "ตาราง", hint: "เทียบข้อมูล", instruction: "แสดงโจทย์พร้อมตารางข้อมูลที่ต้องใช้ (ถ้ามี) ในกล่อง ``` จัดคอลัมน์ให้ตรงกัน" },
+  test_table: { label: "ตารางทดสอบ", hint: "กรณีทดสอบและผลลัพธ์", instruction: "สร้างโจทย์ภาษาไทยพร้อมตารางกรณีทดสอบตารางทดสอบ โดยระบุชุดข้อมูล Input/เงื่อนไข/ผลลัพธ์ที่คาดหวังให้ผู้เรียนกรอกตามเนื้อหาในวิชา ห้ามใส่เฉลยลงในตัวโจทย์" },
   pseudocode: { label: "รหัสเทียม", hint: "pseudocode", instruction: "แสดงโจทย์เป็นโจทย์เขียนรหัสเทียม (pseudocode) — เรียงขั้นตอนเป็นบรรทัด ๆ ด้วยคำสั่งภาษาอังกฤษง่าย ๆ เช่น BEGIN / IF / ELSE / WHILE / FOR / END ห้ามเป็นภาษาโปรแกรมจริง ห้ามใส่ชื่อฟังก์ชันหรือไวยากรณ์ของภาษาโปรแกรม" },
   // แนวสำหรับวิชาภาษา — หยิบประโยค/ข้อความจริงจากไฟล์ในวิชา มาให้แปลไทย<->อังกฤษเอง
   translate: { label: "แปลประโยค", hint: "ไทย ↔ อังกฤษ", instruction: "แสดงโจทย์เป็นการแปลภาษา — คัดประโยคหรือข้อความสั้น ๆ ที่มีจริงในเนื้อหาวิชานี้มา 1 ข้อ แล้วขึ้นต้นด้วยคำสั่งว่า \"แปลข้อความต่อไปนี้เป็น...\" โดยเลือกทิศทางให้ตรงกับต้นทาง (ต้นทางเป็นอังกฤษ = แปลเป็นไทย, ต้นทางเป็นไทย = แปลเป็นอังกฤษ) เว้นบรรทัดว่างใต้คำสั่งให้ผู้เรียนพิมพ์คำตอบแปลเอง ห้ามใส่คำแปลหรือเฉลยในโจทย์เด็ดขาด" },
@@ -2021,6 +2022,15 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
       include: { materials: { include: { chunks: { orderBy: { chunkIndex: "asc" } } } } },
     });
     if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
+    const isProblemSolvingSubject =
+      String(subject.code || "").trim() === "1204103" ||
+      /การแก้ปัญหาสำหรับวิทยาการคอมพิวเตอร์/i.test(String(subject.name || ""));
+    if (isProblemSolvingSubject) {
+      const allowed: AnswerFormat[] = ["options", "flowchart", "pseudocode", "test_table", "code"];
+      if (!wanted) wanted = allowed[Math.floor(Math.random() * allowed.length)];
+      if (!allowed.includes(wanted as AnswerFormat)) wanted = allowed[Math.floor(Math.random() * allowed.length)];
+      format = wanted;
+    }
 
     const usableSubject = { ...subject, materials: materialsForSubject(subject) };
 
@@ -2028,7 +2038,7 @@ router.post("/diagnose/problem", requireAuth(), async (req: any, res) => {
     // และใช้คัดโจทย์ใน "โหมดฝึกทำรหัสเทียม" ให้มีเฉพาะข้อที่ตอบเป็นรหัสเทียมได้จริง
     const hasCode = analyzeSubjectSignals(usableSubject.materials || []).code >= EXTRA_MIN.code;
     // ป้องกันคำขอจาก client รุ่นเก่าหรือการเรียกตรง: วิชาที่ไม่มีเนื้อหาโค้ดจะไม่เข้าโหมดโค้ด/รหัสเทียม
-    if (!hasCode && (wanted === "code" || wanted === "pseudocode")) { wanted = ""; format = ""; }
+    if (!isProblemSolvingSubject && !hasCode && (wanted === "code" || wanted === "pseudocode")) { wanted = ""; format = ""; }
     // แหล่งที่มา: ไฟล์ในวิชา (ค่าเริ่มต้น) หรืองานที่นักเรียนเคยส่งไป
     if (String(req.body?.source || "") === "submission") {
       const rows = await prisma.submission.findMany({
@@ -3406,10 +3416,22 @@ router.post("/open", requireAuth(), async (req: any, res) => {
 
     const sig = analyzeSubjectSignals(all);
     const tag = detectSubjectTag(String(subject.name));
+    const isProblemSolvingSubject =
+      String(subject.code || "").trim() === "1204103" ||
+      /การแก้ปัญหาสำหรับวิทยาการคอมพิวเตอร์/i.test(String(subject.name || ""));
     const subjectChoiceKeys = choicesForSubject(String(subject.name), topics, sig).map((c: any) => c.key);
     const formats: { k: AnswerFormat; label: string; hint: string; icon: string; color: string }[] = [
       { k: "options", label: "ตัวเลือกแบบช้อยส์", hint: "โจทย์พร้อมตัวเลือก 4 ข้อ และเฉลยทันที", icon: "list-outline", color: "#fbbf24" },
     ];
+    if (isProblemSolvingSubject) {
+      formats.push(
+        { k: "flowchart", label: "ผังภาพ", hint: "วาดขั้นตอนแก้ปัญหาเฉพาะวิชา 1204103", icon: "git-branch-outline", color: "#38bdf8" },
+        { k: "pseudocode", label: "รหัสเทียม", hint: "เรียงขั้นตอนแก้ปัญหาเป็นรหัสเทียมเฉพาะวิชา 1204103", icon: "terminal-outline", color: "#818cf8" },
+        { k: "test_table", label: "ตารางทดสอบ", hint: "ออกแบบกรณีทดสอบและผลลัพธ์เฉพาะวิชา 1204103", icon: "grid-outline", color: "#f472b6" },
+        { k: "code", label: "เขียนโค้ด", hint: "เขียนโค้ดเฉพาะรายวิชา 1204103 เท่านั้น", icon: "code-slash-outline", color: "#34d399" },
+        { k: "", label: "ดึงโจทย์จากเนื้อหา", hint: "สุ่มเฉพาะผังภาพ รหัสเทียม ตารางทดสอบ หรือโค้ดของวิชา 1204103", icon: "document-text-outline", color: "#4ade80" } as any,
+      );
+    } else {
     // สายคณิตศาสตร์: แยกสูตร/คำนวณออกจากโค้ด ผังภาพ และตารางเทียบ — ห้ามขึ้นเพราะชื่อมีคำว่าคอมพิวเตอร์
     if (tag === "math") {
       formats.push(
@@ -3438,7 +3460,8 @@ router.post("/open", requireAuth(), async (req: any, res) => {
         { k: "", label: "ดึงโจทย์จากเนื้อหา", hint: "ให้ระบบเลือกรูปแบบที่ตรงกับหัวข้ออัตโนมัติ", icon: "document-text-outline", color: "#4ade80" } as any,
       );
     }
-    formats.push(
+    }
+    if (!isProblemSolvingSubject) formats.push(
       { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "ทำข้อสอบสั้นและดูหัวข้อที่ควรเน้น", icon: "checkmark-done-outline", color: "#a78bfa" } as any,
     );
     res.json({
