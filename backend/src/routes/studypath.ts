@@ -8,6 +8,7 @@ import { prisma, requireAuth } from "../auth";
 import { sortByTitle } from "../lib/natural-sort";
 import { letterCount, NON_TEXT_CHAR_RE, hasSubstantiveContent, contentQuality, isGenericTitle, ADMIN_NAME_RE, CASUAL_CHATTER_RE, CHATTER_FIRST_RE } from "../filters/classroom-filters";
 import { buildSubjectTopics } from "./tutor";
+import { extractDocxText, extractPptxText } from "./classroom-files";
 import { embedMaterial } from "../lib/embeddings";
 
 /** แยกประโยคที่ยาวพอจะตั้งเป็นโจทย์เติมคำได้ */
@@ -129,30 +130,71 @@ function splitSentencesByFile(
   return out;
 }
 
+/* ------------------------------------------------------------------ */
+/* อัปโหลดไฟล์เนื้อหา: PDF / สไลด์ / เอกสาร / ตาราง / รูปภาพ / เสียง  */
+/* ------------------------------------------------------------------ */
+
+const MAX_UPLOAD_MB = 25;
+const SUPPORTED_TYPES_TEXT =
+  "PDF, PPTX (สไลด์), DOCX, XLSX, TXT/MD/CSV, รูปภาพ (PNG/JPG) และไฟล์เสียง/วิดีโอ";
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = [
-      "application/pdf",
-      "text/plain",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      "application/vnd.ms-powerpoint",
-      "audio/mpeg",
-      "audio/mp4",
-      "audio/wav",
-      "audio/x-wav",
-      "audio/webm",
-      "audio/ogg",
-      "video/mp4",
-      "video/webm",
-    ];
-    cb(null, allowed.includes(file.mimetype));
+    const name = String(file.originalname || "").toLowerCase();
+    const mime = String(file.mimetype || "").toLowerCase();
+    const supported =
+      mime === "application/pdf" ||
+      mime.startsWith("text/") ||
+      mime === "application/json" ||
+      mime === "application/xml" ||
+      mime === "application/rtf" ||
+      mime.startsWith("image/") ||
+      mime.startsWith("audio/") ||
+      mime.startsWith("video/") ||
+      // บางเบราว์เซอร์/มือถือไม่บอกชนิดไฟล์ → ให้ดูกินามสกุลแทน
+      mime === "application/octet-stream" ||
+      /\.(pdf|txt|md|markdown|csv|json|xml|html?|rtf|log|ya?ml|pptx|docx|xlsx|png|jpe?g|webp|gif|bmp|heic|mp3|m4a|aac|wav|ogg|opus|webm|mp4|mov|m4v)$/.test(name);
+    if (supported) return cb(null, true);
+    const legacy = /\.(ppt|doc|xls)$/.test(name);
+    const error: any = new Error(
+      legacy
+        ? "ไฟล์ .ppt/.doc/.xls รุ่นเก่ายังไม่รองรับ — กรุณาบันทึกเป็น .pptx/.docx/.xlsx หรือ PDF ก่อนอัปโหลด"
+        : `ชนิดไฟล์นี้ยังไม่รองรับ — รองรับ ${SUPPORTED_TYPES_TEXT}`
+    );
+    error.statusCode = 415;
+    cb(error);
   },
 });
 
+/** ครอบ multer เพื่อให้ error กลับมาเป็น JSON ที่อ่านรู้เรื่อง (ไม่ใช่ HTML 500) */
+function uploadSingle(field: string) {
+  return (req: any, res: any, next: any) => {
+    upload.single(field)(req, res, (err: any) => {
+      if (!err) return next();
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(413).json({ error: `ไฟล์ใหญ่เกิน ${MAX_UPLOAD_MB}MB — กรุณาแบ่งไฟล์หรือบีบอัดก่อนอัปโหลด` });
+        }
+        return res.status(400).json({ error: "อัปโหลดไม่สำเร็จ: " + err.message });
+      }
+      return res.status(err?.statusCode || 415).json({ error: String(err?.message || "ชนิดไฟล์นี้ยังไม่รองรับ") });
+    });
+  };
+}
+
 const MEDIA_DIR = path.resolve(process.env.MEDIA_DIR || path.join(process.cwd(), "storage", "materials"));
 fs.mkdirSync(MEDIA_DIR, { recursive: true });
+
+/** ลบอักขระควบคุม/NUL ที่มากับข้อความจาก PDF (Postgres ไม่รับ 0x00) */
+function cleanExtractedText(text: string) {
+  return String(text || "")
+    .replace(/\u0000/g, "")
+    .replace(/[\u0001-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .replace(/\r\n?/g, "\n")
+    .trim();
+}
 
 function chunkText(text: string) {
   const parts = text.split(/(?<=[.!?。！？])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
@@ -168,24 +210,171 @@ function chunkText(text: string) {
   return chunks;
 }
 
-function extractPptxText(buffer: Buffer) {
-  const zip = new AdmZip(buffer);
-  return zip.getEntries()
-    .filter((e) => /^ppt\/slides\/slide\d+\.xml$/i.test(e.entryName))
-    .sort((a, b) => {
-      const na = Number(a.entryName.match(/slide(\d+)/i)?.[1] || 0);
-      const nb = Number(b.entryName.match(/slide(\d+)/i)?.[1] || 0);
-      return na - nb;
-    })
-    .map((entry, index) => {
+/** นับจำนวนสไลด์ใน PPTX (ใช้แสดงผลในหน้ารายวิชา) */
+function countPptxSlides(buffer: Buffer) {
+  try {
+    return new AdmZip(buffer).getEntries().filter((e) => /^ppt\/slides\/slide\d+\.xml$/i.test(e.entryName)).length || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeXmlEntities(value: string) {
+  return String(value)
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&amp;/g, "&");
+}
+
+/** XLSX = zip ที่เก็บข้อความไว้ใน xl/sharedStrings.xml + xl/worksheets/sheetN.xml */
+function extractXlsxText(buffer: Buffer) {
+  try {
+    const zip = new AdmZip(buffer);
+    const shared: string[] = [];
+    const sharedEntry = zip.getEntry("xl/sharedStrings.xml");
+    if (sharedEntry) {
+      const xml = sharedEntry.getData().toString("utf8");
+      for (const match of xml.matchAll(/<si>([\s\S]*?)<\/si>/g)) {
+        shared.push(
+          Array.from(match[1].matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g))
+            .map((t) => decodeXmlEntities(t[1]))
+            .join("")
+        );
+      }
+    }
+    const sheets = zip
+      .getEntries()
+      .filter((e) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(e.entryName))
+      .sort((a, b) => Number(a.entryName.match(/sheet(\d+)/i)?.[1] || 0) - Number(b.entryName.match(/sheet(\d+)/i)?.[1] || 0));
+    const blocks: string[] = [];
+    sheets.forEach((entry, index) => {
       const xml = entry.getData().toString("utf8");
-      const texts = Array.from(xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)).map((m) =>
-        m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-      );
-      return "[สไลด์ " + (index + 1) + "] " + texts.join(" ");
-    })
-    .filter((x) => x.length > 10)
-    .join("\n\n");
+      const rows: string[] = [];
+      for (const row of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
+        const cells: string[] = [];
+        for (const cell of row[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+          const attrs = cell[1] || "";
+          const body = cell[2] || "";
+          const type = /t="([^"]+)"/.exec(attrs)?.[1] || "";
+          let value = "";
+          if (type === "s") {
+            const at = Number(/<v>(\d+)<\/v>/.exec(body)?.[1] ?? -1);
+            value = at >= 0 ? shared[at] || "" : "";
+          } else if (type === "inlineStr") {
+            value = Array.from(body.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g))
+              .map((t) => decodeXmlEntities(t[1]))
+              .join("");
+          } else {
+            value = decodeXmlEntities(/<v>([\s\S]*?)<\/v>/.exec(body)?.[1] || "");
+          }
+          if (value.trim()) cells.push(value.trim());
+        }
+        if (cells.length) rows.push(cells.join(" | "));
+      }
+      if (rows.length) blocks.push("[ชีต " + (index + 1) + "]\n" + rows.join("\n"));
+    });
+    return blocks.join("\n\n");
+  } catch {
+    return "";
+  }
+}
+
+/** เดาชนิดไฟล์เสียง/วิดีโอจากไบต์จริง (กัน mimetype ผิดจากเบราว์เซอร์/มือถือ) */
+function sniffMediaMime(buffer: Buffer, fallback: string) {
+  const b = buffer;
+  if (b.length >= 12 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WAVE") return "audio/wav";
+  if (b.length >= 4 && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return "audio/webm";
+  if (b.length >= 12 && b.toString("ascii", 4, 8) === "ftyp") {
+    const brand = b.toString("ascii", 8, 12);
+    return /M4A|mp4a|isom|iso2|mp41|mp42|dash/i.test(brand) && !fallback.startsWith("video/") ? "audio/mp4" : fallback;
+  }
+  if (b.length >= 3 && b.toString("ascii", 0, 3) === "ID3") return "audio/mpeg";
+  if (b.length >= 2 && b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return "audio/mpeg";
+  if (b.length >= 4 && b.toString("ascii", 0, 4) === "OggS") return "audio/ogg";
+  if (b.length >= 4 && b.toString("ascii", 0, 4) === "fLaC") return "audio/flac";
+  return fallback;
+}
+
+function mediaExtension(mimeType: string) {
+  if (/webm/.test(mimeType)) return ".webm";
+  if (/mp4|m4a/.test(mimeType)) return ".m4a";
+  if (/mpeg|mp3/.test(mimeType)) return ".mp3";
+  if (/wav/.test(mimeType)) return ".wav";
+  if (/ogg|opus/.test(mimeType)) return ".ogg";
+  if (/flac/.test(mimeType)) return ".flac";
+  return "";
+}
+
+/** เดาชนิดไฟล์จากนามสกุล เมื่อเบราว์เซอร์ส่ง application/octet-stream มา */
+function mimeFromExtension(ext: string) {
+  switch (ext) {
+    case ".pdf": return "application/pdf";
+    case ".pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case ".png": return "image/png";
+    case ".jpg":
+    case ".jpeg": return "image/jpeg";
+    case ".webp": return "image/webp";
+    case ".gif": return "image/gif";
+    case ".bmp": return "image/bmp";
+    case ".heic": return "image/heic";
+    case ".mp3": return "audio/mpeg";
+    case ".m4a": return "audio/mp4";
+    case ".aac": return "audio/aac";
+    case ".wav": return "audio/wav";
+    case ".ogg":
+    case ".opus": return "audio/ogg";
+    case ".webm": return "audio/webm";
+    case ".mp4":
+    case ".m4v":
+    case ".mov": return "video/mp4";
+    case ".md":
+    case ".markdown": return "text/markdown";
+    case ".csv": return "text/csv";
+    case ".json": return "application/json";
+    default: return "";
+  }
+}
+
+const PDF_OCR_PROMPT = "อ่านข้อความทั้งหมดในไฟล์ PDF นี้ตามที่เห็น เรียงตามลำดับหน้า ห้ามสรุปหรือแต่งเติม";
+const IMAGE_OCR_PROMPT = "อ่านข้อความทั้งหมดในภาพนี้ตามที่เห็น ห้ามสรุปหรือแต่งเติม ถ้าภาพไม่มีข้อความให้ตอบว่า [ไม่มีข้อความ]";
+
+/** ใช้ Gemini native อ่านข้อความจากไฟล์ (เสียง วิดีโอ รูปภาพ PDF สแกน) */
+async function geminiReadText(buffer: Buffer, mimeType: string, prompt: string) {
+  const key = process.env.AI_API_KEY;
+  if (!key) return null;
+  if (buffer.length > 14 * 1024 * 1024) {
+    throw new Error("ไฟล์ใหญ่เกิน 14MB สำหรับการอ่านด้วย AI — กรุณาแบ่งไฟล์ให้เล็กลง");
+  }
+  const model = process.env.GEMINI_TRANSCRIBE_MODEL || process.env.AI_MODEL || "gemini-3.5-flash-lite";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inlineData: { mimeType, data: buffer.toString("base64") } },
+            { text: prompt },
+          ],
+        }],
+        generationConfig: { temperature: 0, maxOutputTokens: 32768 },
+      }),
+      signal: AbortSignal.timeout(180000),
+    }
+  );
+  if (!response.ok) throw new Error("AI อ่านไฟล์ไม่สำเร็จ (HTTP " + response.status + ")");
+  const body: any = await response.json();
+  const text = (body?.candidates?.[0]?.content?.parts || [])
+    .map((p: any) => p?.text || "")
+    .join("")
+    .trim();
+  return text || null;
 }
 
 /** ถอดเสียงไฟล์เสียง/วิดีโอ
@@ -213,36 +402,11 @@ async function transcribeAudio(buffer: Buffer, filename: string, mimeType: strin
   }
 
   // 2) Gemini native (ใช้ AI_API_KEY เดิม)
-  const key = process.env.AI_API_KEY;
-  if (!key) return null;
-  if (buffer.length > 18 * 1024 * 1024) {
-    throw new Error("ไฟล์เสียงใหญ่เกิน 18MB — กรุณาตัดเป็นท่อนสั้นลงก่อนอัปโหลด");
-  }
-  const model = process.env.GEMINI_TRANSCRIBE_MODEL || process.env.AI_MODEL || "gemini-3.5-flash-lite";
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { inlineData: { mimeType, data: buffer.toString("base64") } },
-            { text: "ถอดเสียงในไฟล์นี้เป็นข้อความตามที่ได้ยินทั้งหมด ห้ามสรุปหรือแต่งเติม ถ้าฟังไม่ชัดให้ใส่ [ไม่ได้ยิน]" },
-          ],
-        }],
-        generationConfig: { temperature: 0, maxOutputTokens: 32768 },
-      }),
-      signal: AbortSignal.timeout(180000),
-    }
+  return geminiReadText(
+    buffer,
+    mimeType,
+    "ถอดเสียงในไฟล์นี้เป็นข้อความตามที่ได้ยินทั้งหมด ห้ามสรุปหรือแต่งเติม ถ้าฟังไม่ชัดให้ใส่ [ไม่ได้ยิน]"
   );
-  if (!response.ok) throw new Error("Transcription provider error " + response.status);
-  const body: any = await response.json();
-  const text = (body?.candidates?.[0]?.content?.parts || [])
-    .map((p: any) => p?.text || "")
-    .join("")
-    .trim();
-  return text || null;
 }
 
 const router = Router();
@@ -317,7 +481,7 @@ router.post("/subjects", requireAuth(), async (req: any, res) => {
 router.get("/subjects/:subjectId", requireAuth(), async (req: any, res) => {
   const subject = await prisma.subject.findFirst({
     where: { id: req.params.subjectId, userId: req.user.id },
-    include: { semester: { include: { academicYear: true } }, materials: true, progress: true },
+    include: { semester: { include: { academicYear: true } }, materials: { include: { _count: { select: { chunks: true } } } }, progress: true },
   });
   if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
   // เรียงตามลำดับบท/สัปดาห์ ไม่ใช่ตามลำดับที่ซิงก์เข้ามา
@@ -325,68 +489,132 @@ router.get("/subjects/:subjectId", requireAuth(), async (req: any, res) => {
   res.json({ ...subject, materials: sortByTitle(subject.materials) });
 });
 
-router.post("/materials/upload", requireAuth(), upload.single("file"), async (req: any, res) => {
+router.post("/materials/upload", requireAuth(), uploadSingle("file"), async (req: any, res) => {
   try {
     const subjectId = String(req.body?.subjectId || "").trim();
-    const title = String(req.body?.title || req.file?.originalname || "เอกสารการเรียน").trim().slice(0, 200);
+    const originalName = String(req.file?.originalname || "เอกสารการเรียน");
+    const title = String(req.body?.title || originalName).trim().slice(0, 200);
     if (!subjectId) return res.status(400).json({ error: "กรุณาระบุวิชา" });
-    if (!req.file) return res.status(400).json({ error: "กรุณาเลือกไฟล์ PDF, PPTX, TXT หรือไฟล์บันทึกเสียง" });
+    if (!req.file) return res.status(400).json({ error: "กรุณาเลือกไฟล์ที่รองรับ: " + SUPPORTED_TYPES_TEXT });
 
     const subject = await prisma.subject.findFirst({ where: { id: subjectId, userId: req.user.id } });
     if (!subject) return res.status(404).json({ error: "ไม่พบวิชา" });
 
-    const isAudio = req.file.mimetype.startsWith("audio/") || req.file.mimetype.startsWith("video/");
-    const isPptx = req.file.mimetype.includes("presentationml") || /\.pptx?$/i.test(req.file.originalname);
+    const lower = originalName.toLowerCase();
+    const ext = path.extname(lower);
+    const declaredMime = String(req.file.mimetype || "").toLowerCase();
+    const inferredMime = mimeFromExtension(ext);
+    const mimeType = declaredMime && declaredMime !== "application/octet-stream" ? declaredMime : inferredMime || declaredMime || "application/octet-stream";
+    const buffer: Buffer = req.file.buffer;
+
+    const isAudio = mimeType.startsWith("audio/") || mimeType.startsWith("video/") ||
+      /\.(mp3|m4a|aac|wav|ogg|opus|webm|mp4|mov|m4v|flac)$/.test(lower);
+    const isImage = mimeType.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp|heic)$/.test(lower);
+    const isPdf = mimeType === "application/pdf" || ext === ".pdf";
+    const isPptx = ext === ".pptx" || mimeType.includes("presentationml");
+    const isDocx = ext === ".docx" || mimeType.includes("wordprocessingml.document");
+    const isXlsx = ext === ".xlsx" || mimeType.includes("spreadsheetml");
+    const isLegacy = /\.(ppt|doc|xls)$/.test(lower) ||
+      ["application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint"].includes(mimeType);
+
+    if (isLegacy) {
+      return res.status(422).json({ error: "ไฟล์ .ppt/.doc/.xls รุ่นเก่ายังไม่รองรับ — กรุณาบันทึกเป็น .pptx/.docx/.xlsx หรือ PDF ก่อนอัปโหลด" });
+    }
+
     let textContent = "";
     let pageCount: number | undefined;
     let transcript: string | null = null;
     let sourceLabel = "เอกสารการเรียน";
+    let storedMime = mimeType;
+    let storedName = originalName;
+
     if (isAudio) {
-      const savedName = Date.now() + "-" + req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const savedPath = path.join(MEDIA_DIR, savedName);
-      fs.writeFileSync(savedPath, req.file.buffer);
-      transcript = await transcribeAudio(req.file.buffer, req.file.originalname, req.file.mimetype);
-      if (!transcript) return res.status(422).json({ error: "บันทึกเสียงถูกเก็บไว้แล้ว แต่ยังถอดเสียงไม่ได้ กรุณาตั้งค่า AI_BASE_URL และ AI_API_KEY สำหรับระบบ Transcription" });
-      textContent = "[บันทึกเสียงในชั้นเรียน]\\n" + transcript;
-      sourceLabel = "Lecture Recording";
-      const chunks = chunkText(textContent);
-      const material = await prisma.material.create({
-        data: { category: "slide", title, fileName: req.file.originalname.slice(0,255), mimeType: req.file.mimetype, sourceType: "LECTURER", status: "COMPLETED", textContent, transcript, filePath: savedPath, sourceLabel, userId: req.user.id, subjectId, chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) } },
-        include: { chunks: true },
-      });
-      await prisma.subject.update({ where: { id: subjectId }, data: { status: "IN_PROGRESS" } });
-      void embedMaterial(material.id).catch(() => undefined);
-      return res.status(201).json({ id: material.id, title: material.title, status: material.status, chunkCount: material.chunks.length, sourceLabel, transcriptAvailable: true });
-    }
-    if (isPptx) {
-      textContent = extractPptxText(req.file.buffer);
-      sourceLabel = "Lecture Slides";
-    } else if (req.file.mimetype === "application/pdf") {
-      const parser = new PDFParse({ data: req.file.buffer });
+      // อัดเสียงบนเว็บเป็น webm แต่บางเครื่องส่ง mimetype ผิด → เดาจากไบต์จริง
+      storedMime = sniffMediaMime(buffer, mimeType.startsWith("video/") ? "video/mp4" : "audio/mp4");
+      const fixedExt = mediaExtension(storedMime);
+      if (fixedExt && !lower.endsWith(fixedExt)) storedName = originalName.replace(/\.[a-z0-9]+$/i, "") + fixedExt;
+      transcript = await transcribeAudio(buffer, storedName, storedMime);
+      if (!transcript) {
+        return res.status(422).json({ error: "ถอดเสียงไม่สำเร็จ — กรุณาตรวจสอบ AI_API_KEY หรือแปลงไฟล์เป็น .mp3 แล้วลองใหม่" });
+      }
+      textContent = "[บันทึกเสียง]\n" + transcript;
+      sourceLabel = storedMime.startsWith("video/") ? "ไฟล์วิดีโอ" : "ไฟล์เสียง";
+    } else if (isPdf) {
+      const parser = new PDFParse({ data: buffer });
       const result = await parser.getText();
       textContent = String(result.text || "").trim();
       pageCount = Number(result.total || 0) || undefined;
       await parser.destroy();
-      sourceLabel = "PDF Lecture Material";
+      sourceLabel = "PDF";
+      // PDF สแกน (แทบไม่มีข้อความ) → ให้ AI อ่านภาพในไฟล์ให้
+      if (textContent.replace(/\s+/g, "").length < 20) {
+        try {
+          const ocr = await geminiReadText(buffer, "application/pdf", PDF_OCR_PROMPT);
+          if (ocr) { textContent = ocr; sourceLabel = "PDF (สแกน · AI อ่านให้)"; }
+        } catch {
+          // AI ใช้งานไม่ได้ (เช่นโควตาหมด) → ไปรายงานว่าไม่มีข้อความด้านล่าง
+        }
+      }
+    } else if (isPptx) {
+      textContent = extractPptxText(buffer);
+      pageCount = countPptxSlides(buffer);
+      sourceLabel = "สไลด์ PPTX";
+    } else if (isDocx) {
+      textContent = extractDocxText(buffer);
+      sourceLabel = "เอกสาร DOCX";
+    } else if (isXlsx) {
+      textContent = extractXlsxText(buffer);
+      sourceLabel = "ตาราง XLSX";
+    } else if (isImage) {
+      let ocr: string | null = null;
+      let ocrError = "";
+      try {
+        ocr = await geminiReadText(buffer, mimeType.startsWith("image/") ? mimeType : "image/jpeg", IMAGE_OCR_PROMPT);
+      } catch (error) {
+        ocrError = String(error instanceof Error ? error.message : error);
+      }
+      if (!ocr || /^\[ไม่มีข้อความ\]$/.test(ocr.trim())) {
+        return res.status(422).json({ error: "อ่านข้อความจากรูปภาพไม่ได้" + (ocrError ? " (" + ocrError + ")" : "") + " — ลองอัปโหลดเป็น PDF แทน" });
+      }
+      textContent = ocr;
+      sourceLabel = "รูปภาพ (AI อ่านข้อความ)";
     } else {
-      textContent = req.file.buffer.toString("utf8").trim();
-      sourceLabel = "Lecture Note";
+      textContent = buffer.toString("utf8").replace(/\u0000/g, "").trim();
+      sourceLabel = ext === ".md" || ext === ".markdown" ? "Markdown" : ext === ".csv" ? "CSV" : "ไฟล์ข้อความ";
     }
-    if (textContent.length < 20) return res.status(422).json({ error: "ไฟล์นี้ไม่มีข้อความที่อ่านได้เพียงพอ หากเป็น PDF สแกนภาพให้ใช้ OCR เพิ่มเติม" });
+
+    textContent = cleanExtractedText(textContent);
+    transcript = transcript ? cleanExtractedText(transcript) : null;
+    if (textContent.replace(/\s+/g, "").length < 20) {
+      return res.status(422).json({ error: "ไฟล์นี้ไม่มีข้อความที่อ่านได้เพียงพอ — ถ้าเป็นไฟล์สแกน/รูปภาพ ระบบจะให้ AI อ่านให้ (ต้องมี AI_API_KEY)" });
+    }
+
     const chunks = chunkText(textContent);
-    const savedName = Date.now() + "-" + req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const savedName = Date.now() + "-" + storedName.replace(/[^a-zA-Z0-9._-]/g, "_");
     const savedPath = path.join(MEDIA_DIR, savedName);
-    fs.writeFileSync(savedPath, req.file.buffer);
+    fs.writeFileSync(savedPath, buffer);
+
     const material = await prisma.material.create({
-      data: { category: "slide", title, fileName: req.file.originalname.slice(0,255), mimeType: req.file.mimetype, sourceType: "LECTURER", status: "COMPLETED", textContent, pageCount, filePath: savedPath, sourceLabel, userId: req.user.id, subjectId, chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) } },
+      data: { category: "slide", title, fileName: storedName.slice(0, 255), mimeType: storedMime, sourceType: "LECTURER", status: "COMPLETED", textContent, pageCount, transcript, filePath: savedPath, sourceLabel, userId: req.user.id, subjectId, chunks: { create: chunks.map((content, chunkIndex) => ({ content, chunkIndex })) } },
       include: { chunks: true },
     });
     await prisma.subject.update({ where: { id: subjectId }, data: { status: "IN_PROGRESS" } });
     void embedMaterial(material.id).catch(() => undefined);
-    res.status(201).json({ id: material.id, title: material.title, fileName: material.fileName, status: material.status, pageCount: material.pageCount, chunkCount: material.chunks.length, sourceLabel });
+    res.status(201).json({
+      id: material.id,
+      title: material.title,
+      fileName: material.fileName,
+      status: material.status,
+      pageCount: material.pageCount,
+      chunkCount: material.chunks.length,
+      sourceLabel,
+      transcriptAvailable: !!transcript,
+      createdAt: material.createdAt,
+    });
   } catch (error) {
     console.error("StudyPath material upload failed", error);
-    res.status(500).json({ error: "ประมวลผล Learning Material ไม่สำเร็จ: " + String(error instanceof Error ? error.message : error) });
+    const message = String(error instanceof Error ? error.message : error);
+    res.status(/ใหญ่เกิน/.test(message) ? 413 : 500).json({ error: "ประมวลผล Learning Material ไม่สำเร็จ: " + message });
   }
 });
 

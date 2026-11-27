@@ -83,15 +83,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\restart-backend.ps1
 - ไฟล์เสียงแคชอยู่ที่ `backend/storage/tts` — ลบได้ ไม่กระทบข้อมูลผู้ใช้
   (แคชผูกกับรุ่นเสียง `v2` แล้ว ไฟล์เก่าที่เสียงไม่ตรงจะไม่ถูกใช้)
 
-## อัปโหลดไฟล์เสียง/วิดีโอ (ถอดเสียง)
+## อัปโหลดไฟล์เนื้อหา (PDF / สไลด์ / เอกสาร / รูปภาพ / เสียง)
 
-- รองรับไฟล์เสียง/วิดีโอไม่เกิน **18MB** (ข้อจำกัด inline ของ Gemini) — ไฟล์ใหญ่ให้ตัดเป็นท่อน
-- ใช้ **Gemini native** (`generateContent` + `inlineData`) ผ่าน `AI_API_KEY` เดิม
-  (เดิมยิง `/audio/transcriptions` ของ OpenAI-compat ซึ่ง Gemini ไม่มี → 404)
-- ถ้ามี OpenAI/Whisper ตั้งใน `backend/.env` ระบบจะเลือก Whisper ก่อน:
-  `AI_TRANSCRIBE_BASE_URL=https://api.openai.com/v1`, `AI_TRANSCRIBE_API_KEY=...`, `AI_TRANSCRIBE_MODEL=whisper-1`
-- เปลี่ยนโมเดลถอดเสียงฝั่ง Gemini ได้ที่ `GEMINI_TRANSCRIBE_MODEL` (ค่าเริ่มต้นใช้ `AI_MODEL`)
-- ไฟล์ที่อัปโหลดจะถูกเก็บที่ `backend/storage/materials` (ลบไฟล์ที่อัปโหลดไม่สำเร็จได้)
+- ชนิดที่รองรับ: **PDF, PPTX, DOCX, XLSX, TXT/MD/CSV/JSON, รูปภาพ (PNG/JPG/WEBP), เสียง/วิดีโอ**
+- ขนาดสูงสุด **25MB** ต่อไฟล์ (ไฟล์ที่ต้องให้ AI อ่าน เช่น เสียง/รูปภาพ/PDF สแกน ต้องไม่เกิน 14MB)
+- PDF/PPTX/DOCX/XLSX/TXT อ่านข้อความในเครื่อง (ไม่กินโควตา AI)
+- รูปภาพ + PDF สแกน + เสียง/วิดีโอ ใช้ **Gemini native** (`generateContent` + `inlineData`)
+  - เดิมยิง `/audio/transcriptions` ของ OpenAI-compat ซึ่ง Gemini ไม่มี → 404
+  - ถ้ามี OpenAI/Whisper ตั้งใน `backend/.env` ระบบจะเลือก Whisper ก่อน:
+    `AI_TRANSCRIBE_BASE_URL=https://api.openai.com/v1`, `AI_TRANSCRIBE_API_KEY=...`, `AI_TRANSCRIBE_MODEL=whisper-1`
+  - เปลี่ยนโมเดลได้ที่ `GEMINI_TRANSCRIBE_MODEL` (ค่าเริ่มต้นใช้ `AI_MODEL`)
+- ไฟล์ `.ppt/.doc/.xls` รุ่นเก่าไม่รองรับ → บันทึกเป็น `.pptx/.docx/.xlsx` หรือ PDF ก่อน
+- ไฟล์ที่อัปโหลดถูกเก็บที่ `backend/storage/materials` (ลบไฟล์ที่อัปโหลดไม่สำเร็จได้)
+- ในหน้ารายวิชา ไฟล์ที่ผู้ใช้อัปโหลด/อัดเสียงเองจะอยู่ส่วน **"ไฟล์ที่อัปโหลด"** แยกเป็นรายไฟล์
+  (เรียงใหม่สุดก่อน) ส่วนเนื้อหาจาก Google Classroom ยังอยู่ในหมวดเดิม
+- การอัดเสียง: เว็บได้ `.webm` มือถือได้ `.m4a` — เซิร์ฟเวอร์ตรวจชนิดจากไบต์จริงก่อนส่งให้ AI
 
 ## Google Login (ยังต้องทำใน Google Cloud Console)
 
