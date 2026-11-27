@@ -113,8 +113,10 @@ export default function SubjectDetail(){
  const attendanceMaterials=allMaterials.filter(isAttendance);
  const learningMaterials=allMaterials.filter((m:any)=>!isAttendance(m));
  const subjectText=learningMaterials.map((m:any)=>`${m.title||""} ${m.textContent||""} ${m.category||""}`).join(" ").slice(0,12000);
- const subjectHasCode=/(#include|\bprintf\s*\(|\bscanf\s*\(|\bcout\s*<<|\bcin\s*>>|\bfor\s*\(|\bwhile\s*\(|\bdef\s+\w+\s*\(|\bfunction\s+\w+\s*\(|เขียนโปรแกรม|เขียนโค้ด|ภาษา C\+\+|ภาษา Java|ภาษา Python)/i.test(subjectText);
- const subjectHasFlowchart=/(ผังงาน|flow\s*chart|ผังภาพ|ลำดับการทำงาน|อัลกอริทึม|algorithm|กระบวนการ)/i.test(subjectText);
+ const subjectName=String(subject.name||"");
+ const isMathSubject=/คณิตศาสตร์|สถิติ|แคลคูลัส|คอมพิวเตอร์กับคณิต|mathematics|math|statistics|calculus/i.test(subjectName);
+ const subjectHasCode=!isMathSubject&&/(#include|\bprintf\s*\(|\bscanf\s*\(|\bcout\s*<<|\bcin\s*>>|\bfor\s*\(|\bwhile\s*\(|\bdef\s+\w+\s*\(|\bfunction\s+\w+\s*\(|เขียนโปรแกรม|เขียนโค้ด|ภาษา C\+\+|ภาษา Java|ภาษา Python)/i.test(subjectText);
+ const subjectHasFlowchart=!isMathSubject&&/(ผังงาน|flow\s*chart|ผังภาพ|ลำดับการทำงาน|อัลกอริทึม|algorithm|กระบวนการ)/i.test(subjectText);
  // ไฟล์ที่ผู้ใช้อัปโหลด/อัดเสียงเอง (sourceType LECTURER) แยกออกมาแสดงเป็นรายไฟล์ เรียงใหม่สุดก่อน
  const uploadedMaterials=learningMaterials
   .filter((m:any)=>String(m.sourceType||"").toUpperCase()==="LECTURER")

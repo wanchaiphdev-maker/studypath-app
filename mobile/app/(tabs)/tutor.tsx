@@ -1007,7 +1007,7 @@ export default function Tutor() {
   }
 
   // loadProblem intentionally closes over the current in-page pull settings.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     const action = String(routeParams.action || "").trim();
     if (!subjectId || !action || routeActionHandled.current === subjectId + "|" + action) return;
@@ -1032,6 +1032,7 @@ export default function Tutor() {
     }, 0);
     return () => clearTimeout(timer);
   }, [subjectId, routeParams.action]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   /** โจทย์ซ้อน: สร้างโจทย์ใหม่จากไฟล์เดียวกัน ให้ลองทำเอง — ไม่มีโค้ดตัวอย่าง */
   async function loadVariant() {
@@ -2278,16 +2279,10 @@ export default function Tutor() {
           {/* ทุกแนวเปิดเป็นหน้าแบบฝึกทันที และใช้เนื้อหาของวิชาที่เลือก */}
           <ScrollView style={{ maxHeight: 470 }} showsVerticalScrollIndicator={false}>
             {(subjectFormats || [
-              ...(hasCodeMode ? [{ k: "code", label: "ข้อสอบโค้ด", hint: "โจทย์จากวิชา พร้อมช่องเขียนโค้ด", icon: "code-slash-outline", color: "#34d399" }] : []),
-              { k: "options", label: "ตัวเลือกแบบช้อยส์", hint: "โจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง) เลือกแล้วเฉลยทันที", icon: "list-outline", color: "#fbbf24" },
-              ...(hasDiagramMode ? [{ k: "flowchart", label: "ผังภาพ", hint: "โจทย์จากวิชา พร้อมช่องวาดผังงานเป็นขั้นตอน", icon: "git-branch-outline", color: "#38bdf8" }] : []),
-              ...(hasCodeMode ? [{ k: "pseudocode", label: "รหัสเทียม", hint: "ตอบเป็นขั้นตอน pseudocode ไม่ต้องเป็นภาษาโปรแกรมจริง", icon: "terminal-outline", color: "#818cf8" }] : []),
-              ...(hasCompareMode || hasStepsMode ? [{ k: "table", label: "ตารางเทียบ", hint: "จัดคำตอบเป็นตารางเทียบข้อมูล", icon: "grid-outline", color: "#f472b6" }] : []),
-              ...(hasLangMode ? [{ k: "translate", label: "แปลประโยค", hint: "แปลข้อความจากเนื้อหาในวิชา ไทย ↔ อังกฤษ", icon: "language-outline", color: "#2dd4bf" }] : []),
-              ...(hasLangMode ? [{ k: "cloze", label: "เติมคำตอบ", hint: "เติมคำศัพท์หรือไวยากรณ์ในช่องว่างจากเนื้อหาวิชา", icon: "create-outline", color: "#a78bfa" }] : []),
+              { k: "options", label: "ตัวเลือกแบบช้อยส์", hint: "โจทย์พร้อมตัวเลือก 4 ข้อ และเฉลยทันที", icon: "list-outline", color: "#fbbf24" },
               { k: "random", label: "สุ่มทุกอย่าง", hint: "สุ่มเฉพาะรูปแบบที่เหมาะกับวิชานี้", icon: "shuffle-outline", color: "#fb923c" },
-              { k: "", label: "ดึงโจทย์ (ระบบเลือกให้เอง)", hint: "สุ่มโจทย์จากไฟล์ในวิชา แล้วให้ระบบเลือกรูปแบบคำตอบเอง", icon: "document-text-outline", color: "#4ade80" },
-              { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "สอบ 5 ข้อ แล้วระบบบอกว่าหัวข้อไหนต้องเน้น หัวข้อไหนข้ามได้", icon: "checkmark-done-outline", color: "#a78bfa" },
+              { k: "", label: "ดึงโจทย์จากเนื้อหา", hint: "ให้ระบบเลือกรูปแบบที่ตรงกับหัวข้ออัตโนมัติ", icon: "document-text-outline", color: "#4ade80" },
+              { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "ทำข้อสอบสั้นและดูหัวข้อที่ควรเน้น", icon: "checkmark-done-outline", color: "#a78bfa" },
             ] as { k: string; label: string; hint: string; icon: string; color: string }[]).map((s) => {
               const isQuiz = s.k === "quiz";
               // แถว quiz ไฮไลต์เมื่ออยู่หน้าวินิจฉัย / แถวแนวอื่นไฮไลต์เมื่ออยู่หน้าดึงและแนวตรงกับที่เลือกไว้

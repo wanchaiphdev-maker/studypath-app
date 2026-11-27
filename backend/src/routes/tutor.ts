@@ -3410,25 +3410,35 @@ router.post("/open", requireAuth(), async (req: any, res) => {
     const formats: { k: AnswerFormat; label: string; hint: string; icon: string; color: string }[] = [
       { k: "options", label: "ตัวเลือกแบบช้อยส์", hint: "โจทย์พร้อมตัวเลือก 4 ข้อ และเฉลยทันที", icon: "list-outline", color: "#fbbf24" },
     ];
-    if (subjectChoiceKeys.includes("code") || sig.code >= EXTRA_MIN.code) formats.push(
-      { k: "code", label: "ข้อสอบโค้ด", hint: "เขียนหรือแก้โค้ดจากเนื้อหาในวิชา", icon: "code-slash-outline", color: "#34d399" },
-      { k: "pseudocode", label: "รหัสเทียม", hint: "ตอบเป็นขั้นตอนรหัสเทียมจากเนื้อหาจริง", icon: "terminal-outline", color: "#818cf8" },
-    );
-    if (subjectChoiceKeys.includes("diagram") || sig.flow >= EXTRA_MIN.diagram) formats.push(
-      { k: "flowchart", label: "ผังภาพ", hint: "วาดผังงานเป็นขั้นตอนจากเนื้อหาวิชา", icon: "git-branch-outline", color: "#38bdf8" },
-    );
-    if (tag === "language" || sig.vocab >= EXTRA_MIN.vocab) {
+    // สายคณิตศาสตร์: แยกสูตร/คำนวณออกจากโค้ด ผังภาพ และตารางเทียบ — ห้ามขึ้นเพราะชื่อมีคำว่าคอมพิวเตอร์
+    if (tag === "math") {
       formats.push(
-        { k: "translate", label: "แปลประโยค", hint: "แปลข้อความจริงจากเนื้อหาวิชา", icon: "language-outline", color: "#2dd4bf" },
-        { k: "cloze", label: "เติมคำตอบ", hint: "เติมคำศัพท์/ไวยากรณ์ในช่องว่าง", icon: "create-outline", color: "#a78bfa" },
+        { k: "random", label: "สุ่มโจทย์คณิตศาสตร์", hint: "สุ่มโจทย์คำนวณ/ข้อเท็จจริงเฉพาะเนื้อหาวิชานี้", icon: "shuffle-outline", color: "#fb923c" } as any,
+        { k: "", label: "ดึงโจทย์จากเนื้อหา", hint: "ให้ระบบเลือกโจทย์คณิตศาสตร์ที่ตรงหัวข้ออัตโนมัติ", icon: "document-text-outline", color: "#4ade80" } as any,
+      );
+    } else {
+      if (tag === "programming" && sig.code >= EXTRA_MIN.code && subjectChoiceKeys.includes("code")) formats.push(
+        { k: "code", label: "ข้อสอบโค้ด", hint: "เขียนหรือแก้โค้ดจากเนื้อหาในวิชา", icon: "code-slash-outline", color: "#34d399" },
+        { k: "pseudocode", label: "รหัสเทียม", hint: "ตอบเป็นขั้นตอนรหัสเทียมจากเนื้อหาจริง", icon: "terminal-outline", color: "#818cf8" },
+      );
+      if (tag !== "language" && sig.flow >= EXTRA_MIN.diagram && subjectChoiceKeys.includes("diagram")) formats.push(
+        { k: "flowchart", label: "ผังภาพ", hint: "วาดผังงานเป็นขั้นตอนจากเนื้อหาวิชา", icon: "git-branch-outline", color: "#38bdf8" },
+      );
+      if (tag === "language" || sig.vocab >= EXTRA_MIN.vocab) {
+        formats.push(
+          { k: "translate", label: "แปลประโยค", hint: "แปลข้อความจริงจากเนื้อหาวิชา", icon: "language-outline", color: "#2dd4bf" },
+          { k: "cloze", label: "เติมคำตอบ", hint: "เติมคำศัพท์/ไวยากรณ์ในช่องว่าง", icon: "create-outline", color: "#a78bfa" },
+        );
+      }
+      if (tag !== "math" && (sig.compare >= EXTRA_MIN.compare || subjectChoiceKeys.includes("compare"))) formats.push(
+        { k: "table", label: "ตารางเทียบ", hint: "จัดข้อมูลและคำตอบเป็นตาราง", icon: "grid-outline", color: "#f472b6" },
+      );
+      formats.push(
+        { k: "random", label: "สุ่มทุกอย่าง", hint: "สุ่มเฉพาะรูปแบบที่เหมาะกับเนื้อหาวิชานี้", icon: "shuffle-outline", color: "#fb923c" } as any,
+        { k: "", label: "ดึงโจทย์จากเนื้อหา", hint: "ให้ระบบเลือกรูปแบบที่ตรงกับหัวข้ออัตโนมัติ", icon: "document-text-outline", color: "#4ade80" } as any,
       );
     }
-    if (sig.calc >= EXTRA_MIN.steps || sig.compare >= EXTRA_MIN.compare) formats.push(
-      { k: "table", label: "ตารางเทียบ", hint: "จัดข้อมูลและคำตอบเป็นตาราง", icon: "grid-outline", color: "#f472b6" },
-    );
     formats.push(
-      { k: "random", label: "สุ่มทุกอย่าง", hint: "สุ่มเฉพาะรูปแบบที่เหมาะกับเนื้อหาวิชานี้", icon: "shuffle-outline", color: "#fb923c" } as any,
-      { k: "", label: "ดึงโจทย์จากเนื้อหา", hint: "ให้ระบบเลือกรูปแบบที่ตรงกับหัวข้ออัตโนมัติ", icon: "document-text-outline", color: "#4ade80" } as any,
       { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "ทำข้อสอบสั้นและดูหัวข้อที่ควรเน้น", icon: "checkmark-done-outline", color: "#a78bfa" } as any,
     );
     res.json({
