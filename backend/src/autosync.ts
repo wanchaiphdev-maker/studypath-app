@@ -33,6 +33,18 @@ async function syncOneUser(userId: string, role: string) {
   return body;
 }
 
+/** เริ่มซิงก์บัญชีที่เพิ่งอนุญาต Google ทันที ไม่ต้องรอรอบ autosync ถัดไป */
+export async function runAutosyncForUser(userId: string, role: string, reason = "google-login") {
+  try {
+    const summary = await syncOneUser(userId, role);
+    console.log(`[autosync:${reason}] user ${userId}: นำเข้าใหม่ ${summary.imported || 0} · อัปเดต ${summary.updated || 0} · ข้าม ${summary.skipped || 0}`);
+    return summary;
+  } catch (error) {
+    console.warn(`[autosync:${reason}] user ${userId}: ล้มเหลว -`, error);
+    throw error;
+  }
+}
+
 export async function runAutosyncOnce(reason: string) {
   if (running) return { skipped: true as const, reason: "sync กำลังทำงานอยู่" };
   running = true;
@@ -78,6 +90,10 @@ export async function runAutosyncOnce(reason: string) {
 }
 
 export function startAutosync() {
+  if (process.env.AUTOSYNC_DISABLED === "1") {
+    console.log("[autosync] ปิดตาม AUTOSYNC_DISABLED=1");
+    return () => undefined;
+  }
   const ms = Math.max(1, INTERVAL_MIN) * 60_000;
   console.log(`[autosync] เริ่มทำงานอัตโนมัติทุก ${INTERVAL_MIN} นาที`);
   // รอ 30 วินาทีแรก เพื่อให้เซิร์ฟเวอร์เริ่มทำงานเสร็จก่อน

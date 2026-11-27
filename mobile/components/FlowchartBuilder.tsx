@@ -4,7 +4,9 @@ import {
 } from "react-native";
 import Svg, { Circle, Defs, Ellipse, Marker, Path, Polygon, Rect } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, font } from "../lib/theme";
+// The imperative React Native PanResponder/DOM bridge below intentionally manages refs
+// and performance-sensitive user gesture callbacks outside normal React render.
+/* eslint-disable react-hooks/refs, react-hooks/purity */
 
 type ShapeKind =
   | "process" | "alternateProcess" | "decision" | "data" | "predefinedProcess" | "internalStorage"

@@ -10,7 +10,8 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "infoPlist": {
-        "NSCameraUsageDescription": "ใช้กล้องสำหรับการประชุมทางวิดีโอ",
+        "NSCameraUsageDescription": "ใช้กล้องถ่ายภาพวิธีทำโจทย์เพื่อให้ระบบช่วยตรวจคำตอบ",
+        "NSPhotoLibraryUsageDescription": "เลือกรูปวิธีทำโจทย์จากคลังภาพเพื่อให้ระบบช่วยตรวจคำตอบ",
         "NSMicrophoneUsageDescription": "ใช้ไมโครโฟนสำหรับการประชุม"
       },
       "bitcode": false
@@ -53,6 +54,14 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "ใช้กล้องถ่ายภาพวิธีทำโจทย์เพื่อให้ระบบช่วยตรวจคำตอบ",
+          "photosPermission": "เลือกรูปวิธีทำโจทย์จากคลังภาพเพื่อให้ระบบช่วยตรวจคำตอบ",
+          "microphonePermission": false
+        }
+      ],
       "@livekit/react-native-expo-plugin",
       "@config-plugins/react-native-webrtc",
       "expo-audio"

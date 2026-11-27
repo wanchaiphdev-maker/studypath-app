@@ -1,11 +1,9 @@
 import { useEffect, useRef } from "react";
-import { } from "react-native";
-import { Alert } from "../lib/alert";
+import { Alert, AlertHost } from "../lib/alert";
 import * as Linking from "expo-linking";
 import { setToken } from "../lib/storage";
 import { Stack, router, useRootNavigationState } from "expo-router";
 import { ThemeProvider } from "../lib/theme";
-import { AlertHost } from "../lib/alert";
 import { parseAuthCallback } from "../lib/googleAuth";
 
 function useGoogleCallback() {

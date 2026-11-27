@@ -51,7 +51,9 @@ function chunkText(text: string) {
  * กฎการแยกหมวดอยู่ที่ filters/classroom-category.ts
  */
 function shouldKeepItem(externalId: string, title: string, fileName: string | null, textContent: string, mimeType?: string | null) {
-  if (!categorize(externalId, title, mimeType)) return false;
+  const category = categorize(externalId, title, mimeType);
+  // เช็คชื่อ/ลงชื่อไม่ใช่เนื้อหาวิชา แม้ Classroom จะจัดไว้ในหมวดงานก็ตาม
+  if (!category || category === "checkin") return false;
   return isStudyContent(title + " " + (fileName || "") + " " + String(textContent || ""));
 }
 

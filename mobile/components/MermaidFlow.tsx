@@ -51,35 +51,6 @@ function cleanLabel(raw: string): string {
     .trim();
 }
 
-function splitShape(rest: string): { shape: Shape; label: string } | null {
-  const r = rest.trimStart();
-  if (r.startsWith("([")) {
-    const end = r.endsWith("])") ? r.length - 2 : r.length;
-    return { shape: "stadium", label: cleanLabel(r.slice(2, end)) };
-  }
-  if (r.startsWith("[[")) {
-    const end = r.endsWith("]]") ? r.length - 2 : r.length;
-    return { shape: "rect", label: cleanLabel(r.slice(2, end)) };
-  }
-  if (r.startsWith("{{")) {
-    const end = r.endsWith("}}") ? r.length - 2 : r.length;
-    return { shape: "diamond", label: cleanLabel(r.slice(2, end)) };
-  }
-  if (r.startsWith("[")) {
-    const end = r.endsWith("]") ? r.length - 1 : r.length;
-    return { shape: "rect", label: cleanLabel(r.slice(1, end)) };
-  }
-  if (r.startsWith("(")) {
-    const end = r.endsWith(")") ? r.length - 1 : r.length;
-    return { shape: "round", label: cleanLabel(r.slice(1, end)) };
-  }
-  if (r.startsWith("{")) {
-    const end = r.endsWith("}") ? r.length - 1 : r.length;
-    return { shape: "diamond", label: cleanLabel(r.slice(1, end)) };
-  }
-  return null;
-}
-
 const OPENERS: [string, string, Shape][] = [
   ["([", "])", "stadium"],
   ["[/", "/]", "io"],           // พาราแลลเลล้รัม input/output

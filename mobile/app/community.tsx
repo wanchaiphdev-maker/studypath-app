@@ -8,7 +8,7 @@ import { getCommunity, createCommunityPost } from "../lib/api";
 export default function Community(){
  const [posts,setPosts]=useState<any[]>([]);const[title,setTitle]=useState("");const[content,setContent]=useState("");const[busy,setBusy]=useState(false);
  async function load(){try{setPosts(await getCommunity())}catch(e){Alert.alert("โหลด Community ไม่สำเร็จ",String(e))}}
- useEffect(()=>{load()},[]);
+ useEffect(()=>{const timer=setTimeout(()=>{void load()},0);return()=>clearTimeout(timer)},[]);
  async function post(){if(!title.trim()||!content.trim())return;setBusy(true);try{await createCommunityPost(title,content);setTitle("");setContent("");await load()}catch(e){Alert.alert("โพสต์ไม่สำเร็จ",String(e))}finally{setBusy(false)}}
  return <ScrollView style={styles.screen} contentContainerStyle={styles.content}><Pressable onPress={()=>(router.canGoBack?.()?router.back():router.replace("/(tabs)"))}><Text style={styles.back}>← กลับ</Text></Pressable><Text style={font.h1}>Community</Text>
  <Card><TextInput value={title} onChangeText={setTitle} placeholder="หัวข้อ" placeholderTextColor={colors.textMuted} style={styles.input}/><TextInput value={content} onChangeText={setContent} multiline placeholder="เขียนคำถามหรือสิ่งที่อยากแบ่งปัน..." placeholderTextColor={colors.textMuted} style={[styles.input,styles.area]}/><Button onPress={post} loading={busy}>โพสต์</Button></Card>

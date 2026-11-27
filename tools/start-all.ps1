@@ -98,7 +98,10 @@ for ($i = 0; $i -lt 30 -and -not $publicUrl; $i++) {
   Start-Sleep -Seconds 2
   if (Test-Path $tunnelLog) {
     $m = Select-String -Path $tunnelLog -Pattern "https://[a-z0-9-]+\.trycloudflare\.com" -AllMatches | Select-Object -First 1
-    if ($m) { $publicUrl = $m.Matches[0].Value }
+    if ($m) {
+      $candidate = $m.Matches | Where-Object { $_.Value -ne "https://api.trycloudflare.com" } | Select-Object -First 1
+      if ($candidate) { $publicUrl = $candidate.Value }
+    }
   }
 }
 
@@ -123,6 +126,10 @@ if ($publicUrl) {
   Write-Host "  $publicUrl"
   Write-Host "(บันทึกไว้ที่ LINK.txt ด้วย)"
 } else {
+  # อย่าทิ้ง URL ของ Cloudflare API ไว้ให้ผู้ใช้เข้าใจผิดว่าเป็นเว็บแอป
+  if ((Get-Content -Path $linkFile -Raw -ErrorAction SilentlyContinue).Trim() -eq "https://api.trycloudflare.com") {
+    Set-Content -Path $linkFile -Value "ยังไม่มีลิงก์สาธารณะที่ใช้งานได้ — เปิดระบบจากเครื่องหลักแล้วรอให้ tunnel สร้างลิงก์ก่อน" -Encoding utf8
+  }
   Write-Host ""
   Write-Host "ยังไม่ได้ลิงก์ public — ตรวจสอบ tunnel ที่ $tunnelLog"
 }

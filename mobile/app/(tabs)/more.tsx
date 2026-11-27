@@ -12,7 +12,7 @@ type Me={id:string;name:string;email:string;role:"ADMIN"|"LECTURER"|"MEMBER";the
 export default function MoreScreen(){
  const{setColor}=useTheme();const[me,setMe]=useState<Me|null>(null);const[learning,setLearning]=useState<any>(null);const[loading,setLoading]=useState(true);
  const load=useCallback(async()=>{try{const[p,s]=await Promise.all([api<Me>("/me"),api("/me/learning")]);setMe(p);setLearning(s)}catch(e){Alert.alert("โหลดโปรไฟล์ไม่สำเร็จ",String(e))}finally{setLoading(false)}},[]);
- useEffect(()=>{load()},[load]);
+ useEffect(()=>{const timer=setTimeout(()=>{void load()},0);return()=>clearTimeout(timer)},[load]);
  if(loading)return <View style={styles.center}><ActivityIndicator color={colors.accent}/></View>;
  async function logout(){await removeToken();router.replace("/(auth)/login")}
  return <ScrollView style={styles.screen} contentContainerStyle={styles.content}>

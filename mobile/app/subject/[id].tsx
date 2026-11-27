@@ -66,7 +66,7 @@ export default function SubjectDetail(){
  const{id}=useLocalSearchParams<{id:string}>();const[subject,setSubject]=useState<any>(null),[title,setTitle]=useState(""),[text,setText]=useState(""),[busy,setBusy]=useState(false),[noteOpen,setNoteOpen]=useState(false);
  const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);const state=useAudioRecorderState(recorder);
  useEffect(()=>{setAudioModeAsync({playsInSilentMode:true,allowsRecording:true}).catch(()=>{})},[]);
- async function load(){try{setSubject(await getSubject(String(id)))}catch(e){Alert.alert("โหลดวิชาไม่สำเร็จ",String(e))}}useEffect(()=>{load()},[id]);
+ async function load(){try{setSubject(await getSubject(String(id)))}catch(e){Alert.alert("โหลดวิชาไม่สำเร็จ",String(e))}} useEffect(()=>{let alive=true;const timer=setTimeout(()=>{void getSubject(String(id)).then(v=>{if(alive)setSubject(v)}).catch(e=>{if(alive)Alert.alert("โหลดวิชาไม่สำเร็จ",String(e))})},0);return()=>{alive=false;clearTimeout(timer)}},[id]);
  async function addMaterial(){if(!text.trim())return;setBusy(true);try{await createMaterial(String(id),title||"Lecture Note",text);setText("");setTitle("");await load()}catch(e){Alert.alert("เพิ่มเอกสารไม่สำเร็จ",String(e))}finally{setBusy(false)}}
  async function record(){
   try{
@@ -148,7 +148,7 @@ export default function SubjectDetail(){
  };
  return <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
   {/* ไอคอน "?" (แบบทดสอบ) ถูกเอาออก — ฟังก์ชันข้อสอบอยู่ที่แท็บ "ข้อสอบ" แล้ว (ตามที่ผู้ใช้เลือก) */}
-  <View style={styles.header}><Pressable onPress={()=>router.back()}><IconTile icon="arrow-back" color={colors.textSecondary} size={40}/></Pressable><View style={{flex:1,marginLeft:10}}><Text style={styles.mini}>COURSE</Text><Text style={font.title}>{subject.code||"Subject"}</Text></View></View>
+  <View style={styles.header}><Pressable onPress={()=>router.canGoBack()?router.back():router.replace("/(tabs)/subjects" as any)}><IconTile icon="arrow-back" color={colors.textSecondary} size={40}/></Pressable><View style={{flex:1,marginLeft:10}}><Text style={styles.mini}>COURSE</Text><Text style={font.title}>{subject.code||"Subject"}</Text></View></View>
   <GlowCard style={styles.hero}><Text style={styles.heroEyebrow}>CURRENT COURSE</Text><Text style={styles.heroTitle}>{subject.name}</Text><View style={styles.heroBottom}><View><Text style={styles.heroPct}>{Math.round(mastery)}%</Text><Text style={styles.heroCaption}>Mastery</Text></View><View style={{flex:1,marginLeft:18}}><ProgressBar value={mastery} color="#fff"/><Text style={styles.heroCaption}>{subject.materials?.length||0} learning materials</Text></View></View></GlowCard>
   <SectionHeader title="เพิ่มเนื้อหา" />
   <Card><View style={styles.actions}>

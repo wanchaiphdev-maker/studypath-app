@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { colors, font, spacing } from "../../lib/theme";
@@ -37,9 +38,9 @@ const SPEEDS: { k: Speed; label: string; hint: string; icon: string }[] = [
 
 type Level = "normal" | "high" | "deep";
 const LEVELS: { k: Level; label: string; hint: string; color: string }[] = [
-  { k: "normal", label: "ปกติ", hint: "พื้นฐาน", color: "#34d399" },
-  { k: "high", label: "สูง", hint: "เจาะละเอียด", color: "#f59e0b" },
-  { k: "deep", label: "เจาะลึก", hint: "ขั้นสูง", color: "#f43f5e" },
+  { k: "normal", label: "ง่าย", hint: "จำและเข้าใจ", color: "#34d399" },
+  { k: "high", label: "ปานกลาง", hint: "ประยุกต์ใช้", color: "#f59e0b" },
+  { k: "deep", label: "ยาก", hint: "วิเคราะห์", color: "#f43f5e" },
 ];
 
 /* ================================================================== */
@@ -88,7 +89,7 @@ const CodeInput = ({ value, onChange, placeholder }: { value: string; onChange: 
   };
 
   /** เลื่อนชั้นสีให้ตรงกับช่องพิมเสมอ — ไม่งั้นโค้ดยาวๆจะเลื่อนไม่ตรงกัน */
-  const syncScroll = (e?: any) => {
+  const syncScroll = useCallback((e?: any) => {
     // อ่านค่าจาก event เท่านั้น — การอ่าน scrollTop จาก ref บน RNW ได้ค่าที่ไม่ตรงเสมอ
     // ผลคือชั้นสีไม่ขยับตาม = ผู้ใช้เลื่อนแล้วเห็นกรอบเปล่า
     const off0 = e?.nativeEvent?.contentOffset ?? e?.target;
@@ -97,9 +98,9 @@ const CodeInput = ({ value, onChange, placeholder }: { value: string; onChange: 
     setOff((p) => (p.x === x && p.y === y ? p : { x, y }));
     const box: any = layerRef.current;
     if (box && box.style) box.style.transform = `translate(${-x}px, ${-y}px)`;
-  };
+  }, []);
 
-  const jumpTo = (where: "top" | "bottom") => {
+  const jumpTo = useCallback((where: "top" | "bottom") => {
     const input: any = ref.current;
     if (!input) return;
     const max = Math.max(0, (input.scrollHeight || 0) - (input.clientHeight || 300));
@@ -108,7 +109,7 @@ const CodeInput = ({ value, onChange, placeholder }: { value: string; onChange: 
     input.scrollLeft = 0;
     // ส่งค่าให้ชั้นสีโดยตรง ไม่รอให้ onScroll ปาดมา (บางครั้งไม่ยิงตอนกำหนดค่าเอง)
     syncScroll({ nativeEvent: { contentOffset: { x: 0, y } } });
-  };
+  }, [syncScroll]);
   // ย่อบรรทัดอัตโนมัติ + Tab = 4 ช่องว่าง (เฉพาะเว็บ ที่เข้าถึง DOM ได้)
   useEffect(() => {
     const el: any = ref.current;
@@ -149,7 +150,11 @@ const CodeInput = ({ value, onChange, placeholder }: { value: string; onChange: 
 
   // เพิ่งได้โค้ดยาว (เช่นกด "ให้อาจารย์ช่วยร่าง") → เลื่อนไปท้ายสุดให้เห็นทันที
   useEffect(() => {
-    if (!value) { syncScroll({ nativeEvent: { contentOffset: { x: 0, y: 0 } } }); return; }
+    if (!value) {
+      const timer = setTimeout(() => syncScroll({ nativeEvent: { contentOffset: { x: 0, y: 0 } } }), 0);
+      timers.current.push(timer);
+      return () => { timers.current.forEach(clearTimeout); timers.current = []; };
+    }
     // layout ยังไม่เสร็จตอน rAF แรก -> ลองอีก 2 รอบ แล้วค่อยตัดสินว่าเนื้อหาล้นหรือไม่
     const t1 = setTimeout(() => {
       const input: any = ref.current;
@@ -163,7 +168,7 @@ const CodeInput = ({ value, onChange, placeholder }: { value: string; onChange: 
     }, 100);
     timers.current.push(t1);
     return () => { timers.current.forEach(clearTimeout); timers.current = []; };
-  }, [value]);
+  }, [value, jumpTo, syncScroll]);
 
   return <View style={styles.editor}>
     <View style={styles.editorBar}>
@@ -533,7 +538,6 @@ const RichText = ({ text, streaming, tone }: { text: string; streaming?: boolean
 /*  เสียงพูด: เสียงจริงจาก Gemini ถ้าไม่ได้ใช้เสียงเบราว์เซอร์แทน        */
 /* ================================================================== */
 
-let current: any = null;
 const voiceCache = new Map<string, string>();
 
 /* ---- เล่นเสียงผ่าน <audio> ตัวเดียว ----
@@ -595,7 +599,6 @@ async function playUrl(url: string) {
   a.src = url;
   a.currentTime = 0;
   await a.play();
-  current = a;
 }
 
 /** ล็อกเสียงสำรอง (Siri/เบราว์เซอร์) ไว้ตัวเดียว ไม่ให้เปลี่ยนไปตามระบบ */
@@ -675,7 +678,6 @@ function stopSpeak() {
   const w: any = typeof window !== "undefined" ? window : null;
   const a = getAudio();
   if (a) { try { a.pause(); } catch { } }
-  current = null;
   if (w?.speechSynthesis) w.speechSynthesis.cancel();
 }
 
@@ -705,9 +707,12 @@ export default function Tutor() {
 
   const [quiz, setQuiz] = useState<any>(null);
   const [picks, setPicks] = useState<number[]>([]);
+  const [photoAnswers, setPhotoAnswers] = useState<Record<number, ImagePicker.ImagePickerAsset>>({});
   const [quizBusy, setQuizBusy] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [focusTopics, setFocusTopics] = useState<string[]>([]);
+  const [quizSourceMode, setQuizSourceMode] = useState<"source" | "new">("source");
+  const [quizMaterialId, setQuizMaterialId] = useState("");
   const [syllabus, setSyllabus] = useState<any>(null);
   const [sylBusy, setSylBusy] = useState(false);
   const [sylFor, setSylFor] = useState("");
@@ -723,7 +728,7 @@ export default function Tutor() {
       .catch(() => { if (alive) { setSyllabus({ topics: [] }); setSylFor(subjectId); } })
       .finally(() => { if (alive) setSylBusy(false); });
     return () => { alive = false; };
-  }, [subjectId]);
+  }, [subjectId, sylFor]);
 
   /* --- เลือก "ไฟล์ต้นทาง" + "ระดับความยาก" — ใช้กับทุกแนวข้อสอบ ---
      ระดับอิงลำดับไฟล์ใน Classroom: ไฟล์ต้น (บทแรก/สัปดาห์แรก) = ง่าย ไฟล์ท้าย = ยาก
@@ -742,12 +747,14 @@ export default function Tutor() {
     setFileList([]);
     setPickFile("");   // ไฟล์ที่เลือกไว้เป็นของวิชาเก่า = ล้างทิ้ง
     setPickLevel("");
+    setQuizMaterialId("");
+    setQuizSourceMode("source");
     tutorFiles(subjectId)
       .then((r: any) => { if (alive) { setFileList(r.files || []); setFilesFor(subjectId); } })
       .catch(() => { if (alive) { setFileList([]); setFilesFor(subjectId); } })
       .finally(() => { if (alive) setFileBusy(false); });
     return () => { alive = false; };
-  }, [subjectId]);
+  }, [subjectId, filesFor]);
 
   /* --- ระบบข้อสอบ: ดึงโจทย์จริงจากในวิชา + เลือกรูปแบบคำตอบ --- */
   // รูปแบบคำตอบไม่ให้ผู้ใช้เลือกเองแล้ว (ซ้ำกับโหมดในเมนู) ให้เซร์ฟเวอร์เลือกตามโจทย์
@@ -777,7 +784,7 @@ export default function Tutor() {
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [seen, setSeen] = useState<string[]>([]);
   const [doneItems, setDoneItems] = useState<string[]>([]);
-  const [missing, setMissing] = useState<string[]>([]);
+  const [, setMissing] = useState<string[]>([]);
   const [zoom, setZoom] = useState(false);
   const [src, setSrc] = useState<"class" | "submission">("class");
   // หน้าเลือกก่อนดึงโจทย์ — กด "ดึงโจทย์" แล้วขึ้นมาให้เลือก "แนวไหน + หัวข้อไหน" ก่อนสุ่มจริง
@@ -1065,7 +1072,7 @@ export default function Tutor() {
   useEffect(() => { if (!subjectId && subjects[0]?.id) setSubjectId(subjects[0].id); }, [subjects, subjectId]);
   // เปลี่ยนวิชา = เริ่มโหมดใหม่เสมอ — กัน "โหมดโค้ด" ค้างจากวิชาก่อนหน้า
   // ไปบังคับโจทย์ของวิชาที่เนื้อหาไม่มีเขียนโค้ด (เช่น 1204102)
-  useEffect(() => { setMode("explain"); }, [subjectId]);
+  useEffect(() => {const timer=setTimeout(()=>setMode("explain"),0);return()=>clearTimeout(timer)}, [subjectId]);
 
   useEffect(() => {
     if (!subjectId) return;
@@ -1215,9 +1222,12 @@ export default function Tutor() {
     setTab("diag");
     setDiagStage("quiz");
     const focus = list?.length ? list : focusTopics;
-    setQuizBusy(true); setResult(null); setQuiz(null); setPicks([]);
+    setQuizBusy(true); setResult(null); setQuiz(null); setPicks([]); setPhotoAnswers({});
     try {
-      const r = await tutorDiagnose(subjectId, level, focus.length ? focus : undefined);
+      const r = await tutorDiagnose(subjectId, level, focus.length ? focus : undefined, {
+        sourceMode: quizSourceMode,
+        materialId: quizMaterialId,
+      });
       setQuiz(r); setPicks(new Array(r.questions.length).fill(-1));
     } catch (e) { Alert2("สร้างข้อสอบไม่สำเร็จ", String(e)); }
     finally { setQuizBusy(false); }
@@ -1225,14 +1235,37 @@ export default function Tutor() {
 
   async function submitQuiz() {
     if (!quiz) return;
-    if (picks.some((p) => p < 0)) { Alert2("ยังตอบไม่ครบ", "เลือกคำตอบทุกข้อก่อน"); return; }
+    const unanswered = quiz.questions.some((question: any, index: number) => question.type === "SHORT_ANSWER"
+      ? !photoAnswers[index]
+      : picks[index] < 0);
+    if (unanswered) { Alert2("ยังตอบไม่ครบ", "เลือกคำตอบหรือแนบภาพวิธีทำให้ครบทุกข้อก่อนส่ง"); return; }
     setQuizBusy(true);
     try {
-      const r = await tutorEvaluate(subjectId, quiz.questions, picks, quiz.quizId);
+      const r = await tutorEvaluate(subjectId, quiz.questions, picks, quiz.quizId, photoAnswers);
       setResult(r);
       if (r.advice) speak(spokenText(r.advice));
     } catch (e) { Alert2("ประเมินไม่สำเร็จ", String(e)); }
     finally { setQuizBusy(false); }
+  }
+
+  async function captureWrittenAnswer(questionIndex: number) {
+    try {
+      if (Platform.OS !== "web") {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) { Alert2("ยังไม่ได้อนุญาตกล้อง", "อนุญาตให้ใช้กล้องเพื่อถ่ายภาพวิธีทำ"); return; }
+      }
+      // Call the web camera picker directly from the user's button press so
+      // browsers retain the camera/file-input activation.
+      const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85, allowsEditing: false });
+      if (!picked.canceled && picked.assets?.[0]) setPhotoAnswers((current) => ({ ...current, [questionIndex]: picked.assets[0] }));
+    } catch (error) { Alert2("เปิดกล้องไม่ได้", String(error)); }
+  }
+
+  async function chooseWrittenAnswerPhoto(questionIndex: number) {
+    try {
+      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.85, allowsEditing: false });
+      if (!picked.canceled && picked.assets?.[0]) setPhotoAnswers((current) => ({ ...current, [questionIndex]: picked.assets[0] }));
+    } catch (error) { Alert2("เลือกรูปไม่ได้", String(error)); }
   }
 
   /* ---------------------------------------------------------------- */
@@ -1262,7 +1295,7 @@ export default function Tutor() {
           </View>
         </Pressable>
         <Pressable style={styles.levelHit} onPress={() => setOptOpen(true)}>
-          <Pill text={`คำอธิบาย: ${levelMeta.label}`} color={levelMeta.color} />
+          <Pill text={`ความยาก: ${levelMeta.label}`} color={levelMeta.color} />
         </Pressable>
         <Pressable style={styles.changeBtn} onPress={() => setPickerOpen(true)}>
           <Text style={styles.changeText}>เปลี่ยน</Text>
@@ -1555,7 +1588,7 @@ export default function Tutor() {
             pickFile={pickFile} onFile={setPickFile}
             pickLevel={pickLevel} onLevel={setPickLevel}
             codeMode={pullStyle === "code" || mode === "code"}
-            stepStart={1} compact
+            stepStart={1}
           />
           <Button onPress={() => loadProblem(pullStyle)} loading={probBusy} icon="play-outline">
             ลองเตรียมโจทย์อีกครั้ง
@@ -1646,7 +1679,7 @@ export default function Tutor() {
             pickFile={pickFile} onFile={setPickFile}
             pickLevel={pickLevel} onLevel={setPickLevel}
             codeMode={fmt === "code"}
-            stepStart={1} compact
+            stepStart={1}
           />
           <View style={styles.probHead}>
             <Pill text={fmtMeta.label} color="#4ade80" />
@@ -1878,24 +1911,94 @@ export default function Tutor() {
         <Card style={styles.panel}>
           <Text style={font.h2}>วินิจฉัยอัตโนมัติ</Text>
 
-          {/* ชิปเลือกหัวข้อย้ายขึ้นไปหน้าเลือกก่อนดึงโจทย์แล้ว (เลือกที่เดียว ใช้ร่วมกัน) */}
+          <Text style={[styles.segLabel, { marginTop: 14 }]}>รูปแบบข้อสอบ</Text>
+          <View style={{ gap: 8, marginTop: 8 }}>
+            <Pressable onPress={() => setQuizSourceMode("source")}
+              style={[styles.optRow, quizSourceMode === "source" && { borderColor: colors.accent, backgroundColor: colors.accent + "18" }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={font.title}>ยึดแบบฝึกหัดและเนื้อหาในไฟล์</Text>
+                <Text style={font.caption}>ถ้าพบโจทย์จริงจะใช้เป็นหลัก ถ้าไม่พบจะสร้างจากบทเรียนที่เลือก</Text>
+              </View>
+              {quizSourceMode === "source" ? <Ionicons name="checkmark-circle" size={20} color={colors.accent} /> : null}
+            </Pressable>
+            <Pressable onPress={() => setQuizSourceMode("new")}
+              style={[styles.optRow, quizSourceMode === "new" && { borderColor: "#38bdf8", backgroundColor: "#38bdf818" }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={font.title}>สร้างโจทย์ใหม่จากบทเรียน</Text>
+                <Text style={font.caption}>สร้างคำถามใหม่ที่ไม่คัดลอกแบบฝึกหัดเดิม และยึดข้อมูลในไฟล์เท่านั้น</Text>
+              </View>
+              {quizSourceMode === "new" ? <Ionicons name="checkmark-circle" size={20} color="#38bdf8" /> : null}
+            </Pressable>
+          </View>
+
+          <Text style={[styles.segLabel, { marginTop: 14 }]}>ไฟล์ต้นทาง</Text>
+          {fileBusy ? <Text style={font.caption}>กำลังโหลดรายชื่อไฟล์...</Text> : <View style={styles.srcRow}>
+            <Pressable style={[styles.srcChip, !quizMaterialId && styles.srcChipOn]} onPress={() => setQuizMaterialId("")}>
+              <Text style={[styles.srcChipText, !quizMaterialId && { color: colors.accent }]}>ทุกไฟล์ในวิชา</Text>
+            </Pressable>
+            {fileList.map((file: any) => {
+              const on = quizMaterialId === file.id;
+              return <Pressable key={file.id} style={[styles.srcChip, on && styles.srcChipOn]}
+                onPress={() => setQuizMaterialId(on ? "" : file.id)}>
+                <Text numberOfLines={2} style={[styles.srcChipText, on && { color: colors.accent }]}>{file.title}</Text>
+              </Pressable>;
+            })}
+          </View>}
+
           <Text style={[styles.segLabel, { marginTop: 14 }]}>หัวข้อที่จะสอบ</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 8 }}>
+            <Pressable style={[styles.chip, !focusTopics.length && styles.chipOn]} onPress={() => setFocusTopics([])}>
+              <Text style={[styles.chipText, !focusTopics.length && { color: "#fff" }]}>ทุกหัวข้อ</Text>
+            </Pressable>
+            {(syllabus?.topics || []).slice(0, 24).map((topic: any) => {
+              const on = focusTopics.includes(topic.label);
+              return <Pressable key={topic.k + topic.label} style={[styles.chip, on && styles.chipOn]} onPress={() => {
+                setFocusTopics((current) => on
+                  ? current.filter((item) => item !== topic.label)
+                  : current.length < 6 ? [...current, topic.label] : current);
+              }}>
+                <Text style={[styles.chipText, on && { color: "#fff" }]}>{topic.label}</Text>
+              </Pressable>;
+            })}
+          </View>
+          {sylBusy ? <Text style={[font.caption, { marginTop: 6 }]}>กำลังโหลดหัวข้อจากเนื้อหา...</Text> : null}
+          {!sylBusy && !(syllabus?.topics || []).length ? <Text style={[font.caption, { marginTop: 6 }]}>ไม่มีหัวข้อย่อยที่สกัดได้ ระบบจะใช้เนื้อหาในไฟล์ทั้งหมด</Text> : null}
 
           <Button onPress={() => startQuizFocused()} loading={quizBusy} icon="checkmark-circle-outline">
-            เริ่มข้อสอบ ({focusTopics.length ? focusTopics.length + " หัวข้อ" : "ทั้งวิชา"})
+            เริ่มข้อสอบ ({quizMaterialId ? "ไฟล์ที่เลือก" : "ทั้งวิชา"} · {focusTopics.length ? focusTopics.length + " หัวข้อ" : "ทุกหัวข้อ"})
           </Button>
         </Card>
 
         {quiz && !result ? <View style={{ gap: 10 }}>
           <View style={styles.progressWrap}>
-            <Text style={font.caption}>ตอบแล้ว {picks.filter((p) => p >= 0).length}/{quiz.questions.length} ข้อ</Text>
-            <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${(picks.filter((p) => p >= 0).length / quiz.questions.length) * 100}%` }]} /></View>
+            <Text style={font.caption}>ตอบแล้ว {quiz.questions.filter((question: any, index: number) => question.type === "SHORT_ANSWER" ? !!photoAnswers[index] : picks[index] >= 0).length}/{quiz.questions.length} ข้อ</Text>
+            <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${(quiz.questions.filter((question: any, index: number) => question.type === "SHORT_ANSWER" ? !!photoAnswers[index] : picks[index] >= 0).length / quiz.questions.length) * 100}%` }]} /></View>
             {quiz.focused?.length ? <Text style={font.caption}>เน้น: {quiz.focused.join(" · ")}</Text> : null}
           </View>
-          {quiz.questions.map((qq: any, qi: number) => <Card key={qi} style={styles.qCard}>
+          {quiz.generatedByAi === false ? <Text style={[font.caption, { color: "#f59e0b" }]}>{quiz.generationNotice || "AI ไม่พร้อมใช้งานชั่วคราว ข้อสอบนี้ยึดข้อความจริงในไฟล์"}</Text> : null}
+          {quiz.questions.map((qq: any, qi: number) => {
+            const photo = photoAnswers[qi];
+            return <Card key={qi} style={styles.qCard}>
             <Text style={styles.qNum}>ข้อที่ {qi + 1}{qq.topic ? ` · ${qq.topic}` : ""}</Text>
             <Text style={font.title}>{qq.question}</Text>
-            {uniqueOptions<string>(qq.options).map((o: string, oi: number) => {
+            {qq.type === "SHORT_ANSWER" ? <View style={{ gap: 9, marginTop: 10 }}>
+              <Text style={font.caption}>เขียนวิธีทำหรือคำตอบลงสมุด แล้วถ่ายภาพให้เห็นข้อความชัดเจนทั้งหน้า</Text>
+              {photo ? <View style={{ gap: 6 }}>
+                <Image source={{ uri: photo.uri }} resizeMode="contain" style={{ width: "100%", height: 220, borderRadius: 12, backgroundColor: colors.surfaceAlt }} />
+                <Text style={font.caption}>{photo.fileName || "แนบภาพแล้ว"} · ระบบจะส่งภาพให้ AI ตรวจ และไม่เก็บเป็นไฟล์ถาวร</Text>
+              </View> : null}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                <Pressable style={[styles.opt, { flexGrow: 1, justifyContent: "center" }]} onPress={() => captureWrittenAnswer(qi)}>
+                  <Ionicons name="camera-outline" size={18} color={colors.accent} /><Text style={styles.optText}>{photo ? "ถ่ายใหม่" : "ถ่ายรูปวิธีทำ"}</Text>
+                </Pressable>
+                <Pressable style={[styles.opt, { flexGrow: 1, justifyContent: "center" }]} onPress={() => chooseWrittenAnswerPhoto(qi)}>
+                  <Ionicons name="images-outline" size={18} color={colors.accent} /><Text style={styles.optText}>{photo ? "เปลี่ยนรูป" : "เลือกรูปจากเครื่อง"}</Text>
+                </Pressable>
+                {photo ? <Pressable style={[styles.opt, { justifyContent: "center" }]} onPress={() => setPhotoAnswers((current) => { const next = { ...current }; delete next[qi]; return next; })}>
+                  <Ionicons name="trash-outline" size={18} color="#f43f5e" /><Text style={styles.optText}>ลบรูป</Text>
+                </Pressable> : null}
+              </View>
+            </View> : uniqueOptions<string>(qq.options || []).map((o: string, oi: number) => {
               const on = picks[qi] === oi;
               return <Pressable key={oi} onPress={() => { const n = [...picks]; n[qi] = oi; setPicks(n); }}
                 style={[styles.opt, on && styles.optOn]}>
@@ -1906,7 +2009,8 @@ export default function Tutor() {
             <Pressable style={styles.voice} onPress={() => play(qq.question + " " + (qq.options || []).join(" "), "q" + qi)}>
               <Ionicons name="volume-high-outline" size={14} color="#a78bfa" /><Text style={styles.voiceText}>อ่านคำถาม</Text>
             </Pressable>
-          </Card>)}
+          </Card>;
+          })}
           <Button onPress={submitQuiz} loading={quizBusy} icon="checkmark">ส่งคำตอบ</Button>
         </View> : null}
 
@@ -1915,7 +2019,7 @@ export default function Tutor() {
             <Text style={[styles.score, { color: result.score >= 70 ? "#34d399" : result.score >= 40 ? "#f59e0b" : "#f43f5e" }]}>{result.score}</Text>
             <Text style={font.caption}>คะแนน ({result.correct}/{result.total})</Text>
           </View>
-          <Text style={styles.recTitle}>คำแนะนำจากอาจารย์ AI</Text>
+          <Text style={styles.recTitle}>{result.generatedByAi ? "คำแนะนำจากอาจารย์ AI" : "คำแนะนำจากผลคะแนน"}</Text>
           <RichText text={result.advice || ""} />
           <Pressable style={[styles.voice, { alignSelf: "flex-start", marginTop: 8 }]} onPress={() => play(result.advice || "", "advice")}>
             <Ionicons name="volume-high-outline" size={14} color="#a78bfa" /><Text style={styles.voiceText}>อ่านคำแนะนำ</Text>
@@ -1929,15 +2033,22 @@ export default function Tutor() {
 
           <Text style={[font.title, { marginTop: 16 }]}>ดูเฉลยทีละข้อ</Text>
           <View style={{ gap: 8, marginTop: 8 }}>
-            {(result.results || []).map((r: any, i: number) => <View key={i} style={[styles.reviewRow, r.correct ? styles.reviewOk : styles.reviewBad]}>
-              <Ionicons name={r.correct ? "checkmark-circle" : "close-circle"} size={17} color={r.correct ? "#34d399" : "#f43f5e"} />
+            {(result.results || []).map((r: any, i: number) => <View key={i} style={[styles.reviewRow, r.score >= 70 ? styles.reviewOk : styles.reviewBad]}>
+              <Ionicons name={r.score >= 70 ? "checkmark-circle" : "close-circle"} size={17} color={r.score >= 70 ? "#34d399" : "#f43f5e"} />
               <View style={{ flex: 1 }}>
                 <Text style={font.title}>{i + 1}. {r.question}</Text>
-                <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "700", color: r.correct ? "#34d399" : "#f43f5e" }}>
-                  {r.correct ? "ตอบถูก ✓" : "ตอบผิด ✗"}
-                </Text>
-                <Text style={[font.caption, { color: "#34d399" }]}>เฉลย: {r.answer || "—"}</Text>
-                <Text style={[font.caption, { color: r.correct ? "#34d399" : "#f43f5e" }]}>คำตอบของคุณ: {r.chosen || "ไม่ได้ตอบข้อนี้"}</Text>
+                {r.type === "SHORT_ANSWER" ? <>
+                  <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "700", color: r.score >= 70 ? "#34d399" : "#f43f5e" }}>วิธีทำได้ {r.score}/100</Text>
+                  <Text style={[font.caption, { marginTop: 4 }]}>อ่านข้อความจากภาพ: {r.transcription || "อ่านไม่พบข้อความ"}</Text>
+                  <Text style={[font.caption, { color: "#34d399" }]}>แนวคำตอบ: {r.answer || "—"}</Text>
+                  {r.feedback ? <Text style={[font.caption, { color: r.score >= 70 ? "#34d399" : "#f43f5e" }]}>ข้อเสนอแนะ: {r.feedback}</Text> : null}
+                </> : <>
+                  <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "700", color: r.correct ? "#34d399" : "#f43f5e" }}>
+                    {r.correct ? "ตอบถูก ✓" : "ตอบผิด ✗"}
+                  </Text>
+                  <Text style={[font.caption, { color: "#34d399" }]}>เฉลย: {r.answer || "—"}</Text>
+                  <Text style={[font.caption, { color: r.correct ? "#34d399" : "#f43f5e" }]}>คำตอบของคุณ: {r.chosen || "ไม่ได้ตอบข้อนี้"}</Text>
+                </>}
                 {r.explain ? <View style={{ marginTop: 4 }}>
                   <Text style={[font.caption, { fontWeight: "700" }]}>เหตุผล:</Text>
                   <RichText text={r.explain} />
@@ -2027,7 +2138,7 @@ export default function Tutor() {
           <View style={styles.popDivider} />
 
           {/* ระดับความยาก */}
-          <Text style={styles.popHead}>ความลึกคำอธิบาย</Text>
+          <Text style={styles.popHead}>ความยากของโจทย์</Text>
           <View style={styles.popCol}>
             {LEVELS.map((l) => {
               const on = level === l.k;
@@ -2141,7 +2252,14 @@ export default function Tutor() {
               const on = isQuiz ? diagStage === "quiz" : diagStage === "pull" && pullStyle === s.k;
               return <Pressable key={s.k || "system"} onPress={() => {
                   setExamPick(false);
-                  if (isQuiz) { startQuizFocused(); return; }
+                  if (isQuiz) {
+                    setFocusedPractice(false);
+                    setPullStyle("");
+                    setTab("diag");
+                    setDiagStage("quiz");
+                    setQuiz(null); setResult(null); setPicks([]);
+                    return;
+                  }
                   // เลือกแนวแล้วเปิดหน้าแบบฝึกทันที พร้อมดึงโจทย์ให้ตรงกับฟอร์แมต
                   setDiagStage("pull");
                   setTab("diag");
@@ -2223,9 +2341,8 @@ function FileLevelPick(props: {
   /** เลขขั้นแรก — หน้าดึงโจทย์เริ่มจาก 3 (มีแนว + หัวข้อนำอยู่), หน้าฝึกเริ่มจาก 1 */
   stepStart?: number;
   /** กระชับ = ใช้ในหน้าโจทย์ระหว่างฝึก (รายการไฟล์สั้นลง) */
-  compact?: boolean;
 }) {
-  const { files, busy, pickFile, onFile, pickLevel, onLevel, codeMode = false, stepStart = 1, compact = false } = props;
+  const { files, busy, pickFile, onFile, pickLevel, onLevel, codeMode = false, stepStart = 1 } = props;
   const [expanded, setExpanded] = useState(false);
   const visibleFiles = codeMode ? files.filter((file: any) => Number(file.codeCount || 0) > 0) : files;
   const selectedFile = visibleFiles.find((file: any) => file.id === pickFile);
@@ -2455,15 +2572,15 @@ const styles = StyleSheet.create({
   zoomNeedTitle: { fontSize: 11.5, fontWeight: "900", color: "#fbbf24", marginBottom: 4 },
   zoomNeedText: { fontSize: 13, color: "#1e293b", marginTop: 2 },
   needBox: { marginBottom: 12, padding: 12, borderRadius: 13, backgroundColor: "#fbbf2412", borderWidth: 1, borderColor: "#fbbf2455" },
-  srcRow: { flexDirection: "row", gap: 6, marginBottom: 12 },
+  srcRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
   stepLabel: { fontSize: 13, fontWeight: "900", color: colors.text, marginTop: 16, marginBottom: 7 },
   pickRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pickGroup: { fontSize: 11, fontWeight: "900", color: colors.textMuted, letterSpacing: 0.6, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
   styleBtn: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   styleBtnText: { fontSize: 11, fontWeight: "800", color: colors.textSecondary },
-  srcChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 11, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+  srcChip: { maxWidth: 250, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 11, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   srcChipOn: { backgroundColor: "#38bdf81f", borderColor: "#38bdf8" },
-  srcChipText: { fontSize: 11, fontWeight: "800", color: colors.textSecondary },
+  srcChipText: { maxWidth: 220, fontSize: 11, fontWeight: "800", color: colors.textSecondary },
   needTitle: { fontSize: 12, fontWeight: "900", color: "#fbbf24" },
   needRow: { flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 4 },
   needBox2: { width: 20, height: 20, borderRadius: 7, borderWidth: 1.5, borderColor: "#fbbf24", alignItems: "center", justifyContent: "center" },

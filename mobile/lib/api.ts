@@ -372,11 +372,67 @@ export async function tutorPlan(subjectId: string) {
 export async function tutorStudyPlan(subjectId: string, choices: { title: string; choice: "start" | "skip" }[], weakTopic: string) {
   return api<any>("/studypath/tutor/study-plan", { method: "POST", body: JSON.stringify({ subjectId, choices, weakTopic }) });
 }
-export async function tutorDiagnose(subjectId: string, difficulty: string, topics?: string[]) {
-  return api<any>("/studypath/tutor/diagnose", { method: "POST", body: JSON.stringify({ subjectId, difficulty, topics: topics || [] }) });
+export async function tutorDiagnose(
+  subjectId: string,
+  difficulty: string,
+  topics?: string[],
+  options?: { sourceMode?: "source" | "new"; materialId?: string },
+) {
+  return api<any>("/studypath/tutor/diagnose", {
+    method: "POST",
+    body: JSON.stringify({
+      subjectId,
+      difficulty,
+      topics: topics || [],
+      sourceMode: options?.sourceMode || "source",
+      materialId: options?.materialId || "",
+    }),
+  });
 }
-export async function tutorEvaluate(subjectId: string, questions: any[], answers: number[], quizId?: string) {
-  return api<any>("/studypath/tutor/diagnose/evaluate", { method: "POST", body: JSON.stringify({ subjectId, questions, answers, quizId }) });
+export async function tutorEvaluate(
+  subjectId: string,
+  questions: any[],
+  answers: (number | null)[],
+  quizId?: string,
+  photoAnswers: Record<number, { uri: string; fileName?: string | null; mimeType?: string | null; file?: any }> = {},
+) {
+  const photoEntries = Object.entries(photoAnswers).filter(([, asset]) => !!asset?.uri);
+  if (!photoEntries.length) {
+    return api<any>("/studypath/tutor/diagnose/evaluate", { method: "POST", body: JSON.stringify({ subjectId, questions, answers, quizId }) });
+  }
+
+  const token = await getToken();
+  const form = new FormData();
+  form.append("subjectId", subjectId);
+  form.append("quizId", quizId || "");
+  form.append("answers", JSON.stringify(answers));
+  for (const [indexText, asset] of photoEntries) {
+    const index = Number(indexText);
+    const name = asset.fileName || `answer-${index + 1}.jpg`;
+    const mime = asset.mimeType || "image/jpeg";
+    if (Platform.OS === "web") {
+      let file: any = asset.file;
+      if (!file) {
+        const blob = await (await fetch(asset.uri)).blob();
+        file = new File([blob], name, { type: mime });
+      }
+      form.append(`image_${index}`, file, name);
+    } else {
+      form.append(`image_${index}`, { uri: asset.uri, name, type: mime } as any);
+    }
+  }
+  const response = await fetch(getUrl("/studypath/tutor/diagnose/evaluate"), {
+    method: "POST",
+    cache: "no-store",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+  if (!response.ok) {
+    if ((response.status === 401 || response.status === 403) && token) await removeToken().catch(() => undefined);
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || response.statusText || "ส่งภาพตรวจไม่สำเร็จ");
+  }
+  return response.json();
 }
 
 /** ดึงโจทย์จริงจากในวิชา พร้อมจัดรูปแบบตามที่เลือก (topics = หัวข้อที่ผู้ใช้เลือกตอนกดดึง)
