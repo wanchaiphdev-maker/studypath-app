@@ -8,6 +8,15 @@
 Get-Content .\LINK.txt
 ```
 
+## เปิดแอปแบบไม่ต้องพิมพ์คำสั่ง
+
+ดับเบิลคลิก **`Start StudyPath.bat`** ที่ root ของโปรเจกต์
+
+- เปิด backend (3000), share server (8090), tunnel และ watchdog ให้อัตโนมัติ
+- พิมพ์ลิงก์ public ปัจจุบัน แล้วเปิดในเบราว์เซอร์ให้เลย
+- ถ้าเปิดซ้ำ ระบบจะไม่เปิดซ้ำ (idempotent)
+- ถ้าไม่ต้องการให้เปิดเบราว์เซอร์: `Start StudyPath.bat --no-open`
+
 ## เริ่มระบบทั้งหมด (ครั้งเดียว)
 
 ```powershell
