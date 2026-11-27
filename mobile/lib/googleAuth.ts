@@ -22,7 +22,7 @@ export function isGoogleLoginEnabled() {
  * - false = ยังไม่ลงทะเบียน → ซ่อนปุ่มไว้ก่อน ดีกว่าปล่อยให้ผู้ใช้ไปตันที่หน้า error ของ Google
  * ตรวจผ่าน API เพื่อให้ปุ่มโผล่เองทันทีหลังลงทะเบียน โดยไม่ต้อง build แอปใหม่
  */
-export async function googleLoginReady(): Promise<boolean> {
+export async function googleLoginReady(force = false): Promise<boolean> {
   const flag = process.env.EXPO_PUBLIC_GOOGLE_LOGIN;
   if (flag === "0") return false;
   if (flag === "1") return true;
@@ -30,7 +30,7 @@ export async function googleLoginReady(): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
-    const response = await fetch(`${BASE_URL}/auth/google/ready`, { signal: controller.signal, cache: "no-store" as any });
+    const response = await fetch(`${BASE_URL}/auth/google/ready${force ? "?refresh=1" : ""}`, { signal: controller.signal, cache: "no-store" as any });
     clearTimeout(timer);
     if (!response.ok) return true; // เช็กไม่ได้ → คงพฤติกรรมเดิม (แสดงปุ่ม)
     const data: any = await response.json();

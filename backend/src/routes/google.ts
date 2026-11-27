@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { prisma, requireAuth } from "../auth";
+import { runAutosyncForUser } from "../autosync";
 
 const router = Router();
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -49,11 +50,11 @@ function redirectUri(req?: any) {
 /* ------------------------------------------------------------------ */
 const readyCache = new Map<string, { ready: boolean; at: number }>();
 
-async function googleRedirectReady(req: any) {
+async function googleRedirectReady(req: any, force = false) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) return false;
   const uri = redirectUri(req);
-  const cached = readyCache.get(uri);
+  const cached = force ? undefined : readyCache.get(uri);
   if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.ready;
 
   const params = new URLSearchParams({
@@ -184,7 +185,9 @@ router.post("/google/url", requireAuth(), (req: any, res) => {
 
 router.get("/google/ready", async (req, res) => {
   try {
-    res.json({ ready: await googleRedirectReady(req) });
+    // refresh=1 → ข้ามแคช 5 นาที (ใช้หลังผู้ใช้เพิ่งบันทึก Redirect URI ใน Google Console)
+    const force = String(req.query.refresh || "") === "1";
+    res.json({ ready: await googleRedirectReady(req, force) });
   } catch {
     res.json({ ready: false });
   }
@@ -286,6 +289,9 @@ router.get("/google/callback", async (req, res) => {
 
     const token = makeAppToken(user);
     res.redirect(returnUrl + (returnUrl.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token));
+    // Classroom scopes were granted in this OAuth flow. Start the first import now;
+    // the redirect is already sent, so large course files do not hold up login.
+    void runAutosyncForUser(user.id, user.role).catch(() => undefined);
   } catch (error) {
     console.error("Google OAuth callback failed", error);
     return fail("เชื่อมต่อ Google ไม่สำเร็จ");

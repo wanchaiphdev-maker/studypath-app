@@ -108,25 +108,41 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\restart-backend.ps1
   (เรียงใหม่สุดก่อน) ส่วนเนื้อหาจาก Google Classroom ยังอยู่ในหมวดเดิม
 - การอัดเสียง: เว็บได้ `.webm` มือถือได้ `.m4a` — เซิร์ฟเวอร์ตรวจชนิดจากไบต์จริงก่อนส่งให้ AI
 
-## Google Login (ยังต้องทำใน Google Cloud Console)
+## Google Login (ขั้นตอนใน Google Cloud Console)
 
 ปุ่ม **"เข้าสู่ระบบด้วย Google" แสดงตลอด** (เดิมซ่อนเมื่อยังตั้งค่าไม่ครบ ทำให้ผู้ใช้คิดว่าปุ่มหาย)
-ถ้ายังไม่ได้ลงทะเบียน redirect URI ของลิงก์นี้ใน Google Console การกดปุ่มจะขึ้นกล่องบอก
-URL ที่ต้องนำไปเพิ่มให้ตรงตัว เช่น `https://<ลิงก์ปัจจุบัน>/auth/google/callback`
+ถ้ายังไม่ได้ลงทะเบียน redirect URI ของลิงก์นี้ใน Google Console หน้า login จะแสดง URL ที่ต้องเพิ่มให้ตรงตัว
+เช่น `https://<ลิงก์ปัจจุบัน>/auth/google/callback` พร้อมปุ่ม **"ตรวจอีกครั้ง"**
 ระหว่างนี้เพื่อนยังสมัคร/เข้าสู่ระบบด้วยอีเมล+รหัสผ่านได้ตามปกติ
 
-ถ้าจะเปิด Google login บนลิงก์ tunnel:
+ขั้นตอนเปิด Google login สำหรับลิงก์ใหม่ (ทำครั้งเดียวต่อลิงก์):
 
-1. ไปที่ Google Cloud Console → APIs & Services → Credentials → OAuth client (Web)
-2. เพิ่ม Authorized redirect URI: `https://<โดเมนปัจจุบัน>/auth/google/callback`
-   (ลิงก์ trycloudflare เปลี่ยนทุกครั้งที่ tunnel เริ่มใหม่ → ต้องอัปเดต URI ทุกครั้ง
-   ถ้าต้องการถาวรต้องใช้ named tunnel + โดเมนของตัวเอง)
-3. OAuth consent screen → เปลี่ยนชื่อแอปจาก "Amway Team" เป็น **StudyPath**
-   และเพิ่มอีเมลเพื่อนใน Test users
-4. ตรวจว่า `GET /auth/google/ready` ตอบ `{"ready":true}` แล้วรีเฟรชหน้า login
+1. เปิด https://console.cloud.google.com/apis/credentials?project=723288106952
+2. หัวข้อ **OAuth 2.0 Client IDs** → คลิกชื่อ client ชนิด **Web application** → ดินสอ (Edit)
+3. **Authorized redirect URIs** → `+ ADD URI` → วาง `https://<ลิงก์ปัจจุบัน>/auth/google/callback`
+   (ไม่มี `/` ปิดท้าย) → **SAVE** — รอ 1-2 นาทีให้ Google อัปเดต
+4. กลับมาที่หน้า login ของแอป → กด **"ตรวจอีกครั้ง"** ใต้ปุ่ม Google
+   (ปุ่มนี้เรียก `/auth/google/ready?refresh=1` จึงข้ามแคช 5 นาที ไม่ต้องรีสตาร์ท backend)
+   - ขึ้น "พร้อมแล้ว" → กดปุ่ม Google ได้เลย
+   - ยังไม่พร้อม → ตรวจว่า URI วางในช่อง Authorized **redirect** URIs (ไม่ใช่ JavaScript origins) และ Save แล้ว
+5. **Google Auth Platform → Branding**: ตั้งชื่อแอปเป็น **StudyPath** (เดิม amwayTeam/Amway Team)
+6. **Audience**: ถ้า Publishing status = Testing ให้เพิ่มอีเมล Google ของคนที่จะล็อกอินใน **Test users**
+   (ไม่เพิ่ม → Google ขึ้น "Access blocked: … has not completed the verification process")
+7. **Data Access**: ต้องมี scope `openid`, `email`, `profile`,
+   `classroom.courses.readonly`, `classroom.courseworkmaterials.readonly`,
+   `classroom.coursework.me.readonly`, `classroom.coursework.students.readonly`,
+   `classroom.announcements.readonly`, `drive.readonly`
 
-หมายเหตุ: บนเครื่องนี้ `http://localhost:3000/auth/google/callback` ลงทะเบียนไว้แล้ว
-จึงเห็น `ready:true` เมื่อเปิดผ่าน localhost แต่ลิงก์ tunnel ยังต้องเพิ่มแยก
+หมายเหตุ:
+
+- Client นี้เป็นชนิด **Web application** (ตรวจแล้ว: localhost พอร์ตอื่นถูกปฏิเสธ) จึงใช้ลิงก์ tunnel ได้
+- `http://localhost:3000/auth/google/callback` ลงทะเบียนไว้แล้ว → เปิดผ่าน localhost ได้เลย
+  แต่ `http://127.0.0.1:3000/...` ยังไม่ลงทะเบียน (แนะนำให้เพิ่มด้วยถ้าจะเปิดผ่าน 127.0.0.1)
+- ลิงก์ trycloudflare **เปลี่ยนทุกครั้งที่ cloudflared เริ่มใหม่** (watchdog จะรีสตาร์ท tunnel ให้ถ้าตาย
+  แล้วเขียน `LINK.txt` ใหม่) → ต้องเพิ่ม URI ใหม่ทุกครั้ง
+  ถ้าต้องการถาวร: ใช้ named tunnel + โดเมนของตัวเอง หรือ ngrok static domain แล้วลงทะเบียน URI นั้นครั้งเดียว
+- โหมด Testing: refresh token ของ Google หมดอายุใน ~7 วัน → ต้องกดเชื่อม Classroom ใหม่เป็นระยะ
+  (ถ้าอยากให้ถาวรต้องผ่านการ verification ของ Google ซึ่งใช้เวลาหลายสัปดาห์)
 
 ## ลืมรหัสผ่าน / บัญชีที่สมัครด้วย Google เข้ารหัสไม่ได้
 
