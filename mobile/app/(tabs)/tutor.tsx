@@ -4,7 +4,7 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { colors, font, spacing } from "../../lib/theme";
 import { Alert } from "../../lib/alert";
 import { Button, Card, GlowCard, Pill } from "../../lib/ui";
@@ -225,7 +225,7 @@ function guessLang(code: string): string {
 }
 
 /* รูปแบบคำตอบของระบบข้อสอบ — เลือกได้ทุกข้อ */
-type Fmt = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode" | "translate";
+type Fmt = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode" | "translate" | "cloze";
 const FORMATS: { k: Fmt; label: string; icon: string; hint: string }[] = [
   { k: "text", label: "ข้อความ", icon: "document-text-outline", hint: "ตอบเป็นข้อความ" },
   { k: "options", label: "ตัวเลือก", icon: "list-outline", hint: "A B C ง" },
@@ -235,6 +235,7 @@ const FORMATS: { k: Fmt; label: string; icon: string; hint: string }[] = [
   { k: "table", label: "ตาราง", icon: "grid-outline", hint: "เทียบข้อมูล" },
   { k: "pseudocode", label: "รหัสเทียม", icon: "terminal-outline", hint: "pseudocode" },
   { k: "translate", label: "แปลประโยค", icon: "language-outline", hint: "ไทย ↔ อังกฤษ" },
+  { k: "cloze", label: "เติมคำตอบ", icon: "create-outline", hint: "เติมคำ/ประโยคในช่องว่าง" },
 ];
 
 type Tab = "chat" | "plan" | "diag";
@@ -686,8 +687,10 @@ function stopSpeak() {
 type Msg = { role: "me" | "ai"; text: string; sources?: any[]; usedModel?: boolean; grounded?: boolean; casual?: boolean; streaming?: boolean };
 
 export default function Tutor() {
+  const routeParams = useLocalSearchParams<{ subjectId?: string; tab?: string; action?: string }>();
   const [subjects, setSubjects] = useState<any[]>([]);
   const [subjectId, setSubjectId] = useState("");
+  const routeActionHandled = useRef("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [optOpen, setOptOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -971,7 +974,7 @@ export default function Tutor() {
     const pool: Fmt[] = ["text", "options"];
     if (hasDiagramMode) pool.push("flowchart", "diagram");
     if (hasCompareMode || hasStepsMode) pool.push("table");
-    if (hasLangMode) pool.push("translate");
+    if (hasLangMode) pool.push("translate", "cloze");
     if (hasCodeMode) pool.push("code", "pseudocode");
     return pool[Math.floor(Math.random() * pool.length)];
   }
@@ -1002,6 +1005,33 @@ export default function Tutor() {
       setProbHint(String(e?.hint || ""));
     } finally { setProbBusy(false); }
   }
+
+  // loadProblem intentionally closes over the current in-page pull settings.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const action = String(routeParams.action || "").trim();
+    if (!subjectId || !action || routeActionHandled.current === subjectId + "|" + action) return;
+    routeActionHandled.current = subjectId + "|" + action;
+    const timer = setTimeout(() => {
+      if (action === "exam") {
+        setDiagStage("pull");
+        setTab("diag");
+        setFocusedPractice(false);
+        setPullStyle("");
+        setExamPick(true);
+      } else if (action === "flowchart" || action === "code") {
+        setDiagStage("pull");
+        setTab("diag");
+        setPullStyle(action);
+        setFocusedPractice(true);
+        setProblem(null); setMark(null); setMyAnswer(""); setPicked(-1);
+        void loadProblem(action);
+      } else {
+        setTab("chat");
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [subjectId, routeParams.action]);
 
   /** โจทย์ซ้อน: สร้างโจทย์ใหม่จากไฟล์เดียวกัน ให้ลองทำเอง — ไม่มีโค้ดตัวอย่าง */
   async function loadVariant() {
@@ -1069,6 +1099,12 @@ export default function Tutor() {
   const tabMeta = TABS.find((t) => t.k === tab)!;
 
   useEffect(() => { getSubjects().then(setSubjects).catch(() => undefined); }, []);
+  useEffect(() => {
+    const requested = String(routeParams.subjectId || "").trim();
+    if (!requested) return;
+    setSubjectId(requested);
+    if (routeParams.tab === "diag") setTab("diag");
+  }, [routeParams.subjectId, routeParams.tab]);
   useEffect(() => { if (!subjectId && subjects[0]?.id) setSubjectId(subjects[0].id); }, [subjects, subjectId]);
   // เปลี่ยนวิชา = เริ่มโหมดใหม่เสมอ — กัน "โหมดโค้ด" ค้างจากวิชาก่อนหน้า
   // ไปบังคับโจทย์ของวิชาที่เนื้อหาไม่มีเขียนโค้ด (เช่น 1204102)
@@ -1098,6 +1134,11 @@ export default function Tutor() {
         color: local?.color || "#a78bfa",
       };
     });
+  }, [opening]);
+  const subjectFormats = useMemo(() => {
+    const serverFormats: any[] = Array.isArray(opening?.formats) ? opening.formats : [];
+    if (!serverFormats.length) return null;
+    return serverFormats;
   }, [opening]);
   // ฟอร์แมตเฉพาะทางในเมนูข้อสอบให้ตรงกับเนื้อหาของวิชาที่ /open วิเคราะห์ได้
   const hasCodeMode = subjectModes.some((m) => m.k === "code");
@@ -2230,19 +2271,20 @@ export default function Tutor() {
         <Pressable style={styles.backdrop} onPress={() => setExamPick(false)} />
         <View style={styles.sheet}>
           <View style={styles.sheetHead}>
-            <Text style={styles.sheetTitle}>จะเลือกทำอะไร?</Text>
+            <Text style={styles.sheetTitle}>{subject ? `ทำข้อสอบ — ${subject.name}` : "จะเลือกทำอะไร?"}</Text>
             <Pressable onPress={() => setExamPick(false)}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
           </View>
 
           {/* ทุกแนวเปิดเป็นหน้าแบบฝึกทันที และใช้เนื้อหาของวิชาที่เลือก */}
           <ScrollView style={{ maxHeight: 470 }} showsVerticalScrollIndicator={false}>
-            {([
+            {(subjectFormats || [
               ...(hasCodeMode ? [{ k: "code", label: "ข้อสอบโค้ด", hint: "โจทย์จากวิชา พร้อมช่องเขียนโค้ด", icon: "code-slash-outline", color: "#34d399" }] : []),
               { k: "options", label: "ตัวเลือกแบบช้อยส์", hint: "โจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง) เลือกแล้วเฉลยทันที", icon: "list-outline", color: "#fbbf24" },
               ...(hasDiagramMode ? [{ k: "flowchart", label: "ผังภาพ", hint: "โจทย์จากวิชา พร้อมช่องวาดผังงานเป็นขั้นตอน", icon: "git-branch-outline", color: "#38bdf8" }] : []),
               ...(hasCodeMode ? [{ k: "pseudocode", label: "รหัสเทียม", hint: "ตอบเป็นขั้นตอน pseudocode ไม่ต้องเป็นภาษาโปรแกรมจริง", icon: "terminal-outline", color: "#818cf8" }] : []),
               ...(hasCompareMode || hasStepsMode ? [{ k: "table", label: "ตารางเทียบ", hint: "จัดคำตอบเป็นตารางเทียบข้อมูล", icon: "grid-outline", color: "#f472b6" }] : []),
               ...(hasLangMode ? [{ k: "translate", label: "แปลประโยค", hint: "แปลข้อความจากเนื้อหาในวิชา ไทย ↔ อังกฤษ", icon: "language-outline", color: "#2dd4bf" }] : []),
+              ...(hasLangMode ? [{ k: "cloze", label: "เติมคำตอบ", hint: "เติมคำศัพท์หรือไวยากรณ์ในช่องว่างจากเนื้อหาวิชา", icon: "create-outline", color: "#a78bfa" }] : []),
               { k: "random", label: "สุ่มทุกอย่าง", hint: "สุ่มเฉพาะรูปแบบที่เหมาะกับวิชานี้", icon: "shuffle-outline", color: "#fb923c" },
               { k: "", label: "ดึงโจทย์ (ระบบเลือกให้เอง)", hint: "สุ่มโจทย์จากไฟล์ในวิชา แล้วให้ระบบเลือกรูปแบบคำตอบเอง", icon: "document-text-outline", color: "#4ade80" },
               { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "สอบ 5 ข้อ แล้วระบบบอกว่าหัวข้อไหนต้องเน้น หัวข้อไหนข้ามได้", icon: "checkmark-done-outline", color: "#a78bfa" },

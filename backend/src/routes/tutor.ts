@@ -1004,7 +1004,7 @@ export function dedupeOptions(options: any[], answerIndex: number, minCount = 2)
   return { options: kept, answerIndex: finalAnswer, removed: options.length - kept.length };
 }
 /** รูปแบบคำตอบที่ให้เลือก */
-type AnswerFormat = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode" | "translate";
+type AnswerFormat = "text" | "options" | "code" | "flowchart" | "diagram" | "table" | "pseudocode" | "translate" | "cloze";
 const FORMATS: Record<AnswerFormat, { label: string; hint: string; instruction: string }> = {
   text: { label: "ข้อความ", hint: "เขียนตอบเป็นข้อความ", instruction: "แสดงโจทย์เป็นข้อความอ่านง่าย ใช้หัวข้อย่อยและ bullet" },
   options: { label: "ตัวเลือก", hint: "A B C D", instruction: "แสดงโจทย์พร้อมตัวเลือก 4 ข้อ (ก ข ค ง) พร้อมเฉลยอธิบาย" },
@@ -1015,6 +1015,7 @@ const FORMATS: Record<AnswerFormat, { label: string; hint: string; instruction: 
   pseudocode: { label: "รหัสเทียม", hint: "pseudocode", instruction: "แสดงโจทย์เป็นโจทย์เขียนรหัสเทียม (pseudocode) — เรียงขั้นตอนเป็นบรรทัด ๆ ด้วยคำสั่งภาษาอังกฤษง่าย ๆ เช่น BEGIN / IF / ELSE / WHILE / FOR / END ห้ามเป็นภาษาโปรแกรมจริง ห้ามใส่ชื่อฟังก์ชันหรือไวยากรณ์ของภาษาโปรแกรม" },
   // แนวสำหรับวิชาภาษา — หยิบประโยค/ข้อความจริงจากไฟล์ในวิชา มาให้แปลไทย<->อังกฤษเอง
   translate: { label: "แปลประโยค", hint: "ไทย ↔ อังกฤษ", instruction: "แสดงโจทย์เป็นการแปลภาษา — คัดประโยคหรือข้อความสั้น ๆ ที่มีจริงในเนื้อหาวิชานี้มา 1 ข้อ แล้วขึ้นต้นด้วยคำสั่งว่า \"แปลข้อความต่อไปนี้เป็น...\" โดยเลือกทิศทางให้ตรงกับต้นทาง (ต้นทางเป็นอังกฤษ = แปลเป็นไทย, ต้นทางเป็นไทย = แปลเป็นอังกฤษ) เว้นบรรทัดว่างใต้คำสั่งให้ผู้เรียนพิมพ์คำตอบแปลเอง ห้ามใส่คำแปลหรือเฉลยในโจทย์เด็ดขาด" },
+  cloze: { label: "เติมคำตอบ", hint: "เติมคำ/ประโยคในช่องว่าง", instruction: "เขียนโจทย์ภาษาไทยโดยคัดข้อความหรือคำที่มีจริงในเนื้อหาวิชา จากนั้นให้วงเล็บช่องว่าง ____ 1-3 ช่องในจุดสำคัญ บอกจำนวนคำที่ควรเติมและเว้นช่องคำตอบ ห้ามใส่คำตอบลงในโจทย์" },
 };
 
 const CODE_TASK_RULES =
@@ -1078,6 +1079,10 @@ function pickFormats(subjectName: string, problemText: string, hasCode = true): 
   if (wantsFlow || byTag.flow) out.push({ format: "flowchart", why: wantsFlow ? "โจทย์นี้มีขั้นตอน/ผังงาน" : "แสดงเป็นผังภาพ" });
   if (wantsDiagram || byTag.diagram) out.push({ format: "diagram", why: wantsDiagram ? "โจทย์นี้เป็นแผนผัง" : "แสดงเป็นแผนผัง" });
   if (wantsTable || byTag.table) out.push({ format: "table", why: wantsTable ? "โจทย์นี้มีตาราง/ข้อมูลเปรียบเทียบ" : "จัดเป็นตาราง" });
+  if (tag === "language") {
+    out.push({ format: "translate", why: "วิชานี้เป็นสายภาษา" });
+    out.push({ format: "cloze", why: "วิชานี้ใช้คำศัพท์และโครงสร้างประโยค" });
+  }
 
   // ตัวแนะนำ = รูปแบบเฉพาะที่ตรงกับโจทย์ที่สุด (ไม่ใช่ "ข้อความ" ที่มีอยู่ทุกวิชา)
   // ถ้าไม่มีอะไรเฉพาะเลย ใช้ "ตัวเลือก" แทน เพราะตอบเป็นตัวเลือกตรวจง่ายกว่า
@@ -3400,10 +3405,37 @@ router.post("/open", requireAuth(), async (req: any, res) => {
       : `ผมอ่านไฟล์ใน ${subject.name} มาแล้ว ${rows.length} รายการ วันนี้อยากให้ช่วยเรื่องไหนครับ?`;
 
     const sig = analyzeSubjectSignals(all);
+    const tag = detectSubjectTag(String(subject.name));
+    const subjectChoiceKeys = choicesForSubject(String(subject.name), topics, sig).map((c: any) => c.key);
+    const formats: { k: AnswerFormat; label: string; hint: string; icon: string; color: string }[] = [
+      { k: "options", label: "ตัวเลือกแบบช้อยส์", hint: "โจทย์พร้อมตัวเลือก 4 ข้อ และเฉลยทันที", icon: "list-outline", color: "#fbbf24" },
+    ];
+    if (subjectChoiceKeys.includes("code") || sig.code >= EXTRA_MIN.code) formats.push(
+      { k: "code", label: "ข้อสอบโค้ด", hint: "เขียนหรือแก้โค้ดจากเนื้อหาในวิชา", icon: "code-slash-outline", color: "#34d399" },
+      { k: "pseudocode", label: "รหัสเทียม", hint: "ตอบเป็นขั้นตอนรหัสเทียมจากเนื้อหาจริง", icon: "terminal-outline", color: "#818cf8" },
+    );
+    if (subjectChoiceKeys.includes("diagram") || sig.flow >= EXTRA_MIN.diagram) formats.push(
+      { k: "flowchart", label: "ผังภาพ", hint: "วาดผังงานเป็นขั้นตอนจากเนื้อหาวิชา", icon: "git-branch-outline", color: "#38bdf8" },
+    );
+    if (tag === "language" || sig.vocab >= EXTRA_MIN.vocab) {
+      formats.push(
+        { k: "translate", label: "แปลประโยค", hint: "แปลข้อความจริงจากเนื้อหาวิชา", icon: "language-outline", color: "#2dd4bf" },
+        { k: "cloze", label: "เติมคำตอบ", hint: "เติมคำศัพท์/ไวยากรณ์ในช่องว่าง", icon: "create-outline", color: "#a78bfa" },
+      );
+    }
+    if (sig.calc >= EXTRA_MIN.steps || sig.compare >= EXTRA_MIN.compare) formats.push(
+      { k: "table", label: "ตารางเทียบ", hint: "จัดข้อมูลและคำตอบเป็นตาราง", icon: "grid-outline", color: "#f472b6" },
+    );
+    formats.push(
+      { k: "random", label: "สุ่มทุกอย่าง", hint: "สุ่มเฉพาะรูปแบบที่เหมาะกับเนื้อหาวิชานี้", icon: "shuffle-outline", color: "#fb923c" } as any,
+      { k: "", label: "ดึงโจทย์จากเนื้อหา", hint: "ให้ระบบเลือกรูปแบบที่ตรงกับหัวข้ออัตโนมัติ", icon: "document-text-outline", color: "#4ade80" } as any,
+      { k: "quiz", label: "วินิจฉัยอัตโนมัติ", hint: "ทำข้อสอบสั้นและดูหัวข้อที่ควรเน้น", icon: "checkmark-done-outline", color: "#a78bfa" } as any,
+    );
     res.json({
       greeting,
       topics,
       choices: choicesForSubject(String(subject.name), topics, sig),
+      formats,
       totalMaterials: all.length,
       suggestions: topics.slice(0, 3).map((t: any) => `อธิบายหัวข้อ "${t.title}" ให้ละเอียด`),
       generatedByAi: !!(result && Array.isArray(result.topics)),
